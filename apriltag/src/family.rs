@@ -234,6 +234,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_bin_codes_not_multiple_of_8() {
+        let bad_data = &[0u8; 7]; // 7 bytes, not a multiple of 8
+        let result = TagFamily::from_toml_and_bin(
+            include_str!("../families/tag16h5.toml"),
+            bad_data,
+        );
+        assert!(matches!(result, Err(FamilyError::InvalidBin(_))));
+    }
+
+    #[test]
     fn tag16h5_bit_locations_match_c_reference() {
         let f = tag16h5();
         assert_eq!(f.bit_locations.len(), 16);
