@@ -6,10 +6,10 @@
 //! This implements Era 2 code generation (AprilTag 3) for Standard, Circle,
 //! and Custom tag families. Classic families use `upgrade.rs` instead.
 
-use crate::hamming::{hamming_distance_at_least, rotate90};
-use crate::layout::Layout;
-use crate::render;
-use crate::types::Pixel;
+use apriltag::hamming::{hamming_distance_at_least, rotate90};
+use apriltag::layout::Layout;
+use apriltag::render;
+use apriltag::types::Pixel;
 
 const PRIME: u64 = 982_451_653;
 
@@ -144,7 +144,7 @@ fn java_random_next_long(seed: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::Layout;
+    use apriltag::layout::Layout;
 
     #[test]
     fn java_random_deterministic() {

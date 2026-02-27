@@ -5,7 +5,7 @@
 //! `upgradeCode()` function from `TagFamily.java` to remap those codes into
 //! the quadrant-scanned bit ordering used by AprilTag 3.
 
-use crate::bits::BitLocation;
+use apriltag::bits::BitLocation;
 
 /// Remap a single code from old row-major bit ordering to quadrant-scanned ordering.
 ///
@@ -48,8 +48,8 @@ pub fn upgrade_codes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bits;
-    use crate::layout::Layout;
+    use apriltag::bits;
+    use apriltag::layout::Layout;
 
     #[test]
     fn upgrade_tag16h5_matches_c_reference() {

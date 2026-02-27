@@ -1,9 +1,4 @@
-pub mod types;
-pub mod error;
-pub mod layout;
-pub mod bits;
-pub mod hamming;
-pub mod render;
-pub mod family;
-pub mod upgrade;
+pub use apriltag::*;
+
 pub mod codegen;
+pub mod upgrade;
