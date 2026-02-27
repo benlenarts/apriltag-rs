@@ -6,12 +6,83 @@
 //! This implements Era 2 code generation (AprilTag 3) for Standard, Circle,
 //! and Custom tag families. Classic families use `upgrade.rs` instead.
 
+use apriltag::bits;
 use apriltag::hamming::{hamming_distance_at_least, rotate90};
 use apriltag::layout::Layout;
-use apriltag::render;
-use apriltag::types::Pixel;
+use apriltag::types::CellType;
 
 const PRIME: u64 = 982_451_653;
+
+/// What a grid cell resolves to for complexity checking.
+#[derive(Clone, Copy)]
+enum CellKind {
+    /// A fixed black or white pixel (true = white, false = black).
+    Fixed(bool),
+    /// A data bit, identified by its bit index (0 = MSB).
+    Data(usize),
+    /// Transparent / ignored — not counted.
+    Skip,
+}
+
+/// Pre-computed grid for fast Ising energy complexity checks.
+///
+/// Built once per layout from `bit_locations()`. Each cell is either a
+/// fixed pixel, a data bit index, or transparent. The `area` (number of
+/// non-transparent cells) is also pre-computed since it's constant.
+struct ComplexityGrid {
+    cells: Vec<CellKind>,
+    size: usize,
+    nbits: usize,
+    /// Number of non-transparent pixels (constant for a given layout).
+    area: i32,
+}
+
+impl ComplexityGrid {
+    fn from_layout(layout: &Layout) -> Self {
+        let size = layout.grid_size;
+        let mut cells = vec![CellKind::Skip; size * size];
+
+        // Fill fixed cells from the layout
+        for y in 0..size {
+            for x in 0..size {
+                match layout.cell(x, y) {
+                    CellType::Black => cells[y * size + x] = CellKind::Fixed(false),
+                    CellType::White => cells[y * size + x] = CellKind::Fixed(true),
+                    CellType::Data | CellType::Ignored => {}
+                }
+            }
+        }
+
+        // Fill data cells using bit_locations (which gives the render order)
+        let bs = layout.border_start as i32;
+        for (bit_idx, loc) in bits::bit_locations(layout).iter().enumerate() {
+            let gx = (loc.x + bs) as usize;
+            let gy = (loc.y + bs) as usize;
+            cells[gy * size + gx] = CellKind::Data(bit_idx);
+        }
+
+        let area = cells
+            .iter()
+            .filter(|c| !matches!(c, CellKind::Skip))
+            .count() as i32;
+
+        ComplexityGrid {
+            cells,
+            size,
+            nbits: layout.nbits,
+            area,
+        }
+    }
+
+    /// Resolve a cell to a pixel value (true = white, false = black) for a given code.
+    fn resolve(&self, idx: usize, code: u64) -> Option<bool> {
+        match self.cells[idx] {
+            CellKind::Fixed(v) => Some(v),
+            CellKind::Data(i) => Some((code >> (self.nbits - 1 - i)) & 1 != 0),
+            CellKind::Skip => None,
+        }
+    }
+}
 
 /// Generate tag family codes using the greedy lexicode search.
 ///
@@ -33,11 +104,14 @@ pub fn generate(layout: &Layout, min_hamming: u32, min_complexity: u32) -> Vec<u
     let mut codelist: Vec<u64> = Vec::new();
     let mut rotcodes: Vec<u64> = Vec::new();
 
+    // Pre-build grid once — avoids allocating a pixel grid per candidate
+    let grid = ComplexityGrid::from_layout(layout);
+
     let mut v = v0;
     for _iter in 0..total {
         v = v.wrapping_add(PRIME) & mask;
 
-        if !is_complex_enough(layout, v) {
+        if !is_complex_enough(&grid, v) {
             continue;
         }
 
@@ -78,49 +152,44 @@ pub fn generate(layout: &Layout, min_hamming: u32, min_complexity: u32) -> Vec<u
     codelist
 }
 
-/// Check if a rendered code has enough visual complexity (Ising energy).
+/// Check if a code has enough visual complexity (Ising energy).
 ///
 /// Counts 4-connected black/white transitions and requires
 /// `energy >= 0.3333 * max_energy` where `max_energy = 2 * area`.
-fn is_complex_enough(layout: &Layout, code: u64) -> bool {
-    let tag = render::render(layout, code);
-    let size = tag.grid_size;
+///
+/// Uses the pre-built `ComplexityGrid` to resolve pixels via bit shifts
+/// instead of allocating a full rendered pixel grid per candidate.
+fn is_complex_enough(grid: &ComplexityGrid, code: u64) -> bool {
+    let size = grid.size;
     let mut energy = 0i32;
 
-    // Horizontal transitions
     for y in 0..size {
-        for x in 0..size - 1 {
-            if is_bw_transition(tag.pixel(x, y), tag.pixel(x + 1, y)) {
-                energy += 1;
+        for x in 0..size {
+            let idx = y * size + x;
+            let pixel = grid.resolve(idx, code);
+
+            // Horizontal transition (compare with right neighbor)
+            if x + 1 < size {
+                if let (Some(a), Some(b)) = (pixel, grid.resolve(idx + 1, code)) {
+                    if a != b {
+                        energy += 1;
+                    }
+                }
+            }
+
+            // Vertical transition (compare with bottom neighbor)
+            if y + 1 < size {
+                if let (Some(a), Some(b)) = (pixel, grid.resolve(idx + size, code)) {
+                    if a != b {
+                        energy += 1;
+                    }
+                }
             }
         }
     }
 
-    // Vertical transitions
-    for x in 0..size {
-        for y in 0..size - 1 {
-            if is_bw_transition(tag.pixel(x, y), tag.pixel(x, y + 1)) {
-                energy += 1;
-            }
-        }
-    }
-
-    // Area = non-transparent pixels
-    let area: i32 = tag
-        .pixels
-        .iter()
-        .filter(|&&p| p == Pixel::Black || p == Pixel::White)
-        .count() as i32;
-
-    let max_energy = 2 * area;
+    let max_energy = 2 * grid.area;
     energy as f64 >= 0.3333 * max_energy as f64
-}
-
-fn is_bw_transition(a: Pixel, b: Pixel) -> bool {
-    matches!(
-        (a, b),
-        (Pixel::Black, Pixel::White) | (Pixel::White, Pixel::Black)
-    )
 }
 
 /// Reproduce Java's `new Random(seed).nextLong()`.
@@ -155,7 +224,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // ~56s in debug — run with `cargo test -- --ignored`
     fn generate_circle21h7_matches_reference() {
         // tagCircle21h7: 21 bits, min_hamming=7, min_complexity=10
         let data =
