@@ -6,3 +6,4 @@ pub mod hamming;
 pub mod render;
 pub mod family;
 pub mod upgrade;
+pub mod codegen;
