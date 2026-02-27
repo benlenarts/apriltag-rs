@@ -4,7 +4,7 @@ WASM-compatible, pure Rust implementation of the AprilTag detection pipeline, in
 
 ## Project Tenets
 
-1. **Deep test coverage** — correctness and performance validated through an extensive test suite
+1. **100% test coverage** — measured with `cargo-llvm-cov`; uncovered lines get tests before moving on
 2. **Red-green-refactor** — strict TDD discipline; write a failing test, make it pass, then clean up
 3. **Many atomic commits on short-lived branches** — small, focused changes; merge early and often; Claude does this autonomously
 4. **Detection robustness** — match or exceed the reference C implementation's detection quality
@@ -51,6 +51,23 @@ The detection pipeline follows the reference AprilTag implementation:
 - `docs/papers/` — academic papers (Olson 2011, Wang 2016, Krogius 2019, etc.)
 - `docs/reference-detection/` — reference C implementation (apriltag3) for detection
 - `docs/reference-generation/` — reference Java implementation for tag family generation
+
+## Coverage Policy
+
+**Target: 100% test coverage.** Use `cargo-llvm-cov` to measure coverage. Whenever you find uncovered lines, write focused tests to cover them — this is part of the TDD loop.
+
+```bash
+# Quick summary
+cargo llvm-cov
+
+# Per-line detail (show uncovered lines)
+cargo llvm-cov --text
+
+# HTML report
+cargo llvm-cov --html && open target/llvm-cov/html/index.html
+```
+
+After completing any feature or fix, run `cargo llvm-cov --text` and inspect for uncovered lines. If coverage is below 100%, add targeted tests before moving on. Each new test is its own atomic commit.
 
 ## Commands
 
