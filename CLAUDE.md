@@ -6,7 +6,7 @@ WASM-compatible, pure Rust implementation of the AprilTag detection pipeline, in
 
 1. **Deep test coverage** — correctness and performance validated through an extensive test suite
 2. **Red-green-refactor** — strict TDD discipline; write a failing test, make it pass, then clean up
-3. **Many atomic commits on short-lived branches** — small, focused changes; merge early and often
+3. **Many atomic commits on short-lived branches** — small, focused changes; merge early and often; Claude does this autonomously
 4. **Detection robustness** — match or exceed the reference C implementation's detection quality
 5. **Performance parity** — benchmark against the reference implementation; no unnecessary allocations
 6. **Modular design** — clean separation between tag families, image processing, quad detection, decoding, and pose estimation
