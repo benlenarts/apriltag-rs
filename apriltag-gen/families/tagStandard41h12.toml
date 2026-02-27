@@ -1,5 +1,6 @@
 name = "tagStandard41h12"
 min_hamming = 12
+min_complexity = 10
 
 [layout]
 type = "standard"

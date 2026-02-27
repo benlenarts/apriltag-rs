@@ -1,5 +1,6 @@
 name = "tagCustom48h12"
 min_hamming = 12
+min_complexity = 12
 
 [layout]
 type = "custom"

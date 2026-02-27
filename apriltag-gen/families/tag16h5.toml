@@ -1,5 +1,6 @@
 name = "tag16h5"
 min_hamming = 5
+min_complexity = 5
 
 [layout]
 type = "classic"

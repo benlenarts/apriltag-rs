@@ -9,6 +9,10 @@ use crate::layout::Layout;
 pub struct FamilyConfig {
     pub name: String,
     pub min_hamming: u32,
+    /// Per-family complexity parameter used in the LCG seed computation.
+    /// Required for Era 2 code generation; optional for classic families.
+    #[serde(default)]
+    pub min_complexity: Option<u32>,
     pub layout: LayoutConfig,
 }
 

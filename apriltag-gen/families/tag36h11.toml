@@ -1,5 +1,6 @@
 name = "tag36h11"
 min_hamming = 11
+min_complexity = 10
 
 [layout]
 type = "classic"

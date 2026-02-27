@@ -1,5 +1,6 @@
 name = "tagCircle21h7"
 min_hamming = 7
+min_complexity = 10
 
 [layout]
 type = "circle"
