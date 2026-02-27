@@ -1,0 +1,3 @@
+[workspace]
+members = ["apriltag-gen", "apriltag-gen-cli"]
+resolver = "2"
