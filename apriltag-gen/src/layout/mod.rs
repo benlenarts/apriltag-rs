@@ -1,3 +1,6 @@
+mod classic;
+mod circle;
+mod standard;
 mod validate;
 
 use crate::error::LayoutError;
@@ -62,9 +65,37 @@ impl Layout {
         })
     }
 
+    /// Create a classic layout for the given grid size.
+    pub fn classic(grid_size: usize) -> Result<Layout, LayoutError> {
+        Self::from_data_string(&classic::classic_data_string(grid_size))
+    }
+
+    /// Create a standard layout for the given grid size.
+    pub fn standard(grid_size: usize) -> Result<Layout, LayoutError> {
+        Self::from_data_string(&standard::standard_data_string(grid_size))
+    }
+
+    /// Create a circle layout for the given grid size.
+    pub fn circle(grid_size: usize) -> Result<Layout, LayoutError> {
+        Self::from_data_string(&circle::circle_data_string(grid_size))
+    }
+
     /// Get the cell type at grid position (x, y).
     pub fn cell(&self, x: usize, y: usize) -> CellType {
         self.cells[y * self.grid_size + x]
+    }
+
+    /// Get the raw data string for this layout.
+    pub fn data_string(&self) -> String {
+        self.cells
+            .iter()
+            .map(|c| match c {
+                CellType::Data => 'd',
+                CellType::Black => 'b',
+                CellType::White => 'w',
+                CellType::Ignored => 'x',
+            })
+            .collect()
     }
 }
 
