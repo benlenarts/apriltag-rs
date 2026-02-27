@@ -1,0 +1,7 @@
+name = "tagCustom48h12"
+min_hamming = 12
+
+[layout]
+type = "custom"
+grid_size = 10
+data = "dddddddddddbbbbbbbbddbwwwwwwbddbwddddwbddbwdxxdwbddbwdxxdwbddbwddddwbddbwwwwwwbddbbbbbbbbddddddddddd"

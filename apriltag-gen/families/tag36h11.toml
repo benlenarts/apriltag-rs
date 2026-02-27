@@ -1,0 +1,6 @@
+name = "tag36h11"
+min_hamming = 11
+
+[layout]
+type = "classic"
+grid_size = 10

@@ -1,0 +1,6 @@
+name = "tag25h9"
+min_hamming = 9
+
+[layout]
+type = "classic"
+grid_size = 9

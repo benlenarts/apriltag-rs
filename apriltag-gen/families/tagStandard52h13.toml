@@ -1,0 +1,6 @@
+name = "tagStandard52h13"
+min_hamming = 13
+
+[layout]
+type = "standard"
+grid_size = 10
