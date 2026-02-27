@@ -54,7 +54,7 @@ The detection pipeline follows the reference AprilTag implementation:
 
 ## Coverage Policy
 
-**Target: 100% test coverage.** Use `cargo-llvm-cov` to measure coverage. Whenever you find uncovered lines, write focused tests to cover them — this is part of the TDD loop.
+**Target: 100% test coverage.** TDD is the primary strategy — code written to pass a test is covered by definition. When a coverage gap appears, ask whether the uncovered code is reachable. If it isn't, delete it; unreachable code is a design problem, not a testing problem. If it is reachable, test it through the public API with a realistic scenario (bad input, boundary condition, corrupt data). Never write a test that exists only to hit a line — every test must assert meaningful behavior.
 
 ```bash
 # Quick summary (excludes CLI crate)
