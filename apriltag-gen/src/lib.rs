@@ -5,3 +5,4 @@ pub mod bits;
 pub mod hamming;
 pub mod render;
 pub mod family;
+pub mod upgrade;
