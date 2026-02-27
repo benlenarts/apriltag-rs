@@ -137,6 +137,20 @@ mod tests {
     }
 
     #[test]
+    fn data_string_roundtrip_classic() {
+        let data = "wwwwwwwwwbbbbbbwwbddddbwwbddddbwwbddddbwwbddddbwwbbbbbbwwwwwwwww";
+        let layout = Layout::from_data_string(data).unwrap();
+        assert_eq!(layout.data_string(), data);
+    }
+
+    #[test]
+    fn data_string_roundtrip_circle() {
+        let data = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+        let layout = Layout::from_data_string(data).unwrap();
+        assert_eq!(layout.data_string(), data);
+    }
+
+    #[test]
     fn parse_standard41h12_layout() {
         let data = "ddddddddddbbbbbbbddbwwwwwbddbwdddwbddbwdddwbddbwdddwbddbwwwwwbddbbbbbbbdddddddddd";
         let layout = Layout::from_data_string(data).unwrap();
