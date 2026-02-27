@@ -23,9 +23,13 @@ The detection pipeline follows the reference AprilTag implementation:
 5. **Homography & decoding** — sample tag bits via homography, match against tag families
 6. **Pose estimation** — compute camera-relative pose from known tag geometry
 
-### Tag Families
+### Crate Structure
 
-Tag family generation (layouts, bit patterns, Hamming distance properties) lives in `apriltag-gen/` (library) and `apriltag-gen-cli/` (CLI). Generation is complete with 47 tests.
+- **`apriltag/`** — core types, families, and rendering (42 tests). Contains `TagFamily`, `Layout`, `BitLocation`, `hamming`, `render`, and built-in family data (`.toml` + `.bin` in `apriltag/families/`).
+- **`apriltag-gen/`** — generation-only code (5 tests). Re-exports `apriltag::*` plus `codegen` and `upgrade` modules.
+- **`apriltag-gen-cli/`** — CLI for tag generation and rendering. Depends on `apriltag-gen`.
+
+### Tag Families
 
 **Two eras of code generation** — classic families (tag16h5, tag25h9, tag36h11) use `upgrade.rs` to convert old row-major codes from the Java source; they cannot be regenerated from scratch. Era 2 families (Standard, Circle, Custom) use `codegen.rs` with LCG seed `nbits*10000 + minhamming*100 + min_complexity`. Note: the Java source on GitHub has `+7` but the reference families were generated with per-family `+min_complexity`.
 
@@ -53,7 +57,7 @@ Tag family generation (layouts, bit patterns, Hamming distance properties) lives
 Verify WASM compatibility
 
 ```bash
-cargo build --target wasm32-unknown-unknown 
+cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen
 ```
 
 ## Code Style
