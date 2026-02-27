@@ -227,10 +227,27 @@ mod tests {
     }
 
     #[test]
-    fn builtin_family_lookup() {
-        assert!(builtin_family("tag36h11").is_some());
-        assert!(builtin_family("tagCircle21h7").is_some());
+    fn builtin_family_lookup_all() {
+        for &name in BUILTIN_NAMES {
+            assert!(builtin_family(name).is_some(), "missing builtin: {name}");
+        }
         assert!(builtin_family("nonexistent").is_none());
+    }
+
+    #[test]
+    fn parse_bin_codes_not_multiple_of_8() {
+        let bad_data = &[0u8; 7]; // 7 bytes, not a multiple of 8
+        let result = TagFamily::from_toml_and_bin(
+            include_str!("../families/tag16h5.toml"),
+            bad_data,
+        );
+        assert!(matches!(result, Err(FamilyError::InvalidBin(_))));
+    }
+
+    #[test]
+    fn from_toml_and_bin_invalid_toml() {
+        let result = TagFamily::from_toml_and_bin("not valid toml {{{", &[]);
+        assert!(matches!(result, Err(FamilyError::Config(_))));
     }
 
     #[test]

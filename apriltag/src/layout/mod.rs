@@ -137,11 +137,69 @@ mod tests {
     }
 
     #[test]
+    fn data_string_roundtrip_classic() {
+        let data = "wwwwwwwwwbbbbbbwwbddddbwwbddddbwwbddddbwwbddddbwwbbbbbbwwwwwwwww";
+        let layout = Layout::from_data_string(data).unwrap();
+        assert_eq!(layout.data_string(), data);
+    }
+
+    #[test]
+    fn data_string_roundtrip_circle() {
+        let data = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+        let layout = Layout::from_data_string(data).unwrap();
+        assert_eq!(layout.data_string(), data);
+    }
+
+    #[test]
     fn parse_standard41h12_layout() {
         let data = "ddddddddddbbbbbbbddbwwwwwbddbwdddwbddbwdddwbddbwdddwbddbwwwwwbddbbbbbbbdddddddddd";
         let layout = Layout::from_data_string(data).unwrap();
         assert_eq!(layout.grid_size, 9);
         assert_eq!(layout.nbits, 41);
         assert!(layout.reversed_border);
+    }
+
+    #[test]
+    fn parse_not_symmetric() {
+        // 3x3 grid where (0,0)=d but (2,0)=b — breaks rotational symmetry
+        let result = Layout::from_data_string("ddddddddb");
+        assert!(matches!(result, Err(LayoutError::NotSymmetric)));
+    }
+
+    #[test]
+    fn parse_no_border() {
+        // 3x3 grid of all data — symmetric but no black/white border pair
+        let result = Layout::from_data_string("ddddddddd");
+        assert!(matches!(result, Err(LayoutError::NoBorder)));
+    }
+
+    #[test]
+    fn parse_invalid_outer_border_ring() {
+        // 5x5: corner (0,0)=w, (1,1)=b looks like classic border at start=1,
+        // but we corrupt one outer-ring cell to break the outer ring check.
+        // Classic outer ring is white. Make (2,0) = 'd' to break it.
+        // Row 0: w w d w w  — (2,0) is 'd' instead of 'w'
+        // Row 1: w b b b w
+        // Row 2: d b d b d  — symmetric with (2,0)
+        // Row 3: w b b b w
+        // Row 4: w w d w w
+        // Symmetry: (0,0)=w -> rot90: (4,0)=w, (4,4)=w, (0,4)=w ✓
+        //           (1,0)=w -> rot90: (4,1)=w, (3,4)=w, (0,3)=w ✓
+        //           (2,0)=d -> rot90: (4,2)=d, (2,4)=d, (0,2)=d ✓
+        let result = Layout::from_data_string("wwdwwwbbbwdbdbdwbbbwwwdww");
+        assert!(matches!(result, Err(LayoutError::InvalidBorder(_))));
+    }
+
+    #[test]
+    fn parse_invalid_inner_border_ring() {
+        // 5x5 classic: outer ring (row/col 0) is all white ✓
+        // Inner ring (row/col 1) should be all black, but we corrupt one cell.
+        // Row 0: w w w w w
+        // Row 1: w b d b w  — (2,1) is 'd' instead of 'b', breaks inner ring
+        // Row 2: w d d d w  — symmetric
+        // Row 3: w b d b w
+        // Row 4: w w w w w
+        let result = Layout::from_data_string("wwwwwwbdbwwdddwwbdbwwwwww");
+        assert!(matches!(result, Err(LayoutError::InvalidBorder(_))));
     }
 }

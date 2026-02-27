@@ -174,4 +174,55 @@ mod tests {
         let rgba = tag.to_rgba();
         assert_eq!(rgba.len(), 8 * 8 * 4);
     }
+
+    #[test]
+    fn render_to_rgba_transparent_pixels() {
+        // Circle layout has transparent corner pixels
+        let data = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+        let layout = Layout::from_data_string(data).unwrap();
+        let tag = render(&layout, 0x157863);
+        let rgba = tag.to_rgba();
+
+        // Corner pixel (0,0) is transparent → [0, 0, 0, 0]
+        assert_eq!(&rgba[0..4], &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn render_odd_grid_center_data_bit_zero() {
+        // 9x9 circle layout has center cell (4,4) = data.
+        // Use a code where the center (last) data bit is 0 → Black.
+        let data = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+        let layout = Layout::from_data_string(data).unwrap();
+        // code 0 means all data bits are 0, so center data bit is 0 → Black
+        let tag = render(&layout, 0x000000);
+        assert_eq!(tag.pixel(4, 4), Pixel::Black);
+    }
+
+    #[test]
+    fn render_odd_grid_center_black_cell() {
+        // 5x5 layout with center (2,2) = 'b' (Black).
+        // Classic border: outer white, inner black, no data cells.
+        let data = "wwwwwwbbbwwbbbwwbbbwwwwww";
+        let layout = Layout::from_data_string(data).unwrap();
+        let tag = render(&layout, 0);
+        assert_eq!(tag.pixel(2, 2), Pixel::Black);
+    }
+
+    #[test]
+    fn render_odd_grid_center_white_cell() {
+        // 5x5 layout with center (2,2) = 'w' (White).
+        let data = "wwwwwwbbbwwbwbwwbbbwwwwww";
+        let layout = Layout::from_data_string(data).unwrap();
+        let tag = render(&layout, 0);
+        assert_eq!(tag.pixel(2, 2), Pixel::White);
+    }
+
+    #[test]
+    fn render_odd_grid_center_ignored_cell() {
+        // 5x5 layout with center (2,2) = 'x' (Ignored → Transparent).
+        let data = "wwwwwwbbbwwbxbwwbbbwwwwww";
+        let layout = Layout::from_data_string(data).unwrap();
+        let tag = render(&layout, 0);
+        assert_eq!(tag.pixel(2, 2), Pixel::Transparent);
+    }
 }
