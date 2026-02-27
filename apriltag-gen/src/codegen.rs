@@ -155,6 +155,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // ~56s in debug — run with `cargo test -- --ignored`
     fn generate_circle21h7_matches_reference() {
         // tagCircle21h7: 21 bits, min_hamming=7, min_complexity=10
         let data =
