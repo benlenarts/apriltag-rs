@@ -6,3 +6,4 @@ description = "AprilTag family generation library"
 
 [dependencies]
 apriltag = { path = "../apriltag" }
+smallvec = "1"

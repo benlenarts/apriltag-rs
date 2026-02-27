@@ -10,6 +10,7 @@ use apriltag::bits;
 use apriltag::hamming::{hamming_distance_at_least, rotate90};
 use apriltag::layout::Layout;
 use apriltag::types::CellType;
+use smallvec::SmallVec;
 
 const PRIME: u64 = 982_451_653;
 
@@ -24,22 +25,31 @@ enum CellKind {
     Skip,
 }
 
-/// Pre-computed grid for fast Ising energy complexity checks.
+/// Pre-computed adjacency data for fast Ising energy complexity checks.
 ///
-/// Built once per layout from `bit_locations()`. Each cell is either a
-/// fixed pixel, a data bit index, or transparent. The `area` (number of
-/// non-transparent cells) is also pre-computed since it's constant.
+/// Instead of scanning the full grid on every candidate, we precompute
+/// all adjacent cell pairs during construction and store compact lists
+/// of shift amounts. This eliminates the nested grid loop, all `resolve()`
+/// calls, and skip-cell processing from the hot path.
 struct ComplexityGrid {
-    cells: Vec<CellKind>,
-    size: usize,
-    nbits: usize,
-    /// Number of non-transparent pixels (constant for a given layout).
-    area: i32,
+    /// Constant energy from Fixed-Fixed adjacent pairs.
+    base_energy: i32,
+    /// Shift amounts for data bits adjacent to white fixed cells.
+    /// A data bit adjacent to N white cells appears N times.
+    white_data_shifts: SmallVec<[u32; 64]>,
+    /// Shift amounts for data bits adjacent to black fixed cells.
+    black_data_shifts: SmallVec<[u32; 64]>,
+    /// (shift_a, shift_b) for each Data-Data adjacency.
+    data_pair_shifts: SmallVec<[(u32, u32); 32]>,
+    /// Precomputed threshold: `2 * area` for integer comparison
+    /// (`3 * energy >= threshold` ≡ `energy >= 0.3333 * 2 * area`).
+    threshold: i32,
 }
 
 impl ComplexityGrid {
     fn from_layout(layout: &Layout) -> Self {
         let size = layout.grid_size;
+        let nbits = layout.nbits;
         let mut cells = vec![CellKind::Skip; size * size];
 
         // Fill fixed cells from the layout
@@ -66,21 +76,75 @@ impl ComplexityGrid {
             .filter(|c| !matches!(c, CellKind::Skip))
             .count() as i32;
 
+        // Precompute adjacency pairs
+        let mut base_energy = 0i32;
+        let mut white_data_shifts: SmallVec<[u32; 64]> = SmallVec::new();
+        let mut black_data_shifts: SmallVec<[u32; 64]> = SmallVec::new();
+        let mut data_pair_shifts: SmallVec<[(u32, u32); 32]> = SmallVec::new();
+
+        // Process all adjacent pairs (horizontal and vertical)
+        for y in 0..size {
+            for x in 0..size {
+                let a = cells[y * size + x];
+
+                // Horizontal neighbor (x+1, y)
+                if x + 1 < size {
+                    let b = cells[y * size + x + 1];
+                    classify_pair(a, b, nbits, &mut base_energy,
+                        &mut white_data_shifts, &mut black_data_shifts,
+                        &mut data_pair_shifts);
+                }
+
+                // Vertical neighbor (x, y+1)
+                if y + 1 < size {
+                    let b = cells[(y + 1) * size + x];
+                    classify_pair(a, b, nbits, &mut base_energy,
+                        &mut white_data_shifts, &mut black_data_shifts,
+                        &mut data_pair_shifts);
+                }
+            }
+        }
+
         ComplexityGrid {
-            cells,
-            size,
-            nbits: layout.nbits,
-            area,
+            base_energy,
+            white_data_shifts,
+            black_data_shifts,
+            data_pair_shifts,
+            threshold: 2 * area,
         }
     }
+}
 
-    /// Resolve a cell to a pixel value (true = white, false = black) for a given code.
-    fn resolve(&self, idx: usize, code: u64) -> Option<bool> {
-        match self.cells[idx] {
-            CellKind::Fixed(v) => Some(v),
-            CellKind::Data(i) => Some((code >> (self.nbits - 1 - i)) & 1 != 0),
-            CellKind::Skip => None,
+/// Classify an adjacent cell pair and update the precomputed lists.
+fn classify_pair(
+    a: CellKind,
+    b: CellKind,
+    nbits: usize,
+    base_energy: &mut i32,
+    white_data_shifts: &mut SmallVec<[u32; 64]>,
+    black_data_shifts: &mut SmallVec<[u32; 64]>,
+    data_pair_shifts: &mut SmallVec<[(u32, u32); 32]>,
+) {
+    match (a, b) {
+        (CellKind::Fixed(va), CellKind::Fixed(vb)) => {
+            if va != vb {
+                *base_energy += 1;
+            }
         }
+        (CellKind::Fixed(v), CellKind::Data(i)) | (CellKind::Data(i), CellKind::Fixed(v)) => {
+            let shift = (nbits - 1 - i) as u32;
+            if v {
+                // White fixed: transition when data bit is 0
+                white_data_shifts.push(shift);
+            } else {
+                // Black fixed: transition when data bit is 1
+                black_data_shifts.push(shift);
+            }
+        }
+        (CellKind::Data(i), CellKind::Data(j)) => {
+            data_pair_shifts.push(((nbits - 1 - i) as u32, (nbits - 1 - j) as u32));
+        }
+        _ => {} // Skip-anything: no energy contribution
     }
 }
 
@@ -153,39 +217,33 @@ pub fn generate(layout: &Layout, min_hamming: u32, min_complexity: u32) -> Vec<u
 /// Counts 4-connected black/white transitions and requires
 /// `energy >= 0.3333 * max_energy` where `max_energy = 2 * area`.
 ///
-/// Uses the pre-built `ComplexityGrid` to resolve pixels via bit shifts
-/// instead of allocating a full rendered pixel grid per candidate.
+/// Uses precomputed adjacency pair lists for speed — no grid scan,
+/// no match dispatch, no skip-cell overhead.
 fn is_complex_enough(grid: &ComplexityGrid, code: u64) -> bool {
-    let size = grid.size;
-    let mut energy = 0i32;
+    let mut energy = grid.base_energy;
 
-    for y in 0..size {
-        for x in 0..size {
-            let idx = y * size + x;
-            let pixel = grid.resolve(idx, code);
-
-            // Horizontal transition (compare with right neighbor)
-            if x + 1 < size {
-                if let (Some(a), Some(b)) = (pixel, grid.resolve(idx + 1, code)) {
-                    if a != b {
-                        energy += 1;
-                    }
-                }
-            }
-
-            // Vertical transition (compare with bottom neighbor)
-            if y + 1 < size {
-                if let (Some(a), Some(b)) = (pixel, grid.resolve(idx + size, code)) {
-                    if a != b {
-                        energy += 1;
-                    }
-                }
-            }
+    // Fixed-white ↔ data: transition when data bit is 0 (black)
+    for &shift in &grid.white_data_shifts {
+        if (code >> shift) & 1 == 0 {
+            energy += 1;
         }
     }
 
-    let max_energy = 2 * grid.area;
-    energy as f64 >= 0.3333 * max_energy as f64
+    // Fixed-black ↔ data: transition when data bit is 1 (white)
+    for &shift in &grid.black_data_shifts {
+        if (code >> shift) & 1 != 0 {
+            energy += 1;
+        }
+    }
+
+    // Data ↔ data: transition when bits differ
+    for &(s1, s2) in &grid.data_pair_shifts {
+        if ((code >> s1) ^ (code >> s2)) & 1 != 0 {
+            energy += 1;
+        }
+    }
+
+    3 * energy >= grid.threshold
 }
 
 /// Reproduce Java's `new Random(seed).nextLong()`.
