@@ -4,3 +4,4 @@ pub mod threshold;
 pub mod unionfind;
 pub mod connected;
 pub mod cluster;
+pub mod quad;
