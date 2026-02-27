@@ -34,6 +34,10 @@ Tag family generation (layouts, bit patterns, Hamming distance properties) is a 
 - **Commits**: Small, atomic, well-described. Each commit should compile and pass tests.
 - **Testing**: `cargo test` must pass before every commit. Use `cargo test -- --nocapture` for debug output.
 
+## Commit Policy
+
+**You MUST commit early and often — do not wait for the user to ask.** After every small, meaningful unit of progress (a passing test, a new function, a refactor, a bug fix), immediately run `cargo test` and, if tests pass, create a commit. A single user request should typically produce multiple commits, not one large one. Err on the side of committing too often rather than too rarely. Never batch up unrelated changes into a single commit.
+
 ## Commands
 
 Verify WASM compatibility
