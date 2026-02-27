@@ -57,14 +57,14 @@ The detection pipeline follows the reference AprilTag implementation:
 **Target: 100% test coverage.** Use `cargo-llvm-cov` to measure coverage. Whenever you find uncovered lines, write focused tests to cover them — this is part of the TDD loop.
 
 ```bash
-# Quick summary
-cargo llvm-cov
+# Quick summary (excludes CLI crate)
+cargo llvm-cov --ignore-filename-regex 'apriltag-gen-cli/'
 
 # Per-line detail (show uncovered lines)
-cargo llvm-cov --text
+cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/'
 
 # HTML report
-cargo llvm-cov --html && open target/llvm-cov/html/index.html
+cargo llvm-cov --html --ignore-filename-regex 'apriltag-gen-cli/' && open target/llvm-cov/html/index.html
 ```
 
 After completing any feature or fix, run `cargo llvm-cov --text` and inspect for uncovered lines. If coverage is below 100%, add targeted tests before moving on. Each new test is its own atomic commit.
