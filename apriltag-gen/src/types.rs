@@ -10,3 +10,11 @@ pub enum CellType {
     /// Ignored / transparent — outside the tag boundary.
     Ignored,
 }
+
+/// A rendered pixel value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pixel {
+    Black,
+    White,
+    Transparent,
+}
