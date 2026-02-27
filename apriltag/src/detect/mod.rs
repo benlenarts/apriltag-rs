@@ -3,3 +3,4 @@ pub mod preprocess;
 pub mod threshold;
 pub mod unionfind;
 pub mod connected;
+pub mod cluster;
