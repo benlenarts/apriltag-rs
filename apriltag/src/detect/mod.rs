@@ -6,3 +6,4 @@ pub mod connected;
 pub mod cluster;
 pub mod quad;
 pub mod refine;
+pub mod homography;
