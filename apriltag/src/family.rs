@@ -227,9 +227,10 @@ mod tests {
     }
 
     #[test]
-    fn builtin_family_lookup() {
-        assert!(builtin_family("tag36h11").is_some());
-        assert!(builtin_family("tagCircle21h7").is_some());
+    fn builtin_family_lookup_all() {
+        for &name in BUILTIN_NAMES {
+            assert!(builtin_family(name).is_some(), "missing builtin: {name}");
+        }
         assert!(builtin_family("nonexistent").is_none());
     }
 
@@ -241,6 +242,12 @@ mod tests {
             bad_data,
         );
         assert!(matches!(result, Err(FamilyError::InvalidBin(_))));
+    }
+
+    #[test]
+    fn from_toml_and_bin_invalid_toml() {
+        let result = TagFamily::from_toml_and_bin("not valid toml {{{", &[]);
+        assert!(matches!(result, Err(FamilyError::Config(_))));
     }
 
     #[test]
