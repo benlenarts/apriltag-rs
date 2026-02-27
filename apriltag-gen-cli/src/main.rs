@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
+mod render_pdf;
 mod render_png;
 
 /// AprilTag generation and rendering CLI
@@ -215,7 +216,8 @@ fn cmd_render(
                 println!("wrote {}", path.display());
             }
             "pdf" => {
-                anyhow::bail!("PDF rendering not yet implemented");
+                render_pdf::write_tag_pdf(&tag, border, &path.to_string_lossy())?;
+                println!("wrote {}", path.display());
             }
             _ => anyhow::bail!("unknown format '{}', use 'png' or 'pdf'", format),
         }
@@ -239,7 +241,8 @@ fn cmd_mosaic(
             println!("wrote {}", output_path);
         }
         "pdf" => {
-            anyhow::bail!("PDF rendering not yet implemented");
+            render_pdf::write_mosaic_pdf(&family, spacing, columns, output_path)?;
+            println!("wrote {}", output_path);
         }
         _ => anyhow::bail!("unknown format '{}', use 'png' or 'pdf'", format),
     }
