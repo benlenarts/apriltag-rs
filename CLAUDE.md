@@ -25,7 +25,9 @@ The detection pipeline follows the reference AprilTag implementation:
 
 ### Tag Families
 
-Tag family generation (layouts, bit patterns, Hamming distance properties) is a separate module from detection.
+Tag family generation (layouts, bit patterns, Hamming distance properties) lives in `apriltag-gen/` (library) and `apriltag-gen-cli/` (CLI). Generation is complete with 47 tests.
+
+**Two eras of code generation** — classic families (tag16h5, tag25h9, tag36h11) use `upgrade.rs` to convert old row-major codes from the Java source; they cannot be regenerated from scratch. Era 2 families (Standard, Circle, Custom) use `codegen.rs` with LCG seed `nbits*10000 + minhamming*100 + min_complexity`. Note: the Java source on GitHub has `+7` but the reference families were generated with per-family `+min_complexity`.
 
 ## Development Workflow
 
