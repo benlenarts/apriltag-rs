@@ -90,11 +90,7 @@ impl ComplexityGrid {
 /// The LCG seed is `nbits * 10000 + min_hamming * 100 + min_complexity`.
 pub fn generate(layout: &Layout, min_hamming: u32, min_complexity: u32) -> Vec<u64> {
     let nbits = layout.nbits as u32;
-    let mask = if nbits >= 64 {
-        u64::MAX
-    } else {
-        (1u64 << nbits) - 1
-    };
+    let mask = (1u64 << nbits) - 1;
 
     // Compute V0 using Java Random LCG
     let seed = nbits as i64 * 10000 + min_hamming as i64 * 100 + min_complexity as i64;
