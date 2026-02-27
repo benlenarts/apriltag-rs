@@ -38,6 +38,14 @@ Tag family generation (layouts, bit patterns, Hamming distance properties) is a 
 
 **You MUST commit early and often — do not wait for the user to ask.** After every small, meaningful unit of progress (a passing test, a new function, a refactor, a bug fix), immediately run `cargo test` and, if tests pass, create a commit. A single user request should typically produce multiple commits, not one large one. Err on the side of committing too often rather than too rarely. Never batch up unrelated changes into a single commit.
 
+## Reference Materials (`docs/`)
+
+- `docs/detection-spec.md` — language-agnostic spec for the full detection pipeline
+- `docs/generation-spec.md` — language-agnostic spec for tag family generation
+- `docs/papers/` — academic papers (Olson 2011, Wang 2016, Krogius 2019, etc.)
+- `docs/reference-detection/` — reference C implementation (apriltag3) for detection
+- `docs/reference-generation/` — reference Java implementation for tag family generation
+
 ## Commands
 
 Verify WASM compatibility
