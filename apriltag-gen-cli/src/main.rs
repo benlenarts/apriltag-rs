@@ -70,6 +70,12 @@ enum Command {
         #[arg(long)]
         family: String,
     },
+    /// Verify that regenerated codes match the built-in .bin data
+    Verify {
+        /// Built-in family name
+        #[arg(long)]
+        family: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -95,6 +101,7 @@ fn main() -> Result<()> {
             output,
         } => cmd_mosaic(&family, &format, scale, spacing, columns, &output),
         Command::Generate { family } => cmd_generate(&family),
+        Command::Verify { family } => cmd_verify(&family),
     }
 }
 
@@ -317,6 +324,51 @@ fn generate_classic(family: &apriltag_gen::family::TagFamily) -> Result<Vec<u64>
         &family.bit_locations,
         data_size,
     ))
+}
+
+fn cmd_verify(name: &str) -> Result<()> {
+    let family = apriltag_gen::family::builtin_family(name).with_context(|| {
+        format!(
+            "'{}' is not a built-in family — verify only works with built-in families",
+            name
+        )
+    })?;
+
+    let codes = if matches!(
+        family.config.layout,
+        apriltag_gen::family::LayoutConfig::Classic { .. }
+    ) {
+        generate_classic(&family)?
+    } else {
+        generate_era2(&family)?
+    };
+
+    if codes == family.codes {
+        println!(
+            "PASS: {} — regenerated {} codes match built-in data",
+            family.config.name,
+            codes.len()
+        );
+        Ok(())
+    } else {
+        // Find first mismatch for diagnostics
+        let mut msg = format!(
+            "FAIL: {} — regenerated codes differ from built-in data\n  expected {} codes, got {}",
+            family.config.name,
+            family.codes.len(),
+            codes.len()
+        );
+        for (i, (expected, got)) in family.codes.iter().zip(codes.iter()).enumerate() {
+            if expected != got {
+                msg.push_str(&format!(
+                    "\n  first mismatch at index {}: expected {:#x}, got {:#x}",
+                    i, expected, got
+                ));
+                break;
+            }
+        }
+        anyhow::bail!(msg);
+    }
 }
 
 /// Generate codes for an Era 2 family using the lexicode algorithm.
