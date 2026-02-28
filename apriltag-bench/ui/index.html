@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AprilTag Bench</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>AprilTag Bench</h1>
+    <span class="status" id="status">Loading WASM modules...</span>
+  </header>
+
+  <div class="container">
+    <div class="controls">
+      <!-- Tag settings -->
+      <div class="control-group">
+        <h3>Tag</h3>
+        <div class="control-row">
+          <label>Family</label>
+          <select id="family">
+            <option value="tag36h11" selected>tag36h11</option>
+            <option value="tag25h9">tag25h9</option>
+            <option value="tag16h5">tag16h5</option>
+            <option value="tagStandard41h12">tagStandard41h12</option>
+            <option value="tagStandard52h13">tagStandard52h13</option>
+            <option value="tagCircle21h7">tagCircle21h7</option>
+            <option value="tagCircle49h12">tagCircle49h12</option>
+            <option value="tagCustom48h12">tagCustom48h12</option>
+          </select>
+        </div>
+        <div class="control-row">
+          <label>Tag ID</label>
+          <input type="number" id="tagId" value="0" min="0" max="586">
+        </div>
+        <div class="control-row">
+          <label>Size (px)</label>
+          <input type="range" id="tagSize" min="20" max="400" value="120">
+          <span class="value" id="tagSizeVal">120</span>
+        </div>
+      </div>
+
+      <!-- Transform settings -->
+      <div class="control-group">
+        <h3>Transform</h3>
+        <div class="control-row">
+          <label>Rotation</label>
+          <input type="range" id="rotation" min="0" max="360" value="0" step="1">
+          <span class="value" id="rotationVal">0&deg;</span>
+        </div>
+        <div class="control-row">
+          <label>Tilt X</label>
+          <input type="range" id="tiltX" min="-60" max="60" value="0" step="1">
+          <span class="value" id="tiltXVal">0&deg;</span>
+        </div>
+        <div class="control-row">
+          <label>Tilt Y</label>
+          <input type="range" id="tiltY" min="-60" max="60" value="0" step="1">
+          <span class="value" id="tiltYVal">0&deg;</span>
+        </div>
+      </div>
+
+      <!-- Image settings -->
+      <div class="control-group">
+        <h3>Image</h3>
+        <div class="control-row">
+          <label>Width</label>
+          <input type="number" id="imgWidth" value="500" min="100" max="1200" step="50">
+        </div>
+        <div class="control-row">
+          <label>Height</label>
+          <input type="number" id="imgHeight" value="500" min="100" max="1200" step="50">
+        </div>
+      </div>
+
+      <!-- Distortion settings -->
+      <div class="control-group">
+        <h3>Distortions</h3>
+        <div class="control-row">
+          <label>Noise &sigma;</label>
+          <input type="range" id="noise" min="0" max="80" value="0" step="1">
+          <span class="value" id="noiseVal">0</span>
+        </div>
+        <div class="control-row">
+          <label>Blur &sigma;</label>
+          <input type="range" id="blur" min="0" max="10" value="0" step="0.1">
+          <span class="value" id="blurVal">0.0</span>
+        </div>
+        <div class="control-row">
+          <label>Contrast</label>
+          <input type="range" id="contrast" min="0.05" max="2.0" value="1.0" step="0.05">
+          <span class="value" id="contrastVal">1.00</span>
+        </div>
+      </div>
+
+      <!-- Overlay options -->
+      <div class="control-group">
+        <h3>Overlay</h3>
+        <div class="control-row">
+          <label>GT corners</label>
+          <input type="checkbox" id="showGT" checked>
+        </div>
+        <div class="control-row">
+          <label>Det corners</label>
+          <input type="checkbox" id="showDet" checked>
+        </div>
+        <div class="control-row">
+          <label>Error lines</label>
+          <input type="checkbox" id="showErrors" checked>
+        </div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="canvas-container">
+        <canvas id="canvas" width="500" height="500"></canvas>
+      </div>
+      <div class="metrics" id="metrics">
+        <div class="metric">
+          <span class="label">Detection Rate</span>
+          <span class="value neutral" id="metricRate">-</span>
+        </div>
+        <div class="metric">
+          <span class="label">Corner RMSE</span>
+          <span class="value neutral" id="metricRMSE">-</span>
+        </div>
+        <div class="metric">
+          <span class="label">Max Error</span>
+          <span class="value neutral" id="metricMaxErr">-</span>
+        </div>
+        <div class="metric">
+          <span class="label">Gen Time</span>
+          <span class="value neutral" id="metricGenTime">-</span>
+        </div>
+        <div class="metric">
+          <span class="label">Det Time</span>
+          <span class="value neutral" id="metricDetTime">-</span>
+        </div>
+        <div class="metric">
+          <span class="label">Detections</span>
+          <span class="value neutral" id="metricCount">-</span>
+        </div>
+      </div>
+      <div class="detections" id="detections"></div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
