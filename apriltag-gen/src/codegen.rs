@@ -271,8 +271,9 @@ pub fn generate_with_progress(
     // Pre-build grid once — avoids allocating a pixel grid per candidate
     let grid = ComplexityGrid::from_layout(layout);
 
-    // Report every ~1M iterations, but at least every 1024 for tiny families
-    let report_interval = (total / 1000).clamp(1024, 1_000_000);
+    // Report frequently enough for ~8 significant digits of percentage resolution.
+    // The default callback is a no-op so the overhead is negligible.
+    let report_interval = (total / 100_000_000).max(1);
 
     let mut v = v0;
     for iter in 0..total {
@@ -445,6 +446,31 @@ mod tests {
         // 0b0011 is distance 2 from 0b0000, distance 1 from 0b0001 and 0b0010
         assert!(tree.has_any_closer_than(0b0011, 2));
         assert!(!tree.has_any_closer_than(0b1111, 1));
+    }
+
+    #[test]
+    #[ignore] // run with: cargo test -p apriltag-gen --release -- bench_standard41h12 --ignored --nocapture
+    fn bench_standard41h12() {
+        let layout = Layout::standard(9).unwrap();
+        let start = std::time::Instant::now();
+        let codes = generate_with_progress(&layout, 12, 10, |iter, total, found| {
+            let pct = iter as f64 / total as f64 * 100.0;
+            println!(
+                "{:>14.8}% ({}/{}) — {} codes found, elapsed {:.2?}",
+                pct,
+                iter,
+                total,
+                found,
+                start.elapsed()
+            );
+        });
+        let elapsed = start.elapsed();
+        println!(
+            "tagStandard41h12: {} codes in {:.2?} ({} candidates)",
+            codes.len(),
+            elapsed,
+            1u64 << 41
+        );
     }
 
     #[test]

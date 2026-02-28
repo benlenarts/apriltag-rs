@@ -280,12 +280,19 @@ fn cmd_generate(name: &str) -> Result<()> {
         &family.layout,
         family.config.min_hamming,
         min_complexity,
-        |iter, total, codes_found| {
-            let pct = iter as f64 / total as f64 * 100.0;
-            eprint!("\r  {:.1}% searched, {} codes found", pct, codes_found);
+        {
+            let mut last_print = std::time::Instant::now();
+            move |iter, total, codes_found| {
+                let now = std::time::Instant::now();
+                if iter == 0 || now.duration_since(last_print).as_millis() >= 100 {
+                    let pct = iter as f64 / total as f64 * 100.0;
+                    eprint!("\r  {:>12.8}% searched, {} codes found", pct, codes_found);
+                    last_print = now;
+                }
+            }
         },
     );
-    eprintln!("\r  100.0% searched, {} codes found", codes.len());
+    eprintln!("\r  100.00000000% searched, {} codes found", codes.len());
 
     println!("Generated {} codes.", codes.len());
 
