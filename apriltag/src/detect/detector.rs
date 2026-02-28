@@ -385,6 +385,61 @@ mod tests {
         assert_eq!(dets[0].id, 0);
     }
 
+    /// Regression test: large tags on gray-128 backgrounds must be detected.
+    /// Gray backgrounds cause adaptive thresholding to create an extra boundary
+    /// cluster whose size exceeds the max_perimeter filter if it uses 2*(w+h)
+    /// instead of the correct 4*(w+h) from the C reference.
+    #[test]
+    #[cfg(feature = "family-tag36h11")]
+    fn detect_large_tag_gray128_background() {
+        let family = family::tag36h11();
+        let rendered = render::render(&family.layout, family.codes[0]);
+
+        let img_size = 300u32;
+        let scale = 20u32; // 10 grid cells * 20 = 200px tag in 300x300
+        let mut img = ImageU8::new(img_size, img_size);
+        // Gray-128 background: adaptive thresholding creates an extra boundary
+        // cluster whose edge count exceeds 2*(w+h) but fits within 4*(w+h).
+        for y in 0..img_size {
+            for x in 0..img_size {
+                img.set(x, y, 128);
+            }
+        }
+
+        let ox = (img_size - rendered.grid_size as u32 * scale) / 2;
+        let oy = ox;
+        for ty in 0..rendered.grid_size {
+            for tx in 0..rendered.grid_size {
+                let pixel = rendered.pixel(tx, ty);
+                let val = match pixel {
+                    crate::types::Pixel::Black => 0u8,
+                    crate::types::Pixel::White => 255u8,
+                    crate::types::Pixel::Transparent => 128u8, // blend with gray bg
+                };
+                for dy in 0..scale {
+                    for dx in 0..scale {
+                        img.set(
+                            ox + tx as u32 * scale + dx,
+                            oy + ty as u32 * scale + dy,
+                            val,
+                        );
+                    }
+                }
+            }
+        }
+
+        let config = DetectorConfig::default();
+        let mut det = Detector::new(config);
+        det.add_family(family, 2);
+
+        let dets = det.detect(&img);
+        assert!(
+            !dets.is_empty(),
+            "Should detect large tag on gray-128 background"
+        );
+        assert_eq!(dets[0].id, 0);
+    }
+
     #[test]
     #[cfg(feature = "family-tag16h5")]
     fn pipeline_stages_diagnostic() {
