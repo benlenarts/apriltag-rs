@@ -75,6 +75,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "apriltag-bench"
+version = "0.1.0"
+dependencies = [
+ "apriltag",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "apriltag-detect-cli"
 version = "0.1.0"
 dependencies = [
