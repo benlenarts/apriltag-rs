@@ -33,11 +33,7 @@ pub enum Background {
     /// Vertical gradient from top to bottom.
     Gradient { top: u8, bottom: u8 },
     /// Checkerboard pattern.
-    Checkerboard {
-        cell_size: u32,
-        light: u8,
-        dark: u8,
-    },
+    Checkerboard { cell_size: u32, light: u8, dark: u8 },
 }
 
 /// A tag to be placed in the scene.
@@ -350,7 +346,14 @@ mod tests {
 
     #[test]
     fn gradient_background_top_bottom() {
-        let img = fill_background(5, 11, &Background::Gradient { top: 0, bottom: 100 });
+        let img = fill_background(
+            5,
+            11,
+            &Background::Gradient {
+                top: 0,
+                bottom: 100,
+            },
+        );
         assert_eq!(img.get(0, 0), 0);
         assert_eq!(img.get(0, 10), 100);
         assert_eq!(img.get(0, 5), 50);

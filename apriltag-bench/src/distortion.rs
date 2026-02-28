@@ -256,7 +256,10 @@ mod tests {
             .flat_map(|y| (0..50).map(move |x| (x, y)))
             .filter(|&(x, y)| img.get(x, y) != 128)
             .count();
-        assert!(changed > 100, "expected noise to change pixels, changed={changed}");
+        assert!(
+            changed > 100,
+            "expected noise to change pixels, changed={changed}"
+        );
     }
 
     #[test]
@@ -411,9 +414,6 @@ mod tests {
             .map(|(x, y)| img.get(x, y) as f64)
             .sum::<f64>()
             / 2500.0;
-        assert!(
-            (mean - 148.0).abs() < 10.0,
-            "mean after chain: {mean}"
-        );
+        assert!((mean - 148.0).abs() < 10.0, "mean after chain: {mean}");
     }
 }

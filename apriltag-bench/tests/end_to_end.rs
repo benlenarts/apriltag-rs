@@ -138,7 +138,11 @@ fn detect_with_noise() {
     let detector = detector_with_family("tag36h11");
     let detections = detector.detect(&scene.image);
 
-    assert_eq!(detections.len(), 1, "should detect tag through moderate noise");
+    assert_eq!(
+        detections.len(),
+        1,
+        "should detect tag through moderate noise"
+    );
     assert_eq!(detections[0].id, 0);
 }
 
@@ -203,7 +207,11 @@ fn detect_with_gradient_lighting() {
     let detector = detector_with_family("tag36h11");
     let detections = detector.detect(&scene.image);
 
-    assert_eq!(detections.len(), 1, "should detect tag under gradient lighting");
+    assert_eq!(
+        detections.len(),
+        1,
+        "should detect tag under gradient lighting"
+    );
 }
 
 #[test]
