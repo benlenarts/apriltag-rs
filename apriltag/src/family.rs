@@ -121,9 +121,17 @@ builtin_family!(tag_circle49h12, "tagCircle49h12.toml", "tagCircle49h12.bin");
 #[cfg(feature = "family-custom48h12")]
 builtin_family!(tag_custom48h12, "tagCustom48h12.toml", "tagCustom48h12.bin");
 #[cfg(feature = "family-standard41h12")]
-builtin_family!(tag_standard41h12, "tagStandard41h12.toml", "tagStandard41h12.bin");
+builtin_family!(
+    tag_standard41h12,
+    "tagStandard41h12.toml",
+    "tagStandard41h12.bin"
+);
 #[cfg(feature = "family-standard52h13")]
-builtin_family!(tag_standard52h13, "tagStandard52h13.toml", "tagStandard52h13.bin");
+builtin_family!(
+    tag_standard52h13,
+    "tagStandard52h13.toml",
+    "tagStandard52h13.bin"
+);
 
 /// List of all built-in family names (varies based on enabled features).
 pub const BUILTIN_NAMES: &[&str] = &[
@@ -269,10 +277,8 @@ mod tests {
     #[test]
     fn parse_bin_codes_not_multiple_of_8() {
         let bad_data = &[0u8; 7]; // 7 bytes, not a multiple of 8
-        let result = TagFamily::from_toml_and_bin(
-            include_str!("../families/tag16h5.toml"),
-            bad_data,
-        );
+        let result =
+            TagFamily::from_toml_and_bin(include_str!("../families/tag16h5.toml"), bad_data);
         assert!(matches!(result, Err(FamilyError::InvalidBin(_))));
     }
 

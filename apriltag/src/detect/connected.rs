@@ -30,7 +30,11 @@ pub fn connected_components(threshed: &ImageU8) -> UnionFind {
             if y > 0 {
                 let up = threshed.get(x, y - 1);
                 let left = if x > 0 { threshed.get(x - 1, y) } else { 127 };
-                let upper_left = if x > 0 { threshed.get(x - 1, y - 1) } else { 127 };
+                let upper_left = if x > 0 {
+                    threshed.get(x - 1, y - 1)
+                } else {
+                    127
+                };
                 if up == v && !(left == v && upper_left == v) {
                     uf.union(id, id - w);
                 }

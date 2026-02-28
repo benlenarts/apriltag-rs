@@ -106,9 +106,7 @@ pub fn gradient_clusters(
         .collect();
 
     // Sort for determinism
-    clusters.sort_by(|a, b| {
-        b.points.len().cmp(&a.points.len())
-    });
+    clusters.sort_by(|a, b| b.points.len().cmp(&a.points.len()));
 
     clusters
 }

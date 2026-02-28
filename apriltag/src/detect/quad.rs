@@ -381,19 +381,9 @@ fn find_corners(
         for m1 in (m0 + 1)..nm {
             for m2 in (m1 + 1)..nm {
                 for m3 in (m2 + 1)..nm {
-                    let indices = [
-                        maxima[m0].0,
-                        maxima[m1].0,
-                        maxima[m2].0,
-                        maxima[m3].0,
-                    ];
+                    let indices = [maxima[m0].0, maxima[m1].0, maxima[m2].0, maxima[m3].0];
 
-                    if let Some(err) = evaluate_quad_combination(
-                        lfps,
-                        &indices,
-                        sz,
-                        params,
-                    ) {
+                    if let Some(err) = evaluate_quad_combination(lfps, &indices, sz, params) {
                         if err < best_err {
                             best_err = err;
                             best_corners = Some(indices);
@@ -531,8 +521,7 @@ fn validate_quad(corners: &[[f64; 2]; 4], _params: &QuadThreshParams) -> Option<
         let p0 = corners[i];
         let p1 = corners[(i + 1) % 4];
         let p2 = corners[(i + 2) % 4];
-        let cross = (p1[0] - p0[0]) * (p2[1] - p1[1])
-            - (p1[1] - p0[1]) * (p2[0] - p1[0]);
+        let cross = (p1[0] - p0[0]) * (p2[1] - p1[1]) - (p1[1] - p0[1]) * (p2[0] - p1[0]);
         if cross < 0.0 {
             return None; // Non-convex
         }
@@ -597,8 +586,18 @@ mod tests {
 
     #[test]
     fn intersect_perpendicular_lines() {
-        let l0 = FittedLine { px: 0.0, py: 0.0, nx: 0.0, ny: 1.0 }; // horizontal
-        let l1 = FittedLine { px: 5.0, py: 0.0, nx: 1.0, ny: 0.0 }; // vertical at x=5
+        let l0 = FittedLine {
+            px: 0.0,
+            py: 0.0,
+            nx: 0.0,
+            ny: 1.0,
+        }; // horizontal
+        let l1 = FittedLine {
+            px: 5.0,
+            py: 0.0,
+            nx: 1.0,
+            ny: 0.0,
+        }; // vertical at x=5
         let (cx, cy) = intersect_lines(&l0, &l1).unwrap();
         assert!((cx - 5.0).abs() < 1e-10);
         assert!(cy.abs() < 1e-10);
@@ -606,19 +605,24 @@ mod tests {
 
     #[test]
     fn intersect_parallel_lines_returns_none() {
-        let l0 = FittedLine { px: 0.0, py: 0.0, nx: 0.0, ny: 1.0 };
-        let l1 = FittedLine { px: 0.0, py: 5.0, nx: 0.0, ny: 1.0 };
+        let l0 = FittedLine {
+            px: 0.0,
+            py: 0.0,
+            nx: 0.0,
+            ny: 1.0,
+        };
+        let l1 = FittedLine {
+            px: 0.0,
+            py: 5.0,
+            nx: 0.0,
+            ny: 1.0,
+        };
         assert!(intersect_lines(&l0, &l1).is_none());
     }
 
     #[test]
     fn quad_area_unit_square() {
-        let corners = [
-            [0.0, 0.0],
-            [1.0, 0.0],
-            [1.0, 1.0],
-            [0.0, 1.0],
-        ];
+        let corners = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
         let area = quad_area(&corners);
         assert!((area - 1.0).abs() < 1e-10);
     }
@@ -626,23 +630,13 @@ mod tests {
     #[test]
     fn quad_area_ccw_positive() {
         // CCW winding → positive area
-        let corners = [
-            [0.0, 0.0],
-            [10.0, 0.0],
-            [10.0, 10.0],
-            [0.0, 10.0],
-        ];
+        let corners = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
         assert!(quad_area(&corners) > 0.0);
     }
 
     #[test]
     fn validate_quad_convex_ccw_passes() {
-        let corners = [
-            [0.0, 0.0],
-            [10.0, 0.0],
-            [10.0, 10.0],
-            [0.0, 10.0],
-        ];
+        let corners = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
         let params = QuadThreshParams::default();
         assert!(validate_quad(&corners, &params).is_some());
     }
@@ -650,12 +644,7 @@ mod tests {
     #[test]
     fn validate_quad_clockwise_fails() {
         // CW winding → negative area → rejected
-        let corners = [
-            [0.0, 0.0],
-            [0.0, 10.0],
-            [10.0, 10.0],
-            [10.0, 0.0],
-        ];
+        let corners = [[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [10.0, 0.0]];
         let params = QuadThreshParams::default();
         assert!(validate_quad(&corners, &params).is_none());
     }
@@ -679,10 +668,19 @@ mod tests {
             let y = (r * angle.sin() + 200.0) as u16;
             let gx = (255.0 * angle.cos()) as i16;
             let gy = (255.0 * angle.sin()) as i16;
-            points.push(Pt { x, y, gx, gy, slope: 0.0 });
+            points.push(Pt {
+                x,
+                y,
+                gx,
+                gy,
+                slope: 0.0,
+            });
         }
         let (reversed, dot) = check_border_direction(&points);
-        assert!(!reversed, "dot={dot}, should be positive (gradients point out)");
+        assert!(
+            !reversed,
+            "dot={dot}, should be positive (gradients point out)"
+        );
     }
 
     #[test]
@@ -697,8 +695,20 @@ mod tests {
     #[test]
     fn range_moments_whole_range() {
         let points = [
-            Pt { x: 0, y: 0, gx: 255, gy: 0, slope: 0.0 },
-            Pt { x: 2, y: 0, gx: 255, gy: 0, slope: 0.0 },
+            Pt {
+                x: 0,
+                y: 0,
+                gx: 255,
+                gy: 0,
+                slope: 0.0,
+            },
+            Pt {
+                x: 2,
+                y: 0,
+                gx: 255,
+                gy: 0,
+                slope: 0.0,
+            },
         ];
         let lfps = build_line_fit_pts(&points);
         let m = range_moments(&lfps, 0, 1);
@@ -708,9 +718,27 @@ mod tests {
     #[test]
     fn range_moments_wrapping() {
         let points = [
-            Pt { x: 0, y: 0, gx: 255, gy: 0, slope: 0.0 },
-            Pt { x: 2, y: 0, gx: 255, gy: 0, slope: 0.0 },
-            Pt { x: 4, y: 0, gx: 255, gy: 0, slope: 0.0 },
+            Pt {
+                x: 0,
+                y: 0,
+                gx: 255,
+                gy: 0,
+                slope: 0.0,
+            },
+            Pt {
+                x: 2,
+                y: 0,
+                gx: 255,
+                gy: 0,
+                slope: 0.0,
+            },
+            Pt {
+                x: 4,
+                y: 0,
+                gx: 255,
+                gy: 0,
+                slope: 0.0,
+            },
         ];
         let lfps = build_line_fit_pts(&points);
         // Wrapping range [2, 0] = point 2 + point 0
@@ -728,34 +756,54 @@ mod tests {
 
         // Top edge: y=y0, x varies, gradient points up
         for x in (x0..x1).step_by(2) {
-            points.push(Pt { x: x as u16, y: y0 as u16, gx: 0, gy: -255, slope: 0.0 });
+            points.push(Pt {
+                x: x as u16,
+                y: y0 as u16,
+                gx: 0,
+                gy: -255,
+                slope: 0.0,
+            });
         }
         // Right edge: x=x1, y varies, gradient points right
         for y in (y0..y1).step_by(2) {
-            points.push(Pt { x: x1 as u16, y: y as u16, gx: 255, gy: 0, slope: 0.0 });
+            points.push(Pt {
+                x: x1 as u16,
+                y: y as u16,
+                gx: 255,
+                gy: 0,
+                slope: 0.0,
+            });
         }
         // Bottom edge: y=y1, x varies, gradient points down
         for x in (x0..x1).step_by(2) {
-            points.push(Pt { x: x as u16, y: y1 as u16, gx: 0, gy: 255, slope: 0.0 });
+            points.push(Pt {
+                x: x as u16,
+                y: y1 as u16,
+                gx: 0,
+                gy: 255,
+                slope: 0.0,
+            });
         }
         // Left edge: x=x0, y varies, gradient points left
         for y in (y0..y1).step_by(2) {
-            points.push(Pt { x: x0 as u16, y: y as u16, gx: -255, gy: 0, slope: 0.0 });
+            points.push(Pt {
+                x: x0 as u16,
+                y: y as u16,
+                gx: -255,
+                gy: 0,
+                slope: 0.0,
+            });
         }
 
         let cluster = Cluster { points };
         let params = QuadThreshParams::default();
 
-        let quads = fit_quads(
-            &mut [cluster],
-            400,
-            400,
-            &params,
-            true,
-            true,
-        );
+        let quads = fit_quads(&mut [cluster], 400, 400, &params, true, true);
 
         eprintln!("Synthetic rectangle: found {} quads", quads.len());
-        assert!(!quads.is_empty(), "Should find a quad from a perfect rectangle");
+        assert!(
+            !quads.is_empty(),
+            "Should find a quad from a perfect rectangle"
+        );
     }
 }

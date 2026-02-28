@@ -90,17 +90,29 @@ impl ComplexityGrid {
                 // Horizontal neighbor (x+1, y)
                 if x + 1 < size {
                     let b = cells[y * size + x + 1];
-                    classify_pair(a, b, nbits, &mut base_energy,
-                        &mut white_data_shifts, &mut black_data_shifts,
-                        &mut data_pair_shifts);
+                    classify_pair(
+                        a,
+                        b,
+                        nbits,
+                        &mut base_energy,
+                        &mut white_data_shifts,
+                        &mut black_data_shifts,
+                        &mut data_pair_shifts,
+                    );
                 }
 
                 // Vertical neighbor (x, y+1)
                 if y + 1 < size {
                     let b = cells[(y + 1) * size + x];
-                    classify_pair(a, b, nbits, &mut base_energy,
-                        &mut white_data_shifts, &mut black_data_shifts,
-                        &mut data_pair_shifts);
+                    classify_pair(
+                        a,
+                        b,
+                        nbits,
+                        &mut base_energy,
+                        &mut white_data_shifts,
+                        &mut black_data_shifts,
+                        &mut data_pair_shifts,
+                    );
                 }
             }
         }

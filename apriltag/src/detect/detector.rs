@@ -145,8 +145,7 @@ impl Detector {
                     quad.reversed_border,
                     self.config.decode_sharpening,
                 ) {
-                    let (center, corners) =
-                        compute_detection_geometry(&h, result.rotation, family);
+                    let (center, corners) = compute_detection_geometry(&h, result.rotation, family);
 
                     dets.push(Detection {
                         family_name: result.family_name,
@@ -162,16 +161,10 @@ impl Detector {
         };
 
         #[cfg(feature = "parallel")]
-        let mut detections: Vec<Detection> = quads
-            .par_iter()
-            .flat_map(decode_one)
-            .collect();
+        let mut detections: Vec<Detection> = quads.par_iter().flat_map(decode_one).collect();
 
         #[cfg(not(feature = "parallel"))]
-        let mut detections: Vec<Detection> = quads
-            .iter()
-            .flat_map(decode_one)
-            .collect();
+        let mut detections: Vec<Detection> = quads.iter().flat_map(decode_one).collect();
 
         // Stage 9: Deduplication
         deduplicate(&mut detections);
@@ -282,10 +275,7 @@ mod tests {
         let dets = det.detect(&img);
 
         // We should detect tag ID 0
-        assert!(
-            !dets.is_empty(),
-            "Should detect at least one tag, got none"
-        );
+        assert!(!dets.is_empty(), "Should detect at least one tag, got none");
         assert_eq!(dets[0].id, 0, "Should detect tag ID 0");
     }
 
@@ -346,7 +336,7 @@ mod tests {
     #[test]
     #[cfg(feature = "family-tag16h5")]
     fn pipeline_stages_diagnostic() {
-        use crate::detect::{threshold, connected, cluster, quad};
+        use crate::detect::{cluster, connected, quad, threshold};
 
         let (img, _family) = build_synthetic_tag_image();
 

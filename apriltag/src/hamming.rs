@@ -10,9 +10,7 @@ pub fn rotate90(w: u64, nbits: u32) -> u64 {
         (nbits as u64, 0)
     };
 
-    let result = ((w >> l) << (p / 4 + l))
-        | ((w >> (3 * p / 4 + l)) << l)
-        | (w & l);
+    let result = ((w >> l) << (p / 4 + l)) | ((w >> (3 * p / 4 + l)) << l) | (w & l);
 
     result & ((1u64 << nbits) - 1)
 }

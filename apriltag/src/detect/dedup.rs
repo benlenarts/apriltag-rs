@@ -89,12 +89,7 @@ fn project_polygon(poly: &[[f64; 2]; 4], nx: f64, ny: f64) -> (f64, f64) {
 mod tests {
     use super::*;
 
-    fn make_detection(
-        id: i32,
-        hamming: i32,
-        margin: f32,
-        corners: [[f64; 2]; 4],
-    ) -> Detection {
+    fn make_detection(id: i32, hamming: i32, margin: f32, corners: [[f64; 2]; 4]) -> Detection {
         Detection {
             family_name: "test".to_string(),
             id,

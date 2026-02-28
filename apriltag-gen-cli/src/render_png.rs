@@ -99,8 +99,8 @@ fn tag_to_image(tag: &RenderedTag, scale: usize, border: usize) -> GrayImage {
 }
 
 fn write_grayscale_png(path: &Path, pixels: &[u8], width: usize, height: usize) -> Result<()> {
-    let file = std::fs::File::create(path)
-        .with_context(|| format!("creating {}", path.display()))?;
+    let file =
+        std::fs::File::create(path).with_context(|| format!("creating {}", path.display()))?;
     let w = std::io::BufWriter::new(file);
 
     let mut encoder = png::Encoder::new(w, width as u32, height as u32);

@@ -72,10 +72,22 @@ mod tests {
 
         // Expected from tag16h5.c (border_start=1 in Java)
         let expected: Vec<(i32, i32)> = vec![
-            (1, 1), (2, 1), (3, 1), (2, 2),
-            (4, 1), (4, 2), (4, 3), (3, 2),
-            (4, 4), (3, 4), (2, 4), (3, 3),
-            (1, 4), (1, 3), (1, 2), (2, 3),
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (2, 2),
+            (4, 1),
+            (4, 2),
+            (4, 3),
+            (3, 2),
+            (4, 4),
+            (3, 4),
+            (2, 4),
+            (3, 3),
+            (1, 4),
+            (1, 3),
+            (1, 2),
+            (2, 3),
         ];
         let actual: Vec<(i32, i32)> = locs.iter().map(|l| (l.x, l.y)).collect();
         assert_eq!(actual, expected);
@@ -89,10 +101,42 @@ mod tests {
 
         // Expected from tag36h11.c (border_start=1 in Java)
         let expected: Vec<(i32, i32)> = vec![
-            (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (2, 2), (3, 2), (4, 2), (3, 3),
-            (6, 1), (6, 2), (6, 3), (6, 4), (6, 5), (5, 2), (5, 3), (5, 4), (4, 3),
-            (6, 6), (5, 6), (4, 6), (3, 6), (2, 6), (5, 5), (4, 5), (3, 5), (4, 4),
-            (1, 6), (1, 5), (1, 4), (1, 3), (1, 2), (2, 5), (2, 4), (2, 3), (3, 4),
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (4, 1),
+            (5, 1),
+            (2, 2),
+            (3, 2),
+            (4, 2),
+            (3, 3),
+            (6, 1),
+            (6, 2),
+            (6, 3),
+            (6, 4),
+            (6, 5),
+            (5, 2),
+            (5, 3),
+            (5, 4),
+            (4, 3),
+            (6, 6),
+            (5, 6),
+            (4, 6),
+            (3, 6),
+            (2, 6),
+            (5, 5),
+            (4, 5),
+            (3, 5),
+            (4, 4),
+            (1, 6),
+            (1, 5),
+            (1, 4),
+            (1, 3),
+            (1, 2),
+            (2, 5),
+            (2, 4),
+            (2, 3),
+            (3, 4),
         ];
         let actual: Vec<(i32, i32)> = locs.iter().map(|l| (l.x, l.y)).collect();
         assert_eq!(actual, expected);
@@ -100,21 +144,34 @@ mod tests {
 
     #[test]
     fn circle21h7_bit_locations() {
-        let data = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+        let data =
+            "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
         let layout = Layout::from_data_string(data).unwrap();
         let locs = bit_locations(&layout);
         assert_eq!(locs.len(), 21);
 
         // Expected from tagCircle21h7.c (border_start=2 in Java)
         let expected: Vec<(i32, i32)> = vec![
-            (1, -2), (2, -2), (3, -2),
-            (1, 1), (2, 1),
-            (6, 1), (6, 2), (6, 3),
-            (3, 1), (3, 2),
-            (3, 6), (2, 6), (1, 6),
-            (3, 3), (2, 3),
-            (-2, 3), (-2, 2), (-2, 1),
-            (1, 3), (1, 2),
+            (1, -2),
+            (2, -2),
+            (3, -2),
+            (1, 1),
+            (2, 1),
+            (6, 1),
+            (6, 2),
+            (6, 3),
+            (3, 1),
+            (3, 2),
+            (3, 6),
+            (2, 6),
+            (1, 6),
+            (3, 3),
+            (2, 3),
+            (-2, 3),
+            (-2, 2),
+            (-2, 1),
+            (1, 3),
+            (1, 2),
             (2, 2),
         ];
         let actual: Vec<(i32, i32)> = locs.iter().map(|l| (l.x, l.y)).collect();
@@ -123,21 +180,54 @@ mod tests {
 
     #[test]
     fn standard41h12_bit_locations() {
-        let data = "ddddddddddbbbbbbbddbwwwwwbddbwdddwbddbwdddwbddbwdddwbddbwwwwwbddbbbbbbbdddddddddd";
+        let data =
+            "ddddddddddbbbbbbbddbwwwwwbddbwdddwbddbwdddwbddbwdddwbddbwwwwwbddbbbbbbbdddddddddd";
         let layout = Layout::from_data_string(data).unwrap();
         let locs = bit_locations(&layout);
         assert_eq!(locs.len(), 41);
 
         // Expected from tagStandard41h12.c (border_start=2 in Java)
         let expected: Vec<(i32, i32)> = vec![
-            (-2, -2), (-1, -2), (0, -2), (1, -2), (2, -2), (3, -2), (4, -2), (5, -2),
-            (1, 1), (2, 1),
-            (6, -2), (6, -1), (6, 0), (6, 1), (6, 2), (6, 3), (6, 4), (6, 5),
-            (3, 1), (3, 2),
-            (6, 6), (5, 6), (4, 6), (3, 6), (2, 6), (1, 6), (0, 6), (-1, 6),
-            (3, 3), (2, 3),
-            (-2, 6), (-2, 5), (-2, 4), (-2, 3), (-2, 2), (-2, 1), (-2, 0), (-2, -1),
-            (1, 3), (1, 2),
+            (-2, -2),
+            (-1, -2),
+            (0, -2),
+            (1, -2),
+            (2, -2),
+            (3, -2),
+            (4, -2),
+            (5, -2),
+            (1, 1),
+            (2, 1),
+            (6, -2),
+            (6, -1),
+            (6, 0),
+            (6, 1),
+            (6, 2),
+            (6, 3),
+            (6, 4),
+            (6, 5),
+            (3, 1),
+            (3, 2),
+            (6, 6),
+            (5, 6),
+            (4, 6),
+            (3, 6),
+            (2, 6),
+            (1, 6),
+            (0, 6),
+            (-1, 6),
+            (3, 3),
+            (2, 3),
+            (-2, 6),
+            (-2, 5),
+            (-2, 4),
+            (-2, 3),
+            (-2, 2),
+            (-2, 1),
+            (-2, 0),
+            (-2, -1),
+            (1, 3),
+            (1, 2),
             (2, 2),
         ];
         let actual: Vec<(i32, i32)> = locs.iter().map(|l| (l.x, l.y)).collect();

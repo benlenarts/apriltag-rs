@@ -156,12 +156,7 @@ mod tests {
     fn refine_edges_no_crash_on_uniform_image() {
         let img = ImageU8::new(100, 100);
         let mut quad = Quad {
-            corners: [
-                [20.0, 20.0],
-                [80.0, 20.0],
-                [80.0, 80.0],
-                [20.0, 80.0],
-            ],
+            corners: [[20.0, 20.0], [80.0, 20.0], [80.0, 80.0], [20.0, 80.0]],
             reversed_border: false,
         };
         refine_edges(&mut quad, &img, 2.0);
@@ -183,12 +178,7 @@ mod tests {
         }
 
         let mut quad = Quad {
-            corners: [
-                [45.0, 20.0],
-                [55.0, 20.0],
-                [55.0, 80.0],
-                [45.0, 80.0],
-            ],
+            corners: [[45.0, 20.0], [55.0, 20.0], [55.0, 80.0], [45.0, 80.0]],
             reversed_border: false,
         };
         refine_edges(&mut quad, &img, 2.0);
@@ -204,12 +194,7 @@ mod tests {
     fn refine_edges_reversed_border() {
         let img = ImageU8::new(100, 100);
         let mut quad = Quad {
-            corners: [
-                [20.0, 20.0],
-                [80.0, 20.0],
-                [80.0, 80.0],
-                [20.0, 80.0],
-            ],
+            corners: [[20.0, 20.0], [80.0, 20.0], [80.0, 80.0], [20.0, 80.0]],
             reversed_border: true,
         };
         refine_edges(&mut quad, &img, 1.0);
