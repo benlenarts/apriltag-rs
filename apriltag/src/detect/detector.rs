@@ -327,7 +327,7 @@ mod tests {
     fn pipeline_stages_diagnostic() {
         use crate::detect::{threshold, connected, cluster, quad};
 
-        let (img, family) = build_synthetic_tag_image();
+        let (img, _family) = build_synthetic_tag_image();
 
         // Stage 2: Threshold
         let threshed = threshold::threshold(&img, 5, false);

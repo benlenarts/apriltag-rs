@@ -721,9 +721,8 @@ mod tests {
             points.push(Pt { x: x0 as u16, y: y as u16, gx: -255, gy: 0, slope: 0.0 });
         }
 
-        let mut cluster = Cluster { points };
+        let cluster = Cluster { points };
         let params = QuadThreshParams::default();
-        let max_perimeter = 800;
 
         let quads = fit_quads(
             &mut [cluster],
