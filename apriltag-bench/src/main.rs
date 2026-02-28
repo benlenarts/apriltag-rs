@@ -401,7 +401,7 @@ fn cmd_compare(category: Option<String>, scenario: Option<String>, format: &str)
                 .collect();
 
             let ref_config = ReferenceConfig {
-                quad_decimate: s.quad_decimate.unwrap_or(2.0) as f32,
+                quad_decimate: s.quad_decimate.unwrap_or(2.0),
                 ..Default::default()
             };
 
