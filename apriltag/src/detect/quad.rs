@@ -279,12 +279,22 @@ fn fit_line(moments: &LineFitPt) -> Option<(FittedLine, f64)> {
     }
 
     // Normal direction = eigenvector of smaller eigenvalue
-    let nx = cxy;
-    let ny = eig_small - cxx;
+    let (nx, ny) = {
+        let nx0 = cxy;
+        let ny0 = eig_small - cxx;
+        let len0 = (nx0 * nx0 + ny0 * ny0).sqrt();
+        if len0 > 1e-10 {
+            (nx0, ny0)
+        } else {
+            // Degenerate case (cxy ≈ 0): eigenvectors are axis-aligned
+            if cxx > cyy {
+                (0.0, 1.0) // line is horizontal, normal is vertical
+            } else {
+                (1.0, 0.0) // line is vertical, normal is horizontal
+            }
+        }
+    };
     let len = (nx * nx + ny * ny).sqrt();
-    if len < 1e-10 {
-        return None;
-    }
 
     Some((
         FittedLine {
@@ -312,19 +322,19 @@ fn find_corners(
         let i0 = (i + sz - ksz) % sz;
         let i1 = (i + ksz) % sz;
         let moments = range_moments(lfps, i0, i1);
-        let (_, mse) = fit_line(&moments)?;
-        errors.push(mse);
+        let err = fit_line(&moments).map(|(_, mse)| mse).unwrap_or(0.0);
+        errors.push(err);
     }
 
     // Smooth errors with Gaussian-like filter
     smooth_errors(&mut errors);
 
-    // Find local maxima
+    // Find local maxima (use >= on left to handle plateaus from synthetic images)
     let mut maxima: Vec<(usize, f64)> = Vec::new();
     for i in 0..sz {
         let prev = errors[(i + sz - 1) % sz];
         let next = errors[(i + 1) % sz];
-        if errors[i] > prev && errors[i] > next {
+        if errors[i] >= prev && errors[i] > next {
             maxima.push((i, errors[i]));
         }
     }
@@ -686,5 +696,45 @@ mod tests {
         let w2 = lfps[2].w - lfps[1].w; // weight of point 2
         let w0 = lfps[0].w; // weight of point 0
         assert!((m.w - (w2 + w0)).abs() < 1e-10);
+    }
+
+    #[test]
+    fn fit_quad_synthetic_rectangle() {
+        // Create a cluster of points tracing a rectangle
+        let mut points = Vec::new();
+        let (x0, y0, x1, y1) = (140, 140, 260, 260); // fixed-point coords (actual: 70-130)
+
+        // Top edge: y=y0, x varies, gradient points up
+        for x in (x0..x1).step_by(2) {
+            points.push(Pt { x: x as u16, y: y0 as u16, gx: 0, gy: -255, slope: 0.0 });
+        }
+        // Right edge: x=x1, y varies, gradient points right
+        for y in (y0..y1).step_by(2) {
+            points.push(Pt { x: x1 as u16, y: y as u16, gx: 255, gy: 0, slope: 0.0 });
+        }
+        // Bottom edge: y=y1, x varies, gradient points down
+        for x in (x0..x1).step_by(2) {
+            points.push(Pt { x: x as u16, y: y1 as u16, gx: 0, gy: 255, slope: 0.0 });
+        }
+        // Left edge: x=x0, y varies, gradient points left
+        for y in (y0..y1).step_by(2) {
+            points.push(Pt { x: x0 as u16, y: y as u16, gx: -255, gy: 0, slope: 0.0 });
+        }
+
+        let mut cluster = Cluster { points };
+        let params = QuadThreshParams::default();
+        let max_perimeter = 800;
+
+        let quads = fit_quads(
+            &mut [cluster],
+            400,
+            400,
+            &params,
+            true,
+            true,
+        );
+
+        eprintln!("Synthetic rectangle: found {} quads", quads.len());
+        assert!(!quads.is_empty(), "Should find a quad from a perfect rectangle");
     }
 }
