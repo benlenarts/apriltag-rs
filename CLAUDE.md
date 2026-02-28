@@ -114,7 +114,8 @@ cargo run -p apriltag-bench -- explore --tag-size 60 --tilt-x 30 --noise 15
 ### Regression criteria
 
 - **Detection quality** — detection rate, false positive rate, and decode accuracy must not decrease across any scenario category.
-- **Performance** — wall-clock time for the detection pipeline must not regress beyond noise. If a change adds measurable latency, it needs justification and approval.
+- **Performance (time)** — wall-clock time for the detection pipeline must not regress beyond noise. If a change adds measurable latency, it needs justification and approval.
+- **Performance (space)** — memory usage must not grow unexpectedly. Watch for new allocations, larger buffers, retained temporaries, or data structure bloat. Changes that increase peak memory need justification — WASM targets are memory-constrained.
 - **CI gate** — `cargo run -p apriltag-bench -- regression` is the automated check. It must pass before any PR is merged.
 
 ### Workflow integration
