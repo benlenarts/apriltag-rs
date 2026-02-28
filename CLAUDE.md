@@ -106,11 +106,18 @@ cargo run -p apriltag-bench --features reference -- compare --format html
 # Interactive single-scene exploration
 cargo run -p apriltag-bench -- explore --tag-size 60 --tilt-x 30 --noise 15
 
-# Launch web UI for interactive testing
-cargo run -p apriltag-bench -- serve --open
+# Generate test images (PGM + JSON ground truth) for all scenarios
+cargo run -p apriltag-bench -- generate-images --output output/
 
-# Build scene generation WASM module for web UI
+# Generate images for a specific category
+cargo run -p apriltag-bench -- generate-images --category rotation --output output/
+
+# Launch web UI for interactive testing
+cargo run -p apriltag-bench -- serve
+
+# Build WASM modules for web UI
 wasm-pack build apriltag-bench-wasm --target web
+wasm-pack build apriltag-wasm --target web
 ```
 
 ## Code Style
