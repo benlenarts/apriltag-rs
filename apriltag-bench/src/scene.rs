@@ -91,7 +91,13 @@ impl SceneBuilder {
             let code = fam.codes[placement.tag_id as usize];
             let rendered = render::render(&fam.layout, code);
 
-            composite_tag(&mut image, &rendered, &placement.transform);
+            composite_tag(
+                &mut image,
+                &rendered,
+                &placement.transform,
+                fam.layout.border_start,
+                fam.layout.border_width,
+            );
 
             let corners = placement.transform.ground_truth_corners();
             let (cx, cy) = placement.transform.project(0.0, 0.0);
@@ -160,41 +166,58 @@ fn fill_background(width: u32, height: u32, bg: &Background) -> ImageU8 {
 /// Composite a rendered tag onto an image using the given transform.
 ///
 /// Uses inverse mapping: for each output pixel, compute the corresponding
-/// tag-space coordinate and sample the rendered tag with bilinear interpolation.
-fn composite_tag(img: &mut ImageU8, tag: &RenderedTag, transform: &Transform) {
+/// tag-space coordinate and sample the rendered tag.
+///
+/// Tag-space convention: [-1, 1] maps to the border region
+/// [border_start, grid_size - border_start], matching the detector's homography.
+/// The white border extends beyond [-1, 1].
+fn composite_tag(
+    img: &mut ImageU8,
+    tag: &RenderedTag,
+    transform: &Transform,
+    border_start: usize,
+    border_width: usize,
+) {
     let grid = tag.grid_size as f64;
+    let bs = border_start as f64;
+    let bw = border_width as f64;
 
-    // Compute the inverse transform by finding the bounding box in image space
-    // and then for each pixel, computing the tag-space coordinate.
-    //
-    // First, find the bounding box of the tag in image space.
-    let corners = transform.ground_truth_corners();
-    let min_x = corners.iter().map(|c| c[0]).fold(f64::INFINITY, f64::min);
-    let max_x = corners
-        .iter()
-        .map(|c| c[0])
-        .fold(f64::NEG_INFINITY, f64::max);
-    let min_y = corners.iter().map(|c| c[1]).fold(f64::INFINITY, f64::min);
-    let max_y = corners
-        .iter()
-        .map(|c| c[1])
-        .fold(f64::NEG_INFINITY, f64::max);
+    // The white border extends beyond tag-space [-1, 1].
+    // Grid position 0 → tag-space = 2*(0-bs)/bw - 1 = -(2*bs/bw + 1)
+    // Grid position grid_size → tag-space = 2*(grid_size-bs)/bw - 1 = (2*bs/bw + 1)
+    let tag_extent = 2.0 * bs / bw + 1.0;
 
-    // Expand slightly to account for sub-pixel coverage
+    // Compute bounding box using the extended corners
+    let ext_corners = [
+        [-tag_extent, -tag_extent],
+        [tag_extent, -tag_extent],
+        [tag_extent, tag_extent],
+        [-tag_extent, tag_extent],
+    ];
+    let mut min_x = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for [tx, ty] in &ext_corners {
+        let (ix, iy) = transform.project(*tx, *ty);
+        min_x = min_x.min(ix);
+        max_x = max_x.max(ix);
+        min_y = min_y.min(iy);
+        max_y = max_y.max(iy);
+    }
+
     let x0 = (min_x - 1.0).max(0.0) as u32;
     let x1 = ((max_x + 2.0) as u32).min(img.width);
     let y0 = (min_y - 1.0).max(0.0) as u32;
     let y1 = ((max_y + 2.0) as u32).min(img.height);
 
-    // Compute the inverse homography for the transform
     let inv = inverse_homography(transform);
 
     for iy in y0..y1 {
         for ix in x0..x1 {
-            let px = ix as f64 + 0.5; // pixel center
+            let px = ix as f64 + 0.5;
             let py = iy as f64 + 0.5;
 
-            // Map image-space → tag-space via inverse homography
             let w = inv[6] * px + inv[7] * py + inv[8];
             if w.abs() < 1e-12 {
                 continue;
@@ -202,16 +225,15 @@ fn composite_tag(img: &mut ImageU8, tag: &RenderedTag, transform: &Transform) {
             let tx = (inv[0] * px + inv[1] * py + inv[2]) / w;
             let ty = (inv[3] * px + inv[4] * py + inv[5]) / w;
 
-            // Tag-space [-1, 1] → grid-space [0, grid_size]
-            let gx = (tx + 1.0) * 0.5 * grid;
-            let gy = (ty + 1.0) * 0.5 * grid;
+            // Tag-space → grid-space:
+            // tag-space [-1, 1] maps to grid [border_start, grid_size - border_start]
+            let gx = bs + (tx + 1.0) * 0.5 * bw;
+            let gy = bs + (ty + 1.0) * 0.5 * bw;
 
-            // Check bounds
             if gx < 0.0 || gx >= grid || gy < 0.0 || gy >= grid {
                 continue;
             }
 
-            // Sample the tag with nearest-neighbor (each grid cell is uniform)
             let cell_x = gx as usize;
             let cell_y = gy as usize;
             let pixel = tag.pixel(cell_x, cell_y);
@@ -408,7 +430,10 @@ mod tests {
 
     #[test]
     fn scene_tag_pixels_are_placed() {
-        // Place a tag and verify that the image has non-background pixels in the tag area
+        // Place a tag and verify that the image has non-background pixels in the tag area.
+        // tag36h11: grid_size=10, border_start=1, border_width=8.
+        // Scale=40 means tag-space [-1,1] spans 80px → border region is 80px.
+        // Full grid extends further (white border adds 10px on each side).
         let scene = SceneBuilder::new(200, 200)
             .background(Background::Solid(128))
             .add_tag(
@@ -437,9 +462,12 @@ mod tests {
 
     #[test]
     fn scene_tag_has_white_border() {
-        // tag36h11 has a white outer border. The tag-space grid for tag36h11
-        // is 10x10. With scale=40, the tag spans 80x80 pixels centered at (100,100).
-        // The outermost grid row/column should be white (255).
+        // tag36h11: grid_size=10, border_start=1, border_width=8.
+        // Scale=40 → tag-space [-1,1] = 80px (border region).
+        // Each grid cell in border region = 80/8 = 10px.
+        // White border is 1 grid cell outside the border region = 10px extra on each side.
+        // Tag-space -1 maps to center-40 = 60 (inner edge of white border).
+        // White border extends from 50 to 60 (grid cell 0).
         let scene = SceneBuilder::new(200, 200)
             .background(Background::Solid(128))
             .add_tag(
@@ -454,12 +482,18 @@ mod tests {
             )
             .build();
 
-        // The top-left corner of the tag is at (60, 60).
-        // The first grid cell spans from (60,60) to (68,68) → should be white.
+        // White border pixel: should be at ~55, inside the white border region
         assert_eq!(
-            scene.image.get(64, 64),
+            scene.image.get(55, 55),
             255,
             "outer border pixel should be white"
+        );
+
+        // Black border pixel: just inside the border region, ~65
+        assert_eq!(
+            scene.image.get(65, 65),
+            0,
+            "inner border pixel should be black"
         );
     }
 
