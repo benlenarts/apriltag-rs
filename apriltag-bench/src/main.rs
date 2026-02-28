@@ -62,6 +62,18 @@ enum Command {
         #[arg(long, default_value = "terminal")]
         format: String,
     },
+    /// Generate test images for all scenarios and save to output directory.
+    GenerateImages {
+        /// Filter by category name.
+        #[arg(long)]
+        category: Option<String>,
+        /// Filter by scenario name pattern (substring match).
+        #[arg(long)]
+        scenario: Option<String>,
+        /// Output directory for generated images.
+        #[arg(long, default_value = "output")]
+        output: String,
+    },
     /// Start a local HTTP server for the web UI.
     Serve {
         /// Port to listen on.
@@ -127,6 +139,11 @@ fn main() {
             scenario,
             format,
         } => cmd_compare(category, scenario, &format),
+        Command::GenerateImages {
+            category,
+            scenario,
+            output,
+        } => cmd_generate_images(category, scenario, &output),
         Command::Serve { port } => cmd_serve(port),
         Command::Explore {
             family,
@@ -255,6 +272,44 @@ fn cmd_regression(category: Option<String>) {
     if !full.all_passed() {
         std::process::exit(1);
     }
+}
+
+fn cmd_generate_images(category: Option<String>, scenario: Option<String>, output_dir: &str) {
+    let scenarios = filter_scenarios(category, scenario);
+    let out = std::path::Path::new(output_dir);
+    std::fs::create_dir_all(out).unwrap_or_else(|e| panic!("cannot create {output_dir}: {e}"));
+
+    for s in &scenarios {
+        let scene = s.build();
+        let img = &scene.image;
+
+        // Write PGM (Portable GrayMap) — simple, no external deps
+        let filename = format!("{}.pgm", s.name);
+        let path = out.join(&filename);
+
+        // PGM binary: write header as text, pixel data as raw bytes
+        let header = format!("P5\n{} {}\n255\n", img.width, img.height);
+        let mut file_data = header.into_bytes();
+        for y in 0..img.height {
+            let row_start = (y * img.stride) as usize;
+            let row_end = row_start + img.width as usize;
+            file_data.extend_from_slice(&img.buf[row_start..row_end]);
+        }
+        std::fs::write(&path, &file_data)
+            .unwrap_or_else(|e| panic!("cannot write {}: {e}", path.display()));
+
+        // Also write ground truth as JSON sidecar
+        let gt_filename = format!("{}.json", s.name);
+        let gt_path = out.join(&gt_filename);
+        let gt_json = serde_json::to_string_pretty(&scene.ground_truth)
+            .unwrap_or_else(|e| panic!("cannot serialize ground truth: {e}"));
+        std::fs::write(&gt_path, gt_json)
+            .unwrap_or_else(|e| panic!("cannot write {}: {e}", gt_path.display()));
+
+        println!("  {} ({:>4}x{:<4})", filename, img.width, img.height);
+    }
+
+    println!("\nGenerated {} images in {output_dir}/", scenarios.len());
 }
 
 fn cmd_serve(port: u16) {
