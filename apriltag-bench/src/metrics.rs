@@ -103,10 +103,7 @@ pub fn evaluate(
         .collect();
 
     // Compute aggregate metrics
-    let detected_count = matches
-        .iter()
-        .filter(|m| m.detection.is_some())
-        .count();
+    let detected_count = matches.iter().filter(|m| m.detection.is_some()).count();
     let detection_rate = if ground_truth.is_empty() {
         1.0
     } else {

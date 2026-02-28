@@ -222,10 +222,22 @@ mod tests {
         };
         let corners = t.ground_truth_corners();
 
-        assert!(approx_eq(corners[0][0], 170.0) && approx_eq(corners[0][1], 170.0), "TL");
-        assert!(approx_eq(corners[1][0], 230.0) && approx_eq(corners[1][1], 170.0), "TR");
-        assert!(approx_eq(corners[2][0], 230.0) && approx_eq(corners[2][1], 230.0), "BR");
-        assert!(approx_eq(corners[3][0], 170.0) && approx_eq(corners[3][1], 230.0), "BL");
+        assert!(
+            approx_eq(corners[0][0], 170.0) && approx_eq(corners[0][1], 170.0),
+            "TL"
+        );
+        assert!(
+            approx_eq(corners[1][0], 230.0) && approx_eq(corners[1][1], 170.0),
+            "TR"
+        );
+        assert!(
+            approx_eq(corners[2][0], 230.0) && approx_eq(corners[2][1], 230.0),
+            "BR"
+        );
+        assert!(
+            approx_eq(corners[3][0], 170.0) && approx_eq(corners[3][1], 230.0),
+            "BL"
+        );
     }
 
     #[test]
@@ -252,10 +264,22 @@ mod tests {
 
         let corners = t.ground_truth_corners();
         // half = 50, R = identity, H = [[50, 0, 100], [0, 50, 100], [0, 0, 1]]
-        assert!(approx_eq(corners[0][0], 50.0) && approx_eq(corners[0][1], 50.0), "TL");
-        assert!(approx_eq(corners[1][0], 150.0) && approx_eq(corners[1][1], 50.0), "TR");
-        assert!(approx_eq(corners[2][0], 150.0) && approx_eq(corners[2][1], 150.0), "BR");
-        assert!(approx_eq(corners[3][0], 50.0) && approx_eq(corners[3][1], 150.0), "BL");
+        assert!(
+            approx_eq(corners[0][0], 50.0) && approx_eq(corners[0][1], 50.0),
+            "TL"
+        );
+        assert!(
+            approx_eq(corners[1][0], 150.0) && approx_eq(corners[1][1], 50.0),
+            "TR"
+        );
+        assert!(
+            approx_eq(corners[2][0], 150.0) && approx_eq(corners[2][1], 150.0),
+            "BR"
+        );
+        assert!(
+            approx_eq(corners[3][0], 50.0) && approx_eq(corners[3][1], 150.0),
+            "BL"
+        );
     }
 
     #[test]
