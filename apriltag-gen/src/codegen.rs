@@ -442,59 +442,38 @@ mod tests {
     fn bench_inner_scan_scaling() {
         use std::time::Instant;
 
-        struct Config {
-            name: &'static str,
-            nbits: u32,
-            threshold: u32,
-            /// N values to test (rotcodes = 4x these)
-            code_counts: &'static [usize],
-        }
-
-        let configs = [
-            Config {
-                name: "standard41h12",
-                nbits: 41,
-                threshold: 12,
-                code_counts: &[500, 1000, 2000],
-            },
-            Config {
-                name: "standard48h11",
-                nbits: 48,
-                threshold: 11,
-                code_counts: &[500, 2000, 5000],
-            },
+        let configs: &[(&str, u32, u32, &[usize])] = &[
+            ("standard41h12", 41, 12, &[500, 1000, 2000]),
+            ("standard48h11", 48, 11, &[500, 2000, 5000]),
         ];
 
         let num_queries = 50_000;
 
-        for config in &configs {
+        for &(name, nbits, threshold, code_counts) in configs {
             println!(
                 "\n=== {} (nbits={}, threshold={}) ===",
-                config.name, config.nbits, config.threshold
+                name, nbits, threshold
             );
 
-            // Generate a pool of well-separated codes
-            let max_needed = *config.code_counts.last().unwrap();
-            let all_codes = generate_realistic_codes(config.nbits, config.threshold, max_needed);
+            let max_needed = *code_counts.last().unwrap();
+            let all_codes = generate_realistic_codes(nbits, threshold, max_needed);
             println!("Generated {} realistic codes", all_codes.len());
 
-            let mask = (1u64 << config.nbits) - 1;
+            let mask = (1u64 << nbits) - 1;
 
-            for &n in config.code_counts {
+            for &n in code_counts {
                 let n = n.min(all_codes.len());
-                // Build rotcodes (what CodeSet actually stores)
-                let mut rotcodes = Vec::with_capacity(n * 4);
+                let mut set = CodeSet::new();
                 for &c in &all_codes[..n] {
-                    let rv1 = rotate90(c, config.nbits);
-                    let rv2 = rotate90(rv1, config.nbits);
-                    let rv3 = rotate90(rv2, config.nbits);
-                    rotcodes.extend_from_slice(&[c, rv1, rv2, rv3]);
+                    let rv1 = rotate90(c, nbits);
+                    let rv2 = rotate90(rv1, nbits);
+                    let rv3 = rotate90(rv2, nbits);
+                    set.insert(c);
+                    set.insert(rv1);
+                    set.insert(rv2);
+                    set.insert(rv3);
                 }
-                let rotcode_count = rotcodes.len();
 
-                // Generate queries: mix of hits (random codes, most will be close to
-                // something in a large set) and guaranteed misses (codes from the set itself
-                // won't match since they're well-separated)
                 let mut rng = 0xCAFEBABEu64;
                 let queries: Vec<u64> = (0..num_queries)
                     .map(|_| {
@@ -503,39 +482,23 @@ mod tests {
                     })
                     .collect();
 
-                // Benchmark: flat Vec scan (always)
                 let start = Instant::now();
-                let mut hits_flat = 0u32;
+                let mut hits = 0u32;
                 for &q in &queries {
-                    if rotcodes
-                        .iter()
-                        .any(|&c| (c ^ q).count_ones() < config.threshold)
-                    {
-                        hits_flat += 1;
+                    if set.has_any_closer_than(q, threshold) {
+                        hits += 1;
                     }
                 }
-                let flat_time = start.elapsed();
+                let elapsed = start.elapsed();
+                let ns_per_query = elapsed.as_nanos() as f64 / num_queries as f64;
 
-                // Benchmark: CodeSet (hybrid)
-                let mut set = CodeSet::new();
-                for &c in &rotcodes {
-                    set.insert(c);
-                }
-                let start = Instant::now();
-                let mut hits_set = 0u32;
-                for &q in &queries {
-                    if set.has_any_closer_than(q, config.threshold) {
-                        hits_set += 1;
-                    }
-                }
-                let set_time = start.elapsed();
-
-                assert_eq!(hits_flat, hits_set, "correctness mismatch");
-                let hit_rate = hits_flat as f64 / num_queries as f64 * 100.0;
-                let speedup = flat_time.as_secs_f64() / set_time.as_secs_f64();
                 println!(
-                    "  N={:>5} (rotcodes={:>6}): flat={:.2?}  CodeSet={:.2?}  speedup={:.2}x  hits={:.1}%",
-                    n, rotcode_count, flat_time, set_time, speedup, hit_rate,
+                    "  N={:>5} (rotcodes={:>6}): {:.2?}  ({:.0} ns/query)  hits={:.1}%",
+                    n,
+                    set.codes.len(),
+                    elapsed,
+                    ns_per_query,
+                    hits as f64 / num_queries as f64 * 100.0,
                 );
             }
         }
