@@ -92,7 +92,10 @@ pub fn render(layout: &Layout, code: u64) -> RenderedTag {
     let im = rotate90_image(&im);
 
     let pixels: Vec<Pixel> = im.into_iter().flat_map(|row| row.into_iter()).collect();
-    RenderedTag { grid_size: size, pixels }
+    RenderedTag {
+        grid_size: size,
+        pixels,
+    }
 }
 
 /// Rotate a 2D image 90 degrees clockwise.
@@ -140,7 +143,8 @@ mod tests {
 
     #[test]
     fn render_circle21h7_code0_no_transparent_inside() {
-        let data = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+        let data =
+            "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
         let layout = Layout::from_data_string(data).unwrap();
         let tag = render(&layout, 0x157863);
 
@@ -178,7 +182,8 @@ mod tests {
     #[test]
     fn render_to_rgba_transparent_pixels() {
         // Circle layout has transparent corner pixels
-        let data = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+        let data =
+            "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
         let layout = Layout::from_data_string(data).unwrap();
         let tag = render(&layout, 0x157863);
         let rgba = tag.to_rgba();
@@ -191,7 +196,8 @@ mod tests {
     fn render_odd_grid_center_data_bit_zero() {
         // 9x9 circle layout has center cell (4,4) = data.
         // Use a code where the center (last) data bit is 0 → Black.
-        let data = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+        let data =
+            "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
         let layout = Layout::from_data_string(data).unwrap();
         // code 0 means all data bits are 0, so center data bit is 0 → Black
         let tag = render(&layout, 0x000000);

@@ -205,13 +205,13 @@ pub fn decode_quad(
 
     // Border sampling patterns: (start_x, start_y, dx, dy, is_white)
     let patterns: [(f64, f64, f64, f64, bool); 8] = [
-        (-0.5, 0.5, 0.0, 1.0, true),   // left white column
-        (0.5, 0.5, 0.0, 1.0, false),    // left black column
-        (w + 0.5, 0.5, 0.0, 1.0, true), // right white column
+        (-0.5, 0.5, 0.0, 1.0, true),     // left white column
+        (0.5, 0.5, 0.0, 1.0, false),     // left black column
+        (w + 0.5, 0.5, 0.0, 1.0, true),  // right white column
         (w - 0.5, 0.5, 0.0, 1.0, false), // right black column
-        (0.5, -0.5, 1.0, 0.0, true),    // top white row
-        (0.5, 0.5, 1.0, 0.0, false),    // top black row
-        (0.5, w + 0.5, 1.0, 0.0, true), // bottom white row
+        (0.5, -0.5, 1.0, 0.0, true),     // top white row
+        (0.5, 0.5, 1.0, 0.0, false),     // top black row
+        (0.5, w + 0.5, 1.0, 0.0, true),  // bottom white row
         (0.5, w - 0.5, 1.0, 0.0, false), // bottom black row
     ];
 
@@ -226,10 +226,7 @@ pub fn decode_quad(
 
             let (px, py) = h.project(tagx, tagy);
 
-            if px < 0.0
-                || py < 0.0
-                || px >= img.width as f64 - 1.0
-                || py >= img.height as f64 - 1.0
+            if px < 0.0 || py < 0.0 || px >= img.width as f64 - 1.0 || py >= img.height as f64 - 1.0
             {
                 continue;
             }
@@ -274,9 +271,8 @@ pub fn decode_quad(
 
         let (px, py) = h.project(tagx, tagy);
         let pixel_val = img.interpolate(px, py);
-        let thresh = (black_model.interpolate(tagx, tagy)
-            + white_model.interpolate(tagx, tagy))
-            / 2.0;
+        let thresh =
+            (black_model.interpolate(tagx, tagy) + white_model.interpolate(tagx, tagy)) / 2.0;
 
         // Grid position for sharpening
         let gx = (bit_locs[i].x + family.layout.border_start as i32) as usize;

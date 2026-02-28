@@ -111,8 +111,7 @@ fn load_family(name_or_path: &str) -> Result<apriltag_gen::family::TagFamily> {
             .with_context(|| format!("reading {}", toml_path.display()))?;
         let bin_path = toml_path.with_extension("bin");
         let bin_data = if bin_path.exists() {
-            std::fs::read(&bin_path)
-                .with_context(|| format!("reading {}", bin_path.display()))?
+            std::fs::read(&bin_path).with_context(|| format!("reading {}", bin_path.display()))?
         } else {
             Vec::new()
         };
@@ -135,11 +134,21 @@ fn parse_ids(spec: &str, max_id: usize) -> Result<Vec<usize>> {
         if let Some((start, end)) = part.split_once('-') {
             let start: usize = start.trim().parse().context("invalid ID range start")?;
             let end: usize = end.trim().parse().context("invalid ID range end")?;
-            anyhow::ensure!(end < max_id, "ID {} exceeds max {} for this family", end, max_id - 1);
+            anyhow::ensure!(
+                end < max_id,
+                "ID {} exceeds max {} for this family",
+                end,
+                max_id - 1
+            );
             ids.extend(start..=end);
         } else {
             let id: usize = part.parse().context("invalid ID")?;
-            anyhow::ensure!(id < max_id, "ID {} exceeds max {} for this family", id, max_id - 1);
+            anyhow::ensure!(
+                id < max_id,
+                "ID {} exceeds max {} for this family",
+                id,
+                max_id - 1
+            );
             ids.push(id);
         }
     }
@@ -147,7 +156,10 @@ fn parse_ids(spec: &str, max_id: usize) -> Result<Vec<usize>> {
 }
 
 fn cmd_list() -> Result<()> {
-    println!("{:<22} {:>5} {:>7} {:>8}", "Family", "Bits", "Hamming", "Codes");
+    println!(
+        "{:<22} {:>5} {:>7} {:>8}",
+        "Family", "Bits", "Hamming", "Codes"
+    );
     println!("{}", "-".repeat(46));
     for name in apriltag_gen::family::BUILTIN_NAMES {
         let family = apriltag_gen::family::builtin_family(name).unwrap();
@@ -170,7 +182,10 @@ fn cmd_info(name: &str) -> Result<()> {
     if let Some(mc) = family.config.min_complexity {
         println!("Min complex:   {}", mc);
     }
-    println!("Grid size:     {}x{}", family.layout.grid_size, family.layout.grid_size);
+    println!(
+        "Grid size:     {}x{}",
+        family.layout.grid_size, family.layout.grid_size
+    );
     println!("Border width:  {}", family.layout.border_width);
     println!("Reversed:      {}", family.layout.reversed_border);
     println!("Code count:    {}", family.codes.len());
@@ -251,20 +266,18 @@ fn cmd_mosaic(
 
 fn cmd_generate(name: &str) -> Result<()> {
     let family = load_family(name)?;
-    let min_complexity = family.config.min_complexity.context(
-        "min_complexity is required in the family config for code generation",
-    )?;
+    let min_complexity = family
+        .config
+        .min_complexity
+        .context("min_complexity is required in the family config for code generation")?;
 
     println!(
         "Generating codes for {} (nbits={}, min_hamming={}, min_complexity={})...",
         family.config.name, family.layout.nbits, family.config.min_hamming, min_complexity
     );
 
-    let codes = apriltag_gen::codegen::generate(
-        &family.layout,
-        family.config.min_hamming,
-        min_complexity,
-    );
+    let codes =
+        apriltag_gen::codegen::generate(&family.layout, family.config.min_hamming, min_complexity);
 
     println!("Generated {} codes.", codes.len());
 
@@ -274,8 +287,7 @@ fn cmd_generate(name: &str) -> Result<()> {
     for &code in &codes {
         bin_data.extend_from_slice(&code.to_le_bytes());
     }
-    std::fs::write(&bin_path, &bin_data)
-        .with_context(|| format!("writing {}", bin_path))?;
+    std::fs::write(&bin_path, &bin_data).with_context(|| format!("writing {}", bin_path))?;
     println!("Wrote {} codes to {}", codes.len(), bin_path);
 
     Ok(())

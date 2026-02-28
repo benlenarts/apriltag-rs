@@ -1,5 +1,5 @@
-mod classic;
 mod circle;
+mod classic;
 mod standard;
 mod validate;
 
@@ -129,7 +129,8 @@ mod tests {
 
     #[test]
     fn parse_circle21h7_layout() {
-        let data = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+        let data =
+            "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
         let layout = Layout::from_data_string(data).unwrap();
         assert_eq!(layout.grid_size, 9);
         assert_eq!(layout.nbits, 21);
@@ -145,14 +146,16 @@ mod tests {
 
     #[test]
     fn data_string_roundtrip_circle() {
-        let data = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+        let data =
+            "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
         let layout = Layout::from_data_string(data).unwrap();
         assert_eq!(layout.data_string(), data);
     }
 
     #[test]
     fn parse_standard41h12_layout() {
-        let data = "ddddddddddbbbbbbbddbwwwwwbddbwdddwbddbwdddwbddbwdddwbddbwwwwwbddbbbbbbbdddddddddd";
+        let data =
+            "ddddddddddbbbbbbbddbwwwwwbddbwdddwbddbwdddwbddbwdddwbddbwwwwwbddbbbbbbbdddddddddd";
         let layout = Layout::from_data_string(data).unwrap();
         assert_eq!(layout.grid_size, 9);
         assert_eq!(layout.nbits, 41);

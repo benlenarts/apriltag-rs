@@ -30,7 +30,8 @@ mod tests {
     #[test]
     fn standard_9x9_matches_reference() {
         // From TagStandard41h12.java
-        let expected = "ddddddddddbbbbbbbddbwwwwwbddbwdddwbddbwdddwbddbwdddwbddbwwwwwbddbbbbbbbdddddddddd";
+        let expected =
+            "ddddddddddbbbbbbbddbwwwwwbddbwdddwbddbwdddwbddbwdddwbddbwwwwwbddbbbbbbbdddddddddd";
         let got = standard_data_string(9);
         assert_eq!(got, expected);
     }

@@ -10,20 +10,12 @@ use printpdf::*;
 const CELL_SIZE_MM: f32 = 2.0;
 
 /// Write a single tag as a PDF file.
-pub fn write_tag_pdf(
-    tag: &RenderedTag,
-    border: usize,
-    path: &str,
-) -> Result<()> {
+pub fn write_tag_pdf(tag: &RenderedTag, border: usize, path: &str) -> Result<()> {
     let total_cells = tag.grid_size + 2 * border;
     let page_size_mm = total_cells as f32 * CELL_SIZE_MM + 20.0; // 10mm margin each side
 
-    let (doc, page1, layer1) = PdfDocument::new(
-        "AprilTag",
-        Mm(page_size_mm),
-        Mm(page_size_mm),
-        "Tag",
-    );
+    let (doc, page1, layer1) =
+        PdfDocument::new("AprilTag", Mm(page_size_mm), Mm(page_size_mm), "Tag");
     let layer = doc.get_page(page1).get_layer(layer1);
 
     let margin_mm = (page_size_mm - total_cells as f32 * CELL_SIZE_MM) / 2.0;
@@ -95,7 +87,9 @@ pub fn write_mosaic_pdf(
                 let tag = render::render(&family.layout, family.codes[idx]);
                 let x_mm = margin_mm + col as f32 * (tag_mm + spacing_mm);
                 // PDF coordinates are bottom-up; place first row at top
-                let y_mm = page_h_mm - margin_mm - (local_row + 1) as f32 * tag_mm
+                let y_mm = page_h_mm
+                    - margin_mm
+                    - (local_row + 1) as f32 * tag_mm
                     - local_row as f32 * spacing_mm;
 
                 draw_tag(&layer, &tag, 1, x_mm, y_mm, cell_mm);

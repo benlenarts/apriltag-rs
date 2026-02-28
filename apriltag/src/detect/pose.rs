@@ -322,10 +322,7 @@ fn homography_to_pose(h: &Homography, params: &PoseParams) -> Pose {
 ///
 /// Returns `(best_pose, best_error, alt_pose, alt_error)`.
 /// `alt_pose` is `None` when no second local minimum exists.
-pub fn estimate_tag_pose(
-    det: &Detection,
-    params: &PoseParams,
-) -> (Pose, f64, Option<Pose>, f64) {
+pub fn estimate_tag_pose(det: &Detection, params: &PoseParams) -> (Pose, f64, Option<Pose>, f64) {
     // Build homography from detection corners
     let h = match Homography::from_quad_corners(&det.corners) {
         Some(h) => h,
@@ -344,12 +341,7 @@ pub fn estimate_tag_pose(
 
     // Object points in tag frame (z=0 plane)
     let s = params.tagsize / 2.0;
-    let tag_pts: [[f64; 3]; 4] = [
-        [-s, s, 0.0],
-        [s, s, 0.0],
-        [s, -s, 0.0],
-        [-s, -s, 0.0],
-    ];
+    let tag_pts: [[f64; 3]; 4] = [[-s, s, 0.0], [s, s, 0.0], [s, -s, 0.0], [-s, -s, 0.0]];
 
     // Image rays (normalized coordinates)
     let mut v = [[0.0f64; 3]; 4];
@@ -655,7 +647,9 @@ mod tests {
             for j in 0..3 {
                 assert!(
                     (recon[i][j] - m[i][j]).abs() < 1e-8,
-                    "recon[{i}][{j}]={} vs m={}", recon[i][j], m[i][j],
+                    "recon[{i}][{j}]={} vs m={}",
+                    recon[i][j],
+                    m[i][j],
                 );
             }
         }
@@ -703,7 +697,8 @@ mod tests {
                 let expected = if i == j { 1.0 } else { 0.0 };
                 assert!(
                     (rrt[i][j] - expected).abs() < 1e-10,
-                    "R*R^T[{i}][{j}]={}", rrt[i][j]
+                    "R*R^T[{i}][{j}]={}",
+                    rrt[i][j]
                 );
             }
         }
@@ -726,10 +721,10 @@ mod tests {
         let s = params.tagsize / 2.0;
         let z = 5.0;
         let tag_corners_3d = [
-            [-s, s, 0.0],   // (-s, +s)
-            [s, s, 0.0],    // (+s, +s)
-            [s, -s, 0.0],   // (+s, -s)
-            [-s, -s, 0.0],  // (-s, -s)
+            [-s, s, 0.0],  // (-s, +s)
+            [s, s, 0.0],   // (+s, +s)
+            [s, -s, 0.0],  // (+s, -s)
+            [-s, -s, 0.0], // (-s, -s)
         ];
 
         let mut corners = [[0.0f64; 2]; 4];
@@ -808,10 +803,7 @@ mod tests {
             hamming: 0,
             decision_margin: 100.0,
             corners,
-            center: [
-                params.cx + params.fx * tx_world / z,
-                params.cy,
-            ],
+            center: [params.cx + params.fx * tx_world / z, params.cy],
         };
 
         let (pose, err, _, _) = estimate_tag_pose(&det, &params);
@@ -928,12 +920,8 @@ mod tests {
         let ca = angle.cos();
         let sa = angle.sin();
         // R_y(angle) = [[cos, 0, sin], [0, 1, 0], [-sin, 0, cos]]
-        let tag_corners_3d: [[f64; 3]; 4] = [
-            [-s, s, 0.0],
-            [s, s, 0.0],
-            [s, -s, 0.0],
-            [-s, -s, 0.0],
-        ];
+        let tag_corners_3d: [[f64; 3]; 4] =
+            [[-s, s, 0.0], [s, s, 0.0], [s, -s, 0.0], [-s, -s, 0.0]];
 
         let mut corners = [[0.0f64; 2]; 4];
         for i in 0..4 {

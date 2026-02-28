@@ -75,7 +75,11 @@ pub fn threshold(img: &ImageU8, min_white_black_diff: i32, deglitch: bool) -> Im
                 127
             } else {
                 let thresh = lo as i32 + (hi as i32 - lo as i32) / 2;
-                if img.get(x, y) as i32 > thresh { 255 } else { 0 }
+                if img.get(x, y) as i32 > thresh {
+                    255
+                } else {
+                    0
+                }
             };
             out.set(x, y, val);
         }
@@ -184,7 +188,7 @@ mod tests {
             }
         }
         img.set(4, 4, 255); // single bright pixel
-        // With deglitch, the single pixel noise should be removed by close operation
+                            // With deglitch, the single pixel noise should be removed by close operation
         let out = threshold(&img, 5, true);
         // The close operation (dilate then erode) should remove or smooth isolated changes
         assert_eq!(out.width, 8);
