@@ -410,9 +410,9 @@ fn cmd_compare(category: Option<String>, scenario: Option<String>, format: &str)
                 let dets = reference::reference_detect(&scene.image, fam, &ref_config);
                 for d in dets {
                     all_ref_dets.push(apriltag::detect::detector::Detection {
-                        id: d.id as u32,
-                        hamming: d.hamming as u32,
-                        decision_margin: d.decision_margin as f64,
+                        id: d.id,
+                        hamming: d.hamming,
+                        decision_margin: d.decision_margin,
                         center: d.center,
                         corners: d.corners,
                         family_name: fam.to_string(),
