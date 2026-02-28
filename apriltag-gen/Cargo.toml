@@ -3,6 +3,8 @@ name = "apriltag-gen"
 version = "0.1.0"
 edition = "2021"
 description = "AprilTag family generation library"
+license.workspace = true
+repository.workspace = true
 
 [features]
 default = ["all-families"]

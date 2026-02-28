@@ -3,6 +3,8 @@ name = "apriltag-bench"
 version = "0.1.0"
 edition = "2021"
 description = "Detection test harness and benchmark suite for AprilTag"
+license.workspace = true
+repository.workspace = true
 
 [lib]
 name = "apriltag_bench"

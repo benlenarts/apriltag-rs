@@ -3,6 +3,8 @@ name = "apriltag-detect-cli"
 version = "0.1.0"
 edition = "2021"
 description = "CLI for AprilTag detection in images"
+license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "apriltag-detect"

@@ -1,3 +1,7 @@
 [workspace]
 members = ["apriltag", "apriltag-gen", "apriltag-gen-cli", "apriltag-detect-cli", "apriltag-wasm", "apriltag-bench", "apriltag-bench-wasm"]
 resolver = "2"
+
+[workspace.package]
+license = "MIT"
+repository = "https://github.com/benlenarts/apriltag-rs"

@@ -3,6 +3,8 @@ name = "apriltag-gen-cli"
 version = "0.1.0"
 edition = "2021"
 description = "CLI for AprilTag generation and rendering"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 apriltag-gen = { path = "../apriltag-gen" }
