@@ -50,6 +50,18 @@ enum Command {
         #[arg(long)]
         category: Option<String>,
     },
+    /// Compare Rust detector vs C reference (requires --features reference).
+    Compare {
+        /// Filter by category name.
+        #[arg(long)]
+        category: Option<String>,
+        /// Filter by scenario name pattern (substring match).
+        #[arg(long)]
+        scenario: Option<String>,
+        /// Output format: terminal, json.
+        #[arg(long, default_value = "terminal")]
+        format: String,
+    },
     /// Generate and detect a single scene with custom parameters.
     Explore {
         /// Tag family.
@@ -104,6 +116,11 @@ fn main() {
         } => cmd_run(category, scenario, &format, threshold, quiet),
         Command::List { category } => cmd_list(category),
         Command::Regression { category } => cmd_regression(category),
+        Command::Compare {
+            category,
+            scenario,
+            format,
+        } => cmd_compare(category, scenario, &format),
         Command::Explore {
             family,
             tag_id,
@@ -230,6 +247,115 @@ fn cmd_regression(category: Option<String>) {
 
     if !full.all_passed() {
         std::process::exit(1);
+    }
+}
+
+fn cmd_compare(category: Option<String>, scenario: Option<String>, format: &str) {
+    #[cfg(not(feature = "reference"))]
+    {
+        let _ = (category, scenario, format);
+        eprintln!("Error: the 'compare' command requires the 'reference' feature.");
+        eprintln!("Build with: cargo run -p apriltag-bench --features reference -- compare");
+        eprintln!("Make sure to run scripts/fetch-references.sh first.");
+        std::process::exit(1);
+    }
+
+    #[cfg(feature = "reference")]
+    {
+        use apriltag_bench::reference::{self, ReferenceConfig};
+
+        let scenarios = filter_scenarios(category, scenario);
+
+        println!(
+            "{:<35} {:>8} {:>8} {:>8} {:>8} {:>8}",
+            "Scenario", "Rust%", "Ref%", "RustRMS", "RefRMS", "Match"
+        );
+        println!("{}", "-".repeat(85));
+
+        #[derive(serde::Serialize)]
+        struct CompareRow {
+            name: String,
+            rust_detection_rate: f64,
+            ref_detection_rate: f64,
+            rust_corner_rmse: f64,
+            ref_corner_rmse: f64,
+            results_match: bool,
+        }
+
+        let mut rows = Vec::new();
+
+        for s in &scenarios {
+            let scene = s.build();
+
+            // Run Rust detector
+            let (rust_result, _) = run_scenario(s);
+
+            // Run C reference detector
+            let families: Vec<&str> = s
+                .expect_ids
+                .iter()
+                .map(|(f, _)| f.as_str())
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
+
+            let ref_config = ReferenceConfig {
+                quad_decimate: s.quad_decimate.unwrap_or(2.0) as f32,
+                ..Default::default()
+            };
+
+            let mut all_ref_dets = Vec::new();
+            for fam in &families {
+                let dets = reference::reference_detect(&scene.image, fam, &ref_config);
+                for d in dets {
+                    all_ref_dets.push(apriltag::detect::detector::Detection {
+                        id: d.id as u32,
+                        hamming: d.hamming as u32,
+                        decision_margin: d.decision_margin as f64,
+                        center: d.center,
+                        corners: d.corners,
+                        family_name: fam.to_string(),
+                    });
+                }
+            }
+
+            let ref_result = metrics::evaluate(&scene.ground_truth, &all_ref_dets, 0);
+
+            let results_match =
+                (rust_result.detection_rate - ref_result.detection_rate).abs() < 0.01;
+
+            let row = CompareRow {
+                name: s.name.clone(),
+                rust_detection_rate: rust_result.detection_rate,
+                ref_detection_rate: ref_result.detection_rate,
+                rust_corner_rmse: rust_result.corner_rmse,
+                ref_corner_rmse: ref_result.corner_rmse,
+                results_match,
+            };
+
+            if format != "json" {
+                let match_str = if results_match { "YES" } else { "NO" };
+                println!(
+                    "{:<35} {:>7.0}% {:>7.0}% {:>8.2} {:>8.2} {:>8}",
+                    &s.name,
+                    rust_result.detection_rate * 100.0,
+                    ref_result.detection_rate * 100.0,
+                    rust_result.corner_rmse,
+                    ref_result.corner_rmse,
+                    match_str,
+                );
+            }
+
+            rows.push(row);
+        }
+
+        if format == "json" {
+            println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+        } else {
+            println!("{}", "-".repeat(85));
+            let matching = rows.iter().filter(|r| r.results_match).count();
+            println!("Matching: {}/{} scenarios", matching, rows.len());
+        }
     }
 }
 
