@@ -1,4 +1,4 @@
-# apriltag2
+# apriltag-rs
 
 WASM-compatible, pure Rust implementation of the AprilTag detection pipeline, including tag family and bitmap generation.
 
