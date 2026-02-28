@@ -104,7 +104,7 @@ pub fn refine_edges(quad: &mut Quad, img: &ImageU8, quad_decimate: f32) {
     for i in 0..4 {
         let j = (i + 1) % 4;
         if let Some((cx, cy)) = intersect_lines_raw(&lines[i], &lines[j]) {
-            quad.corners[i] = [cx, cy];
+            quad.corners[j] = [cx, cy];
         }
     }
 }
