@@ -65,7 +65,10 @@ pub fn fit_quads(
     normal_border: bool,
     reversed_border: bool,
 ) -> Vec<Quad> {
-    let max_perimeter = 2 * (image_width + image_height) as usize;
+    // C reference: 2*(2*w + 2*h) = 4*(w+h). Each edge point is typically added
+    // twice (two unique neighbors), so the limit is 2× the geometric perimeter.
+    // See apriltag_quad_thresh.c:1090.
+    let max_perimeter = 4 * (image_width + image_height) as usize;
 
     #[cfg(feature = "parallel")]
     {
