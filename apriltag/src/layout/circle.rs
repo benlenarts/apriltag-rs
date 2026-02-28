@@ -9,8 +9,7 @@
 /// - otherwise: ignored (`x`)
 pub fn circle_data_string(size: usize) -> String {
     let cutoff = size as f64 / 2.0 - 0.25;
-    let border_distance =
-        (size as f64 / 2.0 - cutoff * (0.5_f64).sqrt() - 0.5).ceil() as usize;
+    let border_distance = (size as f64 / 2.0 - cutoff * (0.5_f64).sqrt() - 0.5).ceil() as usize;
 
     let mut s = String::with_capacity(size * size);
     for y in 0..size {
@@ -48,7 +47,8 @@ mod tests {
     #[test]
     fn circle_9x9_matches_reference() {
         // From TagCircle21h7.java
-        let expected = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+        let expected =
+            "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
         let got = circle_data_string(9);
         assert_eq!(got, expected);
     }

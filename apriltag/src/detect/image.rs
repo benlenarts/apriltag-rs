@@ -12,7 +12,12 @@ impl ImageU8 {
     pub fn new(width: u32, height: u32) -> Self {
         let stride = width;
         let buf = vec![0u8; (stride * height) as usize];
-        Self { width, height, stride, buf }
+        Self {
+            width,
+            height,
+            stride,
+            buf,
+        }
     }
 
     /// Create an image from existing pixel data.
@@ -21,7 +26,12 @@ impl ImageU8 {
     pub fn from_buf(width: u32, height: u32, stride: u32, buf: Vec<u8>) -> Self {
         assert!(stride >= width);
         assert!(buf.len() >= (stride * height) as usize);
-        Self { width, height, stride, buf }
+        Self {
+            width,
+            height,
+            stride,
+            buf,
+        }
     }
 
     /// Get the pixel value at (x, y).

@@ -1,8 +1,8 @@
-pub mod types;
-pub mod error;
-pub mod layout;
 pub mod bits;
-pub mod hamming;
-pub mod render;
-pub mod family;
 pub mod detect;
+pub mod error;
+pub mod family;
+pub mod hamming;
+pub mod layout;
+pub mod render;
+pub mod types;

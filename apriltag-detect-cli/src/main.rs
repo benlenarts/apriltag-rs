@@ -114,9 +114,15 @@ fn load_image(path: &str) -> Result<ImageU8> {
 
 fn pose_from_result(pose: &Pose, error: f64) -> OutputPose {
     let rotation = vec![
-        pose.r[0][0], pose.r[0][1], pose.r[0][2],
-        pose.r[1][0], pose.r[1][1], pose.r[1][2],
-        pose.r[2][0], pose.r[2][1], pose.r[2][2],
+        pose.r[0][0],
+        pose.r[0][1],
+        pose.r[0][2],
+        pose.r[1][0],
+        pose.r[1][1],
+        pose.r[1][2],
+        pose.r[2][0],
+        pose.r[2][1],
+        pose.r[2][2],
     ];
     OutputPose {
         rotation,
@@ -130,13 +136,20 @@ fn main() -> Result<()> {
 
     // Validate pose parameters
     let pose_params = if args.pose {
-        let tag_size = args.tag_size
+        let tag_size = args
+            .tag_size
             .context("--tag-size is required when --pose is set")?;
         let fx = args.fx.context("--fx is required when --pose is set")?;
         let fy = args.fy.context("--fy is required when --pose is set")?;
         let cx = args.cx.context("--cx is required when --pose is set")?;
         let cy = args.cy.context("--cy is required when --pose is set")?;
-        Some(PoseParams { tagsize: tag_size, fx, fy, cx, cy })
+        Some(PoseParams {
+            tagsize: tag_size,
+            fx,
+            fy,
+            cx,
+            cy,
+        })
     } else {
         None
     };
