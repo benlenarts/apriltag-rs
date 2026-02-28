@@ -1,3 +1,7 @@
+# Download reference papers and clone reference implementations
+fetch-references:
+    ./scripts/fetch-references.sh
+
 # Build WASM module for bench scene generation
 wasm-bench:
     wasm-pack build apriltag-bench-wasm --target web
