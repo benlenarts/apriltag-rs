@@ -65,6 +65,15 @@ enum Command {
         #[arg(long, default_value = "terminal")]
         format: String,
     },
+    /// Run a comprehensive benchmark sweep: many tags × distortion conditions (requires --features reference).
+    BenchmarkSweep {
+        /// Number of iterations per scenario.
+        #[arg(long, default_value_t = 10)]
+        iterations: usize,
+        /// Output format: terminal, json.
+        #[arg(long, default_value = "terminal")]
+        format: String,
+    },
     /// Compare Rust detector vs C reference (requires --features reference).
     Compare {
         /// Filter by category name.
@@ -155,6 +164,7 @@ fn main() {
             iterations,
             format,
         } => cmd_benchmark(category, scenario, iterations, &format),
+        Command::BenchmarkSweep { iterations, format } => cmd_benchmark_sweep(iterations, &format),
         Command::Compare {
             category,
             scenario,
@@ -526,6 +536,350 @@ fn cmd_benchmark(
             );
         }
     }
+}
+
+fn cmd_benchmark_sweep(iterations: usize, format: &str) {
+    #[cfg(not(feature = "reference"))]
+    {
+        let _ = (iterations, format);
+        eprintln!("Error: the 'benchmark-sweep' command requires the 'reference' feature.");
+        eprintln!(
+            "Build with: cargo run -p apriltag-bench --features reference -- benchmark-sweep"
+        );
+        eprintln!("Make sure to run scripts/fetch-references.sh first.");
+        std::process::exit(1);
+    }
+
+    #[cfg(feature = "reference")]
+    {
+        use apriltag_bench::reference::{PersistentReferenceDetector, ReferenceConfig};
+
+        #[derive(serde::Serialize)]
+        struct BenchRow {
+            name: String,
+            tags: usize,
+            condition: String,
+            image_size: [u32; 2],
+            rust_median_us: u64,
+            ref_median_us: u64,
+            ratio: f64,
+        }
+
+        struct SweepScene {
+            name: String,
+            tags: usize,
+            condition: String,
+            scene: apriltag_bench::scene::Scene,
+        }
+
+        // Tag counts and corresponding image sizes / tag scale
+        let tag_configs: &[(usize, u32, u32, f64)] = &[
+            // (n_tags, width, height, tag_scale)
+            (1, 500, 500, 80.0),
+            (5, 800, 600, 50.0),
+            (10, 1000, 800, 45.0),
+            (25, 1280, 960, 35.0),
+        ];
+
+        // Distortion conditions
+        struct Condition {
+            name: &'static str,
+            rotation_deg: f64,
+            tilt_x_deg: f64,
+            distortions: Vec<Distortion>,
+        }
+
+        let conditions = vec![
+            Condition {
+                name: "clean",
+                rotation_deg: 0.0,
+                tilt_x_deg: 0.0,
+                distortions: vec![],
+            },
+            Condition {
+                name: "rotation-30",
+                rotation_deg: 30.0,
+                tilt_x_deg: 0.0,
+                distortions: vec![],
+            },
+            Condition {
+                name: "tilt-20",
+                rotation_deg: 0.0,
+                tilt_x_deg: 20.0,
+                distortions: vec![],
+            },
+            Condition {
+                name: "noise-20",
+                rotation_deg: 0.0,
+                tilt_x_deg: 0.0,
+                distortions: vec![Distortion::GaussianNoise {
+                    sigma: 20.0,
+                    seed: 42,
+                }],
+            },
+            Condition {
+                name: "blur-2",
+                rotation_deg: 0.0,
+                tilt_x_deg: 0.0,
+                distortions: vec![Distortion::GaussianBlur { sigma: 2.0 }],
+            },
+            Condition {
+                name: "contrast-25",
+                rotation_deg: 0.0,
+                tilt_x_deg: 0.0,
+                distortions: vec![Distortion::ContrastScale { factor: 0.25 }],
+            },
+            Condition {
+                name: "combined",
+                rotation_deg: 15.0,
+                tilt_x_deg: 15.0,
+                distortions: vec![
+                    Distortion::GaussianNoise {
+                        sigma: 10.0,
+                        seed: 42,
+                    },
+                    Distortion::GaussianBlur { sigma: 1.0 },
+                ],
+            },
+        ];
+
+        // Generate all sweep scenes
+        let mut sweep_scenes = Vec::new();
+
+        for &(n_tags, width, height, tag_scale) in tag_configs {
+            // Compute grid positions for tags
+            let positions = grid_positions(n_tags, width, height, tag_scale);
+
+            for cond in &conditions {
+                let name = format!("{}tags-{}", n_tags, cond.name);
+
+                let mut builder =
+                    SceneBuilder::new(width, height).background(Background::Solid(128));
+
+                for (id, &(cx, cy)) in positions.iter().enumerate() {
+                    let transform =
+                        if cond.tilt_x_deg.abs() > 0.01 || cond.rotation_deg.abs() > 0.01 {
+                            if cond.tilt_x_deg.abs() > 0.01 {
+                                Transform::FromPose {
+                                    center: [cx, cy],
+                                    size: tag_scale,
+                                    roll: cond.rotation_deg.to_radians(),
+                                    tilt_x: cond.tilt_x_deg.to_radians(),
+                                    tilt_y: 0.0,
+                                }
+                            } else {
+                                Transform::Similarity {
+                                    cx,
+                                    cy,
+                                    scale: tag_scale / 2.0,
+                                    theta: cond.rotation_deg.to_radians(),
+                                }
+                            }
+                        } else {
+                            Transform::Similarity {
+                                cx,
+                                cy,
+                                scale: tag_scale / 2.0,
+                                theta: 0.0,
+                            }
+                        };
+
+                    builder = builder.add_tag("tag36h11", id as u32, transform);
+                }
+
+                let mut scene = builder.build();
+
+                if !cond.distortions.is_empty() {
+                    distortion::apply(&mut scene.image, &cond.distortions);
+                }
+
+                sweep_scenes.push(SweepScene {
+                    name,
+                    tags: n_tags,
+                    condition: cond.name.to_string(),
+                    scene,
+                });
+            }
+        }
+
+        // Run benchmarks
+        let mut rows = Vec::new();
+        let ref_config = ReferenceConfig::default();
+        let ref_detector = PersistentReferenceDetector::new("tag36h11", &ref_config);
+
+        let mut rust_detector = Detector::new(DetectorConfig::default());
+        if let Some(fam) = family::builtin_family("tag36h11") {
+            rust_detector.add_family(fam, 2);
+        }
+
+        if format != "json" {
+            println!(
+                "{:<30} {:>5} {:>10} {:>10} {:>10} {:>10}",
+                "Scenario", "Tags", "Rust(ms)", "Ref(ms)", "Ratio", "Size"
+            );
+            println!("{}", "-".repeat(80));
+        }
+
+        for ss in &sweep_scenes {
+            let img = &ss.scene.image;
+            let size = [img.width, img.height];
+
+            // Warmup
+            let _ = rust_detector.detect(img);
+            let _ = ref_detector.detect(img);
+
+            // Benchmark Rust
+            let mut rust_times = Vec::with_capacity(iterations);
+            for _ in 0..iterations {
+                let start = Instant::now();
+                let _ = rust_detector.detect(img);
+                rust_times.push(start.elapsed());
+            }
+
+            // Benchmark C reference
+            let mut ref_times = Vec::with_capacity(iterations);
+            for _ in 0..iterations {
+                let start = Instant::now();
+                let _ = ref_detector.detect(img);
+                ref_times.push(start.elapsed());
+            }
+
+            rust_times.sort();
+            ref_times.sort();
+
+            let rust_us = rust_times[iterations / 2].as_micros() as u64;
+            let ref_us = ref_times[iterations / 2].as_micros() as u64;
+            let ratio = if ref_us > 0 {
+                rust_us as f64 / ref_us as f64
+            } else {
+                0.0
+            };
+
+            if format != "json" {
+                println!(
+                    "{:<30} {:>5} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4}",
+                    &ss.name,
+                    ss.tags,
+                    rust_us as f64 / 1000.0,
+                    ref_us as f64 / 1000.0,
+                    ratio,
+                    size[0],
+                    size[1],
+                );
+            }
+
+            rows.push(BenchRow {
+                name: ss.name.clone(),
+                tags: ss.tags,
+                condition: ss.condition.clone(),
+                image_size: size,
+                rust_median_us: rust_us,
+                ref_median_us: ref_us,
+                ratio,
+            });
+        }
+
+        if format == "json" {
+            println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+        } else {
+            println!("{}", "-".repeat(80));
+
+            // Per-condition summary
+            println!("\nPer-condition averages:");
+            let cond_names: Vec<String> = conditions.iter().map(|c| c.name.to_string()).collect();
+            for cond_name in &cond_names {
+                let cond_rows: Vec<_> = rows.iter().filter(|r| r.condition == *cond_name).collect();
+                let total_rust: u64 = cond_rows.iter().map(|r| r.rust_median_us).sum();
+                let total_ref: u64 = cond_rows.iter().map(|r| r.ref_median_us).sum();
+                let ratio = if total_ref > 0 {
+                    total_rust as f64 / total_ref as f64
+                } else {
+                    0.0
+                };
+                println!(
+                    "  {:<20} {:>9.1} vs {:>9.1} ms  ({:.2}x)",
+                    cond_name,
+                    total_rust as f64 / 1000.0,
+                    total_ref as f64 / 1000.0,
+                    ratio,
+                );
+            }
+
+            // Per-tag-count summary
+            println!("\nPer-tag-count averages:");
+            for &(n_tags, _, _, _) in tag_configs {
+                let tag_rows: Vec<_> = rows.iter().filter(|r| r.tags == n_tags).collect();
+                let total_rust: u64 = tag_rows.iter().map(|r| r.rust_median_us).sum();
+                let total_ref: u64 = tag_rows.iter().map(|r| r.ref_median_us).sum();
+                let ratio = if total_ref > 0 {
+                    total_rust as f64 / total_ref as f64
+                } else {
+                    0.0
+                };
+                println!(
+                    "  {:>3} tags             {:>9.1} vs {:>9.1} ms  ({:.2}x)",
+                    n_tags,
+                    total_rust as f64 / 1000.0,
+                    total_ref as f64 / 1000.0,
+                    ratio,
+                );
+            }
+
+            // Overall total
+            let total_rust: u64 = rows.iter().map(|r| r.rust_median_us).sum();
+            let total_ref: u64 = rows.iter().map(|r| r.ref_median_us).sum();
+            let overall_ratio = if total_ref > 0 {
+                total_rust as f64 / total_ref as f64
+            } else {
+                0.0
+            };
+            println!(
+                "\nOVERALL: {:.1} vs {:.1} ms ({:.2}x), {} scenarios, {} iterations each",
+                total_rust as f64 / 1000.0,
+                total_ref as f64 / 1000.0,
+                overall_ratio,
+                rows.len(),
+                iterations,
+            );
+        }
+    }
+}
+
+/// Compute grid positions for N tags within an image, with spacing for borders.
+#[cfg(feature = "reference")]
+fn grid_positions(n: usize, width: u32, height: u32, tag_scale: f64) -> Vec<(f64, f64)> {
+    if n == 1 {
+        return vec![(width as f64 / 2.0, height as f64 / 2.0)];
+    }
+
+    // Compute grid dimensions
+    let cols = (n as f64).sqrt().ceil() as usize;
+    let rows = n.div_ceil(cols);
+
+    let margin = tag_scale * 1.2;
+    let usable_w = width as f64 - 2.0 * margin;
+    let usable_h = height as f64 - 2.0 * margin;
+
+    let step_x = if cols > 1 {
+        usable_w / (cols - 1) as f64
+    } else {
+        0.0
+    };
+    let step_y = if rows > 1 {
+        usable_h / (rows - 1) as f64
+    } else {
+        0.0
+    };
+
+    let mut positions = Vec::with_capacity(n);
+    for i in 0..n {
+        let col = i % cols;
+        let row = i / cols;
+        let x = margin + col as f64 * step_x;
+        let y = margin + row as f64 * step_y;
+        positions.push((x, y));
+    }
+    positions
 }
 
 fn cmd_compare(category: Option<String>, scenario: Option<String>, format: &str) {
