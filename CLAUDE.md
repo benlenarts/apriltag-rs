@@ -66,6 +66,8 @@ Scene generation code is shared between CLI and web UI (identical Rust, WASM-com
 - `docs/reference-detection/` — reference C implementation (apriltag3) for detection
 - `docs/reference-generation/` — reference Java implementation for tag family generation
 
+Run `scripts/fetch-references.sh` to download papers and clone reference repos. This is required before building with the `reference` feature flag (`cargo check -p apriltag-bench --features reference`).
+
 ## Coverage Policy
 
 **Target: 100% test coverage.** TDD is the primary strategy — code written to pass a test is covered by definition. When a coverage gap appears, ask whether the uncovered code is reachable. If it isn't, delete it; unreachable code is a design problem, not a testing problem. If it is reachable, test it through the public API with a realistic scenario (bad input, boundary condition, corrupt data). Never write a test that exists only to hit a line — every test must assert meaningful behavior.
