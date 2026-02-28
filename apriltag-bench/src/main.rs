@@ -407,12 +407,18 @@ fn cmd_compare(category: Option<String>, scenario: Option<String>, format: &str)
             for fam in &families {
                 let dets = reference::reference_detect(&scene.image, fam, &ref_config);
                 for d in dets {
+                    // The C reference returns corners as [BL, BR, TR, TL]
+                    // (tag-space (-1,1), (1,1), (1,-1), (-1,-1)) while our
+                    // ground truth uses [TL, TR, BR, BL] (tag-space (-1,-1),
+                    // (1,-1), (1,1), (-1,1)). Reverse to match our convention.
+                    let c = d.corners;
+                    let corners = [c[3], c[2], c[1], c[0]];
                     all_ref_dets.push(apriltag::detect::detector::Detection {
                         id: d.id,
                         hamming: d.hamming,
                         decision_margin: d.decision_margin,
                         center: d.center,
-                        corners: d.corners,
+                        corners,
                         family_name: fam.to_string(),
                     });
                 }
