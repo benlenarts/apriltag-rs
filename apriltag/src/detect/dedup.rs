@@ -171,4 +171,30 @@ mod tests {
         assert_eq!(dets.len(), 1);
         assert!((dets[0].decision_margin - 50.0).abs() < 1e-6);
     }
+
+    #[test]
+    fn dedup_lexicographic_tiebreaker() {
+        // Same hamming, same margin → falls through to corner comparison
+        let c1 = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        let c2 = [[1.0, 0.0], [11.0, 0.0], [11.0, 10.0], [1.0, 10.0]];
+        // c1 has smaller first corner x → c1 is "better"
+        assert!(is_better(
+            &make_detection(0, 0, 50.0, c1),
+            &make_detection(0, 0, 50.0, c2),
+        ));
+        assert!(!is_better(
+            &make_detection(0, 0, 50.0, c2),
+            &make_detection(0, 0, 50.0, c1),
+        ));
+    }
+
+    #[test]
+    fn dedup_equal_detections_not_better() {
+        let c = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        // Identical detections: is_better returns false
+        assert!(!is_better(
+            &make_detection(0, 0, 50.0, c),
+            &make_detection(0, 0, 50.0, c),
+        ));
+    }
 }
