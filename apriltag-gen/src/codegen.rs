@@ -271,9 +271,8 @@ pub fn generate_with_progress(
     // Pre-build grid once — avoids allocating a pixel grid per candidate
     let grid = ComplexityGrid::from_layout(layout);
 
-    // Report frequently enough for ~8 significant digits of percentage resolution.
-    // The default callback is a no-op so the overhead is negligible.
-    let report_interval = (total / 100_000_000).max(1);
+    // Report every 1M candidates (or every candidate for tiny families).
+    let report_interval = 1_000_000u64.min(total).max(1);
 
     let mut v = v0;
     for iter in 0..total {
@@ -455,13 +454,16 @@ mod tests {
         let start = std::time::Instant::now();
         let codes = generate_with_progress(&layout, 12, 10, |iter, total, found| {
             let pct = iter as f64 / total as f64 * 100.0;
+            let d = ((total as f64).log10() - 8.0).ceil().max(1.0) as usize;
             println!(
-                "{:>14.8}% ({}/{}) — {} codes found, elapsed {:.2?}",
+                "{:>width$.prec$}% ({}/{}) — {} codes found, elapsed {:.2?}",
                 pct,
                 iter,
                 total,
                 found,
-                start.elapsed()
+                start.elapsed(),
+                width = d + 4,
+                prec = d,
             );
         });
         let elapsed = start.elapsed();
