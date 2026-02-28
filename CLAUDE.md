@@ -85,6 +85,46 @@ cargo llvm-cov --html --ignore-filename-regex 'apriltag-gen-cli/' && open target
 
 After completing any feature or fix, run `cargo llvm-cov --text` and inspect for uncovered lines. If coverage is below 100%, add targeted tests before moving on. Each new test is its own atomic commit.
 
+## Benchmarking Policy
+
+**Every change must be benchmarked before merging to guard against performance regressions.** Performance parity with the reference C implementation is a project tenet — regressions are bugs.
+
+### When to benchmark
+
+- **Before and after every change** — run the bench suite on the working tree before your change and after to compare. Any measurable regression must be investigated and resolved before committing.
+- **Detection-affecting changes** — any change to image processing, gradient computation, segmentation, quad detection, homography, or decoding must run the full detection benchmark suite.
+- **Refactors and "safe" changes** — even seemingly neutral refactors (iterator conversions, allocation changes, data structure swaps) can affect performance. Benchmark them.
+
+### How to benchmark
+
+```bash
+# Run the regression gate — exits 1 if any scenario regresses
+cargo run -p apriltag-bench -- regression
+
+# Run all bench scenarios and inspect results
+cargo run -p apriltag-bench -- run --category baseline
+
+# Compare against C reference (requires reference feature + fetch-references.sh)
+cargo run -p apriltag-bench --features reference -- compare --format html
+
+# Explore a specific scenario interactively
+cargo run -p apriltag-bench -- explore --tag-size 60 --tilt-x 30 --noise 15
+```
+
+### Regression criteria
+
+- **Detection quality** — detection rate, false positive rate, and decode accuracy must not decrease across any scenario category.
+- **Performance** — wall-clock time for the detection pipeline must not regress beyond noise. If a change adds measurable latency, it needs justification and approval.
+- **CI gate** — `cargo run -p apriltag-bench -- regression` is the automated check. It must pass before any PR is merged.
+
+### Workflow integration
+
+1. Run `cargo run -p apriltag-bench -- regression` **before** your change to establish a baseline.
+2. Make your change, ensure `cargo test` passes.
+3. Run `cargo run -p apriltag-bench -- regression` **after** your change.
+4. If any scenario regresses, fix it before committing. Do not suppress or skip failing scenarios.
+5. For large changes, generate a full HTML comparison report (`--format html`) and review it manually.
+
 ## Commands
 
 Verify WASM compatibility
