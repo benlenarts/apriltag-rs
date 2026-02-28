@@ -276,8 +276,16 @@ fn cmd_generate(name: &str) -> Result<()> {
         family.config.name, family.layout.nbits, family.config.min_hamming, min_complexity
     );
 
-    let codes =
-        apriltag_gen::codegen::generate(&family.layout, family.config.min_hamming, min_complexity);
+    let codes = apriltag_gen::codegen::generate_with_progress(
+        &family.layout,
+        family.config.min_hamming,
+        min_complexity,
+        |iter, total, codes_found| {
+            let pct = iter as f64 / total as f64 * 100.0;
+            eprint!("\r  {:.1}% searched, {} codes found", pct, codes_found);
+        },
+    );
+    eprintln!("\r  100.0% searched, {} codes found", codes.len());
 
     println!("Generated {} codes.", codes.len());
 

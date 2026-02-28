@@ -165,6 +165,19 @@ fn classify_pair(
 /// `min_complexity` is the per-family seed parameter (from TOML config).
 /// The LCG seed is `nbits * 10000 + min_hamming * 100 + min_complexity`.
 pub fn generate(layout: &Layout, min_hamming: u32, min_complexity: u32) -> Vec<u64> {
+    generate_with_progress(layout, min_hamming, min_complexity, |_, _, _| {})
+}
+
+/// Generate tag family codes with progress reporting.
+///
+/// Same as [`generate`], but calls `on_progress(iter, total, codes_found)` periodically
+/// during the search. The callback interval scales with the search space size.
+pub fn generate_with_progress(
+    layout: &Layout,
+    min_hamming: u32,
+    min_complexity: u32,
+    mut on_progress: impl FnMut(u64, u64, usize),
+) -> Vec<u64> {
     let nbits = layout.nbits as u32;
     let mask = (1u64 << nbits) - 1;
 
@@ -179,8 +192,15 @@ pub fn generate(layout: &Layout, min_hamming: u32, min_complexity: u32) -> Vec<u
     // Pre-build grid once — avoids allocating a pixel grid per candidate
     let grid = ComplexityGrid::from_layout(layout);
 
+    // Report every ~1M iterations, but at least every 1024 for tiny families
+    let report_interval = (total / 1000).clamp(1024, 1_000_000);
+
     let mut v = v0;
-    for _iter in 0..total {
+    for iter in 0..total {
+        if iter % report_interval == 0 {
+            on_progress(iter, total, codelist.len());
+        }
+
         v = v.wrapping_add(PRIME) & mask;
 
         if !is_complex_enough(&grid, v) {
