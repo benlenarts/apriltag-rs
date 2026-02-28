@@ -8,3 +8,5 @@ pub mod quad;
 pub mod refine;
 pub mod homography;
 pub mod decode;
+pub mod detector;
+pub mod dedup;
