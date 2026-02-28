@@ -1,5 +1,8 @@
 use crate::family::TagFamily;
 
+#[cfg(feature = "parallel")]
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
 use super::cluster::gradient_clusters;
 use super::connected::connected_components;
 use super::decode::{decode_quad, QuickDecode};
@@ -122,13 +125,13 @@ impl Detector {
         }
 
         // Stages 7-8: Homography + Decode
-        let mut detections = Vec::new();
-        for quad in &quads {
+        let decode_one = |quad: &super::quad::Quad| -> Vec<Detection> {
             let h = match Homography::from_quad_corners(&quad.corners) {
                 Some(h) => h,
-                None => continue,
+                None => return Vec::new(),
             };
 
+            let mut dets = Vec::new();
             for (family, qd) in &self.families {
                 if quad.reversed_border != family.layout.reversed_border {
                     continue;
@@ -142,11 +145,10 @@ impl Detector {
                     quad.reversed_border,
                     self.config.decode_sharpening,
                 ) {
-                    // Compute center and rotation-corrected corners
                     let (center, corners) =
                         compute_detection_geometry(&h, result.rotation, family);
 
-                    detections.push(Detection {
+                    dets.push(Detection {
                         family_name: result.family_name,
                         id: result.id,
                         hamming: result.hamming,
@@ -156,7 +158,20 @@ impl Detector {
                     });
                 }
             }
-        }
+            dets
+        };
+
+        #[cfg(feature = "parallel")]
+        let mut detections: Vec<Detection> = quads
+            .par_iter()
+            .flat_map(decode_one)
+            .collect();
+
+        #[cfg(not(feature = "parallel"))]
+        let mut detections: Vec<Detection> = quads
+            .iter()
+            .flat_map(decode_one)
+            .collect();
 
         // Stage 9: Deduplication
         deduplicate(&mut detections);
