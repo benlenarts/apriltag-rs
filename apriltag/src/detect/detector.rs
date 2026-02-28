@@ -333,6 +333,58 @@ mod tests {
         (img, family)
     }
 
+    /// Regression test: large tags (200px in 500x500) must be detected with
+    /// the default quad_decimate=2.0. This failed when decimation used averaging
+    /// instead of subsampling.
+    #[test]
+    #[cfg(feature = "family-tag36h11")]
+    fn detect_large_tag_with_decimation() {
+        let family = family::tag36h11();
+        let rendered = render::render(&family.layout, family.codes[0]);
+
+        let img_size = 500u32;
+        let scale = 20u32; // 10 grid cells * 20 = 200px tag
+        let mut img = ImageU8::new(img_size, img_size);
+        for y in 0..img_size {
+            for x in 0..img_size {
+                img.set(x, y, 255);
+            }
+        }
+
+        let ox = (img_size - rendered.grid_size as u32 * scale) / 2;
+        let oy = ox;
+        for ty in 0..rendered.grid_size {
+            for tx in 0..rendered.grid_size {
+                let pixel = rendered.pixel(tx, ty);
+                let val = match pixel {
+                    crate::types::Pixel::Black => 0u8,
+                    crate::types::Pixel::White => 255u8,
+                    crate::types::Pixel::Transparent => 255u8,
+                };
+                for dy in 0..scale {
+                    for dx in 0..scale {
+                        img.set(
+                            ox + tx as u32 * scale + dx,
+                            oy + ty as u32 * scale + dy,
+                            val,
+                        );
+                    }
+                }
+            }
+        }
+
+        let config = DetectorConfig::default(); // quad_decimate = 2.0
+        let mut det = Detector::new(config);
+        det.add_family(family, 2);
+
+        let dets = det.detect(&img);
+        assert!(
+            !dets.is_empty(),
+            "Should detect large tag with decimation=2.0"
+        );
+        assert_eq!(dets[0].id, 0);
+    }
+
     #[test]
     #[cfg(feature = "family-tag16h5")]
     fn pipeline_stages_diagnostic() {

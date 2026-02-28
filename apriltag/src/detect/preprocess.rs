@@ -1,6 +1,9 @@
 use super::image::ImageU8;
 
-/// Decimate an image by factor `f`, averaging each f×f block.
+/// Decimate an image by factor `f`, subsampling every f-th pixel.
+///
+/// Picks the top-left pixel of each f×f block, matching the C reference
+/// implementation (`image_u8_decimate`).
 pub fn decimate(img: &ImageU8, f: u32) -> ImageU8 {
     if f <= 1 {
         return img.clone();
@@ -9,17 +12,10 @@ pub fn decimate(img: &ImageU8, f: u32) -> ImageU8 {
     let out_w = img.width / f;
     let out_h = img.height / f;
     let mut out = ImageU8::new(out_w, out_h);
-    let area = f * f;
 
     for oy in 0..out_h {
         for ox in 0..out_w {
-            let mut sum = 0u32;
-            for dy in 0..f {
-                for dx in 0..f {
-                    sum += img.get(ox * f + dx, oy * f + dy) as u32;
-                }
-            }
-            out.set(ox, oy, (sum / area) as u8);
+            out.set(ox, oy, img.get(ox * f, oy * f));
         }
     }
     out
@@ -130,18 +126,20 @@ mod tests {
     }
 
     #[test]
-    fn decimate_factor_2_averages_blocks() {
+    fn decimate_factor_2_subsamples_top_left() {
         let mut img = ImageU8::new(4, 4);
-        // Set 2x2 block at (0,0) to known values
+        // Set distinct values in each 2x2 block's top-left
         img.set(0, 0, 100);
-        img.set(1, 0, 200);
-        img.set(0, 1, 0);
-        img.set(1, 1, 100);
+        img.set(1, 0, 200); // not top-left, should be ignored
+        img.set(0, 1, 50); // not top-left, should be ignored
+        img.set(1, 1, 75); // not top-left, should be ignored
+        img.set(2, 0, 180); // top-left of second block
         let out = decimate(&img, 2);
         assert_eq!(out.width, 2);
         assert_eq!(out.height, 2);
-        // Average of 100, 200, 0, 100 = 400/4 = 100
+        // Subsampling picks top-left pixel of each block
         assert_eq!(out.get(0, 0), 100);
+        assert_eq!(out.get(1, 0), 180);
     }
 
     #[test]
