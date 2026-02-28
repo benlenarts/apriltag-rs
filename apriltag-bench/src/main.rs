@@ -50,6 +50,21 @@ enum Command {
         #[arg(long)]
         category: Option<String>,
     },
+    /// Benchmark detection performance: Rust vs C reference (requires --features reference).
+    Benchmark {
+        /// Filter by category name.
+        #[arg(long)]
+        category: Option<String>,
+        /// Filter by scenario name pattern (substring match).
+        #[arg(long)]
+        scenario: Option<String>,
+        /// Number of iterations per scenario.
+        #[arg(long, default_value_t = 10)]
+        iterations: usize,
+        /// Output format: terminal, json.
+        #[arg(long, default_value = "terminal")]
+        format: String,
+    },
     /// Compare Rust detector vs C reference (requires --features reference).
     Compare {
         /// Filter by category name.
@@ -134,6 +149,12 @@ fn main() {
         } => cmd_run(category, scenario, &format, threshold, quiet),
         Command::List { category } => cmd_list(category),
         Command::Regression { category } => cmd_regression(category),
+        Command::Benchmark {
+            category,
+            scenario,
+            iterations,
+            format,
+        } => cmd_benchmark(category, scenario, iterations, &format),
         Command::Compare {
             category,
             scenario,
@@ -346,6 +367,164 @@ fn cmd_serve(port: u16) {
             );
         }
         _ => {}
+    }
+}
+
+fn cmd_benchmark(
+    category: Option<String>,
+    scenario: Option<String>,
+    iterations: usize,
+    format: &str,
+) {
+    #[cfg(not(feature = "reference"))]
+    {
+        let _ = (category, scenario, iterations, format);
+        eprintln!("Error: the 'benchmark' command requires the 'reference' feature.");
+        eprintln!("Build with: cargo run -p apriltag-bench --features reference -- benchmark");
+        eprintln!("Make sure to run scripts/fetch-references.sh first.");
+        std::process::exit(1);
+    }
+
+    #[cfg(feature = "reference")]
+    {
+        use apriltag_bench::reference::{PersistentReferenceDetector, ReferenceConfig};
+
+        let scenarios = filter_scenarios(category, scenario);
+
+        #[derive(serde::Serialize)]
+        struct BenchRow {
+            name: String,
+            image_size: [u32; 2],
+            rust_median_us: u64,
+            ref_median_us: u64,
+            ratio: f64,
+        }
+
+        let mut rows = Vec::new();
+
+        if format != "json" {
+            println!(
+                "{:<35} {:>10} {:>10} {:>10} {:>8}",
+                "Scenario", "Rust(ms)", "Ref(ms)", "Ratio", "Size"
+            );
+            println!("{}", "-".repeat(78));
+        }
+
+        for s in &scenarios {
+            let scene = s.build();
+            let img = &scene.image;
+            let size = [img.width, img.height];
+
+            // Collect unique families for this scenario
+            let families: Vec<&str> = s
+                .expect_ids
+                .iter()
+                .map(|(f, _)| f.as_str())
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
+
+            // Create Rust detector (persistent across iterations)
+            let mut rust_config = DetectorConfig::default();
+            if let Some(decimate) = s.quad_decimate {
+                rust_config.quad_decimate = decimate;
+            }
+            let mut rust_detector = Detector::new(rust_config);
+            for fam_name in &families {
+                if let Some(fam) = family::builtin_family(fam_name) {
+                    rust_detector.add_family(fam, 2);
+                }
+            }
+
+            // Create C reference detector (persistent across iterations)
+            let ref_config = ReferenceConfig {
+                quad_decimate: s.quad_decimate.unwrap_or(2.0),
+                ..Default::default()
+            };
+            // Use first family for persistent detector (most scenarios use one family)
+            let ref_detector = PersistentReferenceDetector::new(families[0], &ref_config);
+
+            // Warmup run
+            let _ = rust_detector.detect(&scene.image);
+            let _ = ref_detector.detect(&scene.image);
+
+            // Benchmark Rust detector
+            let mut rust_times = Vec::with_capacity(iterations);
+            for _ in 0..iterations {
+                let start = Instant::now();
+                let _ = rust_detector.detect(&scene.image);
+                rust_times.push(start.elapsed());
+            }
+
+            // Benchmark C reference detector
+            let mut ref_times = Vec::with_capacity(iterations);
+            for _ in 0..iterations {
+                let start = Instant::now();
+                let _ = ref_detector.detect(&scene.image);
+                ref_times.push(start.elapsed());
+            }
+
+            rust_times.sort();
+            ref_times.sort();
+
+            let rust_median = rust_times[iterations / 2];
+            let ref_median = ref_times[iterations / 2];
+
+            let rust_us = rust_median.as_micros() as u64;
+            let ref_us = ref_median.as_micros() as u64;
+            let ratio = if ref_us > 0 {
+                rust_us as f64 / ref_us as f64
+            } else {
+                0.0
+            };
+
+            if format != "json" {
+                println!(
+                    "{:<35} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4}",
+                    &s.name,
+                    rust_us as f64 / 1000.0,
+                    ref_us as f64 / 1000.0,
+                    ratio,
+                    size[0],
+                    size[1],
+                );
+            }
+
+            rows.push(BenchRow {
+                name: s.name.clone(),
+                image_size: size,
+                rust_median_us: rust_us,
+                ref_median_us: ref_us,
+                ratio,
+            });
+        }
+
+        if format == "json" {
+            println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+        } else {
+            println!("{}", "-".repeat(78));
+
+            // Summary statistics
+            let total_rust: u64 = rows.iter().map(|r| r.rust_median_us).sum();
+            let total_ref: u64 = rows.iter().map(|r| r.ref_median_us).sum();
+            let overall_ratio = if total_ref > 0 {
+                total_rust as f64 / total_ref as f64
+            } else {
+                0.0
+            };
+            println!(
+                "{:<35} {:>9.1} {:>9.1} {:>9.2}x",
+                "TOTAL",
+                total_rust as f64 / 1000.0,
+                total_ref as f64 / 1000.0,
+                overall_ratio,
+            );
+            println!(
+                "\n{} scenarios, {} iterations each (median times shown)",
+                rows.len(),
+                iterations
+            );
+        }
     }
 }
 

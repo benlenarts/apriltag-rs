@@ -38,6 +38,12 @@ struct BenchDetection {
     center: [f64; 2],
 }
 
+/// Opaque handle to a persistent C reference detector.
+#[repr(C)]
+struct BenchDetector {
+    _private: [u8; 0],
+}
+
 extern "C" {
     fn bench_reference_detect(
         buf: *const u8,
@@ -51,6 +57,93 @@ extern "C" {
     ) -> *mut BenchDetection;
 
     fn bench_free_detections(detections: *mut BenchDetection);
+
+    fn bench_create_detector(
+        family: *const std::ffi::c_char,
+        quad_decimate: f32,
+        nthreads: i32,
+    ) -> *mut BenchDetector;
+
+    fn bench_detect(
+        detector: *mut BenchDetector,
+        buf: *const u8,
+        width: i32,
+        height: i32,
+        stride: i32,
+        out_count: *mut i32,
+    ) -> *mut BenchDetection;
+
+    fn bench_destroy_detector(detector: *mut BenchDetector);
+}
+
+/// A persistent reference detector that avoids setup/teardown overhead per call.
+pub struct PersistentReferenceDetector {
+    ptr: *mut BenchDetector,
+}
+
+impl PersistentReferenceDetector {
+    /// Create a new persistent detector for the given family.
+    pub fn new(family: &str, config: &ReferenceConfig) -> Self {
+        let family_cstr = std::ffi::CString::new(family).expect("family name contains null byte");
+        let ptr = unsafe {
+            bench_create_detector(family_cstr.as_ptr(), config.quad_decimate, config.nthreads)
+        };
+        assert!(
+            !ptr.is_null(),
+            "failed to create reference detector for family {family}"
+        );
+        Self { ptr }
+    }
+
+    /// Detect tags in the given image (no setup/teardown overhead).
+    pub fn detect(&self, img: &ImageU8) -> Vec<ReferenceDetection> {
+        let mut count: i32 = 0;
+        let raw = unsafe {
+            bench_detect(
+                self.ptr,
+                img.buf.as_ptr(),
+                img.width as i32,
+                img.height as i32,
+                img.stride as i32,
+                &mut count,
+            )
+        };
+
+        if raw.is_null() || count <= 0 {
+            return Vec::new();
+        }
+
+        let mut results = Vec::with_capacity(count as usize);
+        for i in 0..count as usize {
+            let det = unsafe { &*raw.add(i) };
+            results.push(ReferenceDetection {
+                id: det.id,
+                hamming: det.hamming,
+                decision_margin: det.decision_margin,
+                corners: [
+                    [det.corners[0], det.corners[1]],
+                    [det.corners[2], det.corners[3]],
+                    [det.corners[4], det.corners[5]],
+                    [det.corners[6], det.corners[7]],
+                ],
+                center: det.center,
+            });
+        }
+
+        unsafe {
+            bench_free_detections(raw);
+        }
+
+        results
+    }
+}
+
+impl Drop for PersistentReferenceDetector {
+    fn drop(&mut self) {
+        unsafe {
+            bench_destroy_detector(self.ptr);
+        }
+    }
 }
 
 /// Detect tags using the reference C implementation.

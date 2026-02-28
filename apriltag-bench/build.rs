@@ -70,6 +70,7 @@ fn build_reference() {
 
     // Add our bridge file
     build.file("src/reference_bridge.c");
+    println!("cargo:rerun-if-changed=src/reference_bridge.c");
 
     build.compile("apriltag_reference");
 
