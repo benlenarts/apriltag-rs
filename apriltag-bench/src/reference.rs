@@ -68,7 +68,7 @@ pub fn reference_detect(
 
     let raw = unsafe {
         bench_reference_detect(
-            img.data.as_ptr(),
+            img.buf.as_ptr(),
             img.width as i32,
             img.height as i32,
             img.stride as i32,
