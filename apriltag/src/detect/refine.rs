@@ -191,6 +191,69 @@ mod tests {
     }
 
     #[test]
+    fn refine_edges_corner_assignment_not_cyclically_rotated() {
+        // Non-square rectangle so all 4 corners are geometrically distinguishable.
+        // Black rectangle (40×60) on white background — each corner has a unique position.
+        let (w, h) = (120, 120);
+        let mut img = ImageU8::new(w, h);
+        // Fill white
+        for y in 0..h {
+            for x in 0..w {
+                img.set(x as u32, y as u32, 255);
+            }
+        }
+        // Draw black rectangle from (30,20) to (90,80) — width=60, height=60
+        // Make it non-square: (30,20) to (90,70) — width=60, height=50
+        let (rx0, ry0, rx1, ry1) = (30, 20, 90, 70);
+        for y in ry0..ry1 {
+            for x in rx0..rx1 {
+                img.set(x as u32, y as u32, 0);
+            }
+        }
+
+        // Expected corners (CCW): bottom-left, bottom-right, top-right, top-left
+        let expected: [[f64; 2]; 4] = [
+            [rx0 as f64, ry1 as f64], // corner 0: bottom-left
+            [rx1 as f64, ry1 as f64], // corner 1: bottom-right
+            [rx1 as f64, ry0 as f64], // corner 2: top-right
+            [rx0 as f64, ry0 as f64], // corner 3: top-left
+        ];
+
+        // Start with corners close to expected (as the initial quad detection would produce)
+        let mut quad = Quad {
+            corners: [
+                [rx0 as f64 + 1.0, ry1 as f64 - 1.0],
+                [rx1 as f64 - 1.0, ry1 as f64 - 1.0],
+                [rx1 as f64 - 1.0, ry0 as f64 + 1.0],
+                [rx0 as f64 + 1.0, ry0 as f64 + 1.0],
+            ],
+            reversed_border: false,
+        };
+
+        refine_edges(&mut quad, &img, 1.0);
+
+        // Each refined corner should be closer to its own expected position
+        // than to the cyclically-shifted expected position.
+        for i in 0..4 {
+            let correct_dist = ((quad.corners[i][0] - expected[i][0]).powi(2)
+                + (quad.corners[i][1] - expected[i][1]).powi(2))
+            .sqrt();
+            let shifted = (i + 1) % 4; // the position it would get with the bug
+            let wrong_dist = ((quad.corners[i][0] - expected[shifted][0]).powi(2)
+                + (quad.corners[i][1] - expected[shifted][1]).powi(2))
+            .sqrt();
+            assert!(
+                correct_dist < wrong_dist,
+                "Corner {i}: correct_dist={correct_dist:.2} should be < wrong_dist={wrong_dist:.2} \
+                 (refined={:?}, expected={:?}, shifted_expected={:?})",
+                quad.corners[i],
+                expected[i],
+                expected[shifted],
+            );
+        }
+    }
+
+    #[test]
     fn refine_edges_reversed_border() {
         let img = ImageU8::new(100, 100);
         let mut quad = Quad {
