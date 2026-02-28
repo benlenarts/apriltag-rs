@@ -513,66 +513,140 @@ mod tests {
         );
     }
 
+    /// Generate well-separated codes mimicking actual generate output.
+    ///
+    /// Uses the LCG iteration order and accepts codes that are at least
+    /// `threshold` apart from all previously accepted codes' rotations.
+    /// This produces a realistic code set with the same distance properties
+    /// as the real generate loop (minus complexity/self-rotation filters).
+    fn generate_realistic_codes(nbits: u32, threshold: u32, max_codes: usize) -> Vec<u64> {
+        let mask = (1u64 << nbits) - 1;
+        let total = 1u64 << nbits;
+        let mut codes = Vec::new();
+        let mut rotcodes = Vec::new();
+
+        let mut v = 0u64;
+        for _ in 0..total {
+            v = v.wrapping_add(PRIME) & mask;
+            if rotcodes
+                .iter()
+                .any(|&c: &u64| (c ^ v).count_ones() < threshold)
+            {
+                continue;
+            }
+            codes.push(v);
+            let rv1 = rotate90(v, nbits);
+            let rv2 = rotate90(rv1, nbits);
+            let rv3 = rotate90(rv2, nbits);
+            rotcodes.extend_from_slice(&[v, rv1, rv2, rv3]);
+            if codes.len() >= max_codes {
+                break;
+            }
+        }
+        codes
+    }
+
     #[test]
     #[ignore] // run with: cargo test -p apriltag-gen --release -- bench_inner_scan_scaling --ignored --nocapture
     fn bench_inner_scan_scaling() {
         use std::time::Instant;
 
-        let threshold = 12u32;
-        let nbits = 41;
-        let mask = (1u64 << nbits) - 1;
-        let num_queries = 100_000;
+        struct Config {
+            name: &'static str,
+            nbits: u32,
+            threshold: u32,
+            /// N values to test (rotcodes = 4x these)
+            code_counts: &'static [usize],
+        }
 
-        for &n in &[100, 500, 1000, 5000, 10_000, 50_000] {
-            // Generate N codes deterministically
-            let mut rng = 0xDEADBEEFu64;
-            let codes: Vec<u64> = (0..n)
-                .map(|_| {
-                    rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
-                    rng & mask
-                })
-                .collect();
+        let configs = [
+            Config {
+                name: "standard41h12",
+                nbits: 41,
+                threshold: 12,
+                code_counts: &[500, 1000, 2000],
+            },
+            Config {
+                name: "standard48h11",
+                nbits: 48,
+                threshold: 11,
+                code_counts: &[500, 2000, 5000],
+            },
+        ];
 
-            // Generate M queries
-            let queries: Vec<u64> = (0..num_queries)
-                .map(|_| {
-                    rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
-                    rng & mask
-                })
-                .collect();
+        let num_queries = 50_000;
 
-            // Populate CodeSet
-            let mut set = CodeSet::new();
-            for &c in &codes {
-                set.insert(c);
-            }
-
-            // Benchmark CodeSet queries
-            let start = Instant::now();
-            let mut hits_set = 0u32;
-            for &q in &queries {
-                if set.has_any_closer_than(q, threshold) {
-                    hits_set += 1;
-                }
-            }
-            let set_time = start.elapsed();
-
-            // Benchmark naive Vec scan
-            let start = Instant::now();
-            let mut hits_vec = 0u32;
-            for &q in &queries {
-                if codes.iter().any(|&c| (c ^ q).count_ones() < threshold) {
-                    hits_vec += 1;
-                }
-            }
-            let vec_time = start.elapsed();
-
-            assert_eq!(hits_set, hits_vec);
-            let speedup = vec_time.as_secs_f64() / set_time.as_secs_f64();
+        for config in &configs {
             println!(
-                "N={:>6}: CodeSet={:.2?}  Vec={:.2?}  speedup={:.2}x  hits={}/{}",
-                n, set_time, vec_time, speedup, hits_set, num_queries
+                "\n=== {} (nbits={}, threshold={}) ===",
+                config.name, config.nbits, config.threshold
             );
+
+            // Generate a pool of well-separated codes
+            let max_needed = *config.code_counts.last().unwrap();
+            let all_codes = generate_realistic_codes(config.nbits, config.threshold, max_needed);
+            println!("Generated {} realistic codes", all_codes.len());
+
+            let mask = (1u64 << config.nbits) - 1;
+
+            for &n in config.code_counts {
+                let n = n.min(all_codes.len());
+                // Build rotcodes (what CodeSet actually stores)
+                let mut rotcodes = Vec::with_capacity(n * 4);
+                for &c in &all_codes[..n] {
+                    let rv1 = rotate90(c, config.nbits);
+                    let rv2 = rotate90(rv1, config.nbits);
+                    let rv3 = rotate90(rv2, config.nbits);
+                    rotcodes.extend_from_slice(&[c, rv1, rv2, rv3]);
+                }
+                let rotcode_count = rotcodes.len();
+
+                // Generate queries: mix of hits (random codes, most will be close to
+                // something in a large set) and guaranteed misses (codes from the set itself
+                // won't match since they're well-separated)
+                let mut rng = 0xCAFEBABEu64;
+                let queries: Vec<u64> = (0..num_queries)
+                    .map(|_| {
+                        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+                        rng & mask
+                    })
+                    .collect();
+
+                // Benchmark: flat Vec scan (always)
+                let start = Instant::now();
+                let mut hits_flat = 0u32;
+                for &q in &queries {
+                    if rotcodes
+                        .iter()
+                        .any(|&c| (c ^ q).count_ones() < config.threshold)
+                    {
+                        hits_flat += 1;
+                    }
+                }
+                let flat_time = start.elapsed();
+
+                // Benchmark: CodeSet (hybrid)
+                let mut set = CodeSet::new();
+                for &c in &rotcodes {
+                    set.insert(c);
+                }
+                let start = Instant::now();
+                let mut hits_set = 0u32;
+                for &q in &queries {
+                    if set.has_any_closer_than(q, config.threshold) {
+                        hits_set += 1;
+                    }
+                }
+                let set_time = start.elapsed();
+
+                assert_eq!(hits_flat, hits_set, "correctness mismatch");
+                let hit_rate = hits_flat as f64 / num_queries as f64 * 100.0;
+                let speedup = flat_time.as_secs_f64() / set_time.as_secs_f64();
+                println!(
+                    "  N={:>5} (rotcodes={:>6}): flat={:.2?}  CodeSet={:.2?}  speedup={:.2}x  hits={:.1}%",
+                    n, rotcode_count, flat_time, set_time, speedup, hit_rate,
+                );
+            }
         }
     }
 
