@@ -577,6 +577,144 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // run with: cargo test -p apriltag-gen --release -- bench_generate_profile --ignored --nocapture
+    fn bench_generate_profile() {
+        use std::time::{Duration, Instant};
+
+        // standard41h12: 41 bits, min_hamming=12, min_complexity=10
+        let layout = Layout::standard(9).unwrap();
+        let nbits = layout.nbits as u32;
+        let mask = (1u64 << nbits) - 1;
+        let min_hamming = 12u32;
+        let min_complexity = 10u32;
+
+        let seed = nbits as i64 * 10000 + min_hamming as i64 * 100 + min_complexity as i64;
+        let v0 = java_random_next_long(seed) as u64 & mask;
+        let total = 1u64 << nbits;
+        let grid = ComplexityGrid::from_layout(&layout);
+
+        let mut codelist: Vec<u64> = Vec::new();
+        let mut rotcodes = CodeSet::new();
+
+        let mut rejected_complexity = 0u64;
+        let mut rejected_self_rotation = 0u64;
+        let mut rejected_inner_scan = 0u64;
+        let mut accepted = 0u64;
+
+        let mut time_complexity = Duration::ZERO;
+        let mut time_self_rotation = Duration::ZERO;
+        let mut time_inner_scan = Duration::ZERO;
+
+        let report_interval = 1_000_000u64;
+        let start = Instant::now();
+
+        let mut v = v0;
+        for iter in 0..total {
+            if iter % report_interval == 0 && iter > 0 {
+                let pct = iter as f64 / total as f64 * 100.0;
+                println!(
+                    "{:>7.3}% — {} codes, complexity_rej={} selfrot_rej={} inner_rej={} accepted={}",
+                    pct, codelist.len(), rejected_complexity, rejected_self_rotation,
+                    rejected_inner_scan, accepted,
+                );
+            }
+
+            v = v.wrapping_add(PRIME) & mask;
+
+            let t0 = Instant::now();
+            let complex = is_complex_enough(&grid, v);
+            time_complexity += t0.elapsed();
+            if !complex {
+                rejected_complexity += 1;
+                continue;
+            }
+
+            let t0 = Instant::now();
+            let rv1 = rotate90(v, nbits);
+            let rv2 = rotate90(rv1, nbits);
+            let rv3 = rotate90(rv2, nbits);
+            let self_rot_ok = hamming_distance_at_least(v, rv1, min_hamming)
+                && hamming_distance_at_least(v, rv2, min_hamming)
+                && hamming_distance_at_least(v, rv3, min_hamming)
+                && hamming_distance_at_least(rv1, rv2, min_hamming)
+                && hamming_distance_at_least(rv1, rv3, min_hamming)
+                && hamming_distance_at_least(rv2, rv3, min_hamming);
+            time_self_rotation += t0.elapsed();
+            if !self_rot_ok {
+                rejected_self_rotation += 1;
+                continue;
+            }
+
+            let t0 = Instant::now();
+            let inner_hit = rotcodes.has_any_closer_than(v, min_hamming);
+            time_inner_scan += t0.elapsed();
+            if inner_hit {
+                rejected_inner_scan += 1;
+                continue;
+            }
+
+            accepted += 1;
+            codelist.push(v);
+            rotcodes.insert(v);
+            rotcodes.insert(rv1);
+            rotcodes.insert(rv2);
+            rotcodes.insert(rv3);
+        }
+
+        let elapsed = start.elapsed();
+        println!("\n=== standard41h12 Profile ===");
+        println!("Total candidates:         {}", total);
+        println!(
+            "Rejected by complexity:   {} ({:.1}%)",
+            rejected_complexity,
+            rejected_complexity as f64 / total as f64 * 100.0
+        );
+        println!(
+            "Rejected by self-rotation: {} ({:.1}%)",
+            rejected_self_rotation,
+            rejected_self_rotation as f64 / total as f64 * 100.0
+        );
+        println!(
+            "Rejected by inner scan:   {} ({:.1}%)",
+            rejected_inner_scan,
+            rejected_inner_scan as f64 / total as f64 * 100.0
+        );
+        println!(
+            "Accepted:                 {} ({:.4}%)",
+            accepted,
+            accepted as f64 / total as f64 * 100.0
+        );
+        println!();
+        println!("Time breakdown:");
+        println!(
+            "  Complexity check: {:.2?} ({:.1}%)",
+            time_complexity,
+            time_complexity.as_secs_f64() / elapsed.as_secs_f64() * 100.0
+        );
+        println!(
+            "  Self-rotation:    {:.2?} ({:.1}%)",
+            time_self_rotation,
+            time_self_rotation.as_secs_f64() / elapsed.as_secs_f64() * 100.0
+        );
+        println!(
+            "  Inner scan:       {:.2?} ({:.1}%)",
+            time_inner_scan,
+            time_inner_scan.as_secs_f64() / elapsed.as_secs_f64() * 100.0
+        );
+        println!("  Total elapsed:    {:.2?}", elapsed);
+        println!();
+        println!("Codes found: {}", codelist.len());
+        println!("Rotcodes in set: ~{}", codelist.len() * 4);
+
+        // Verify correctness
+        let reference = generate(&layout, min_hamming, min_complexity);
+        assert_eq!(
+            codelist, reference,
+            "instrumented generate must match reference"
+        );
+    }
+
+    #[test]
     fn java_random_deterministic() {
         // Same seed always produces the same output.
         let v1 = java_random_next_long(210710);
