@@ -217,6 +217,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag36h11")]
     fn detector_add_family() {
         let mut det = Detector::new(DetectorConfig::default());
         det.add_family(family::tag36h11(), 2);
@@ -224,6 +225,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag16h5")]
     fn detect_empty_image_no_crash() {
         let mut det = Detector::new(DetectorConfig::default());
         det.add_family(family::tag16h5(), 2);
@@ -233,6 +235,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag16h5")]
     fn detect_synthetic_tag() {
         // Render a tag16h5 tag and embed it in a larger image
         let family = family::tag16h5();
@@ -287,6 +290,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag16h5")]
     fn compute_detection_geometry_identity() {
         let corners = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
         let h = Homography::from_quad_corners(&corners).unwrap();
@@ -301,6 +305,7 @@ mod tests {
     }
 
     /// Helper to build the synthetic tag image used across tests.
+    #[cfg(feature = "family-tag16h5")]
     fn build_synthetic_tag_image() -> (ImageU8, crate::family::TagFamily) {
         let family = family::tag16h5();
         let rendered = render::render(&family.layout, family.codes[0]);
@@ -339,6 +344,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag16h5")]
     fn pipeline_stages_diagnostic() {
         use crate::detect::{threshold, connected, cluster, quad};
 

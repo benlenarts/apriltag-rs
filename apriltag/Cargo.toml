@@ -5,8 +5,30 @@ edition = "2021"
 description = "AprilTag core types, families, and rendering"
 
 [features]
-default = []
+default = ["all-families"]
 parallel = ["rayon"]
+
+# Include all built-in tag families.
+all-families = [
+    "family-tag16h5",
+    "family-tag25h9",
+    "family-tag36h11",
+    "family-circle21h7",
+    "family-circle49h12",
+    "family-custom48h12",
+    "family-standard41h12",
+    "family-standard52h13",
+]
+
+# Individual tag families — enable only what you need for lean builds.
+family-tag16h5 = []
+family-tag25h9 = []
+family-tag36h11 = []
+family-circle21h7 = []
+family-circle49h12 = []
+family-custom48h12 = []
+family-standard41h12 = []
+family-standard52h13 = []
 
 [dependencies]
 thiserror = "2"

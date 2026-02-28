@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "AprilTag family generation library"
 
+[features]
+default = ["all-families"]
+all-families = ["apriltag/all-families"]
+
 [dependencies]
 apriltag = { path = "../apriltag" }
 smallvec = "1"
