@@ -1,0 +1,21 @@
+[package]
+name = "apriltag-bench"
+version = "0.1.0"
+edition = "2021"
+description = "Detection test harness and benchmark suite for AprilTag"
+
+[lib]
+name = "apriltag_bench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "apriltag-bench"
+path = "src/main.rs"
+
+[features]
+default = []
+
+[dependencies]
+apriltag = { path = "../apriltag" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
