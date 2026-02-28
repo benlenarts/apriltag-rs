@@ -53,10 +53,7 @@ impl Category {
     }
 
     pub fn from_name(name: &str) -> Option<Category> {
-        Category::all()
-            .iter()
-            .find(|c| c.name() == name)
-            .copied()
+        Category::all().iter().find(|c| c.name() == name).copied()
     }
 }
 
@@ -426,10 +423,7 @@ fn multi_tag_scenarios() -> Vec<Scenario> {
             name: "multi-2tags".to_string(),
             description: "Two tags side by side".to_string(),
             category: Category::MultiTag,
-            expect_ids: vec![
-                ("tag36h11".to_string(), 0),
-                ("tag36h11".to_string(), 1),
-            ],
+            expect_ids: vec![("tag36h11".to_string(), 0), ("tag36h11".to_string(), 1)],
             max_corner_rmse: 3.0,
             quad_decimate: None,
             build_fn: Box::new(|| {
@@ -570,11 +564,7 @@ mod tests {
     fn each_category_has_scenarios() {
         for cat in Category::all() {
             let scenarios = scenarios_for_category(*cat);
-            assert!(
-                !scenarios.is_empty(),
-                "category {:?} has no scenarios",
-                cat
-            );
+            assert!(!scenarios.is_empty(), "category {:?} has no scenarios", cat);
         }
     }
 
