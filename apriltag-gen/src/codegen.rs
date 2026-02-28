@@ -514,6 +514,69 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // run with: cargo test -p apriltag-gen --release -- bench_inner_scan_scaling --ignored --nocapture
+    fn bench_inner_scan_scaling() {
+        use std::time::Instant;
+
+        let threshold = 12u32;
+        let nbits = 41;
+        let mask = (1u64 << nbits) - 1;
+        let num_queries = 100_000;
+
+        for &n in &[100, 500, 1000, 5000, 10_000, 50_000] {
+            // Generate N codes deterministically
+            let mut rng = 0xDEADBEEFu64;
+            let codes: Vec<u64> = (0..n)
+                .map(|_| {
+                    rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    rng & mask
+                })
+                .collect();
+
+            // Generate M queries
+            let queries: Vec<u64> = (0..num_queries)
+                .map(|_| {
+                    rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    rng & mask
+                })
+                .collect();
+
+            // Populate CodeSet
+            let mut set = CodeSet::new();
+            for &c in &codes {
+                set.insert(c);
+            }
+
+            // Benchmark CodeSet queries
+            let start = Instant::now();
+            let mut hits_set = 0u32;
+            for &q in &queries {
+                if set.has_any_closer_than(q, threshold) {
+                    hits_set += 1;
+                }
+            }
+            let set_time = start.elapsed();
+
+            // Benchmark naive Vec scan
+            let start = Instant::now();
+            let mut hits_vec = 0u32;
+            for &q in &queries {
+                if codes.iter().any(|&c| (c ^ q).count_ones() < threshold) {
+                    hits_vec += 1;
+                }
+            }
+            let vec_time = start.elapsed();
+
+            assert_eq!(hits_set, hits_vec);
+            let speedup = vec_time.as_secs_f64() / set_time.as_secs_f64();
+            println!(
+                "N={:>6}: CodeSet={:.2?}  Vec={:.2?}  speedup={:.2}x  hits={}/{}",
+                n, set_time, vec_time, speedup, hits_set, num_queries
+            );
+        }
+    }
+
+    #[test]
     fn java_random_deterministic() {
         // Same seed always produces the same output.
         let v1 = java_random_next_long(210710);
