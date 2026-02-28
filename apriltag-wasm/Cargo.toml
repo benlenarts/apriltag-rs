@@ -7,8 +7,22 @@ description = "WASM bindings for AprilTag detection"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["family-tag36h11"]
+
+# Passthrough features — enable only the families you need.
+all-families = ["apriltag/all-families"]
+family-tag16h5 = ["apriltag/family-tag16h5"]
+family-tag25h9 = ["apriltag/family-tag25h9"]
+family-tag36h11 = ["apriltag/family-tag36h11"]
+family-circle21h7 = ["apriltag/family-circle21h7"]
+family-circle49h12 = ["apriltag/family-circle49h12"]
+family-custom48h12 = ["apriltag/family-custom48h12"]
+family-standard41h12 = ["apriltag/family-standard41h12"]
+family-standard52h13 = ["apriltag/family-standard52h13"]
+
 [dependencies]
-apriltag = { path = "../apriltag" }
+apriltag = { path = "../apriltag", default-features = false }
 wasm-bindgen = "0.2"
 tsify-next = { version = "0.5", features = ["js"] }
 serde = { version = "1", features = ["derive"] }

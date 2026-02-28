@@ -381,6 +381,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag16h5")]
     fn quick_decode_finds_exact_match() {
         let family = crate::family::tag16h5();
         let qd = QuickDecode::new(&family, 2);
@@ -395,6 +396,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag16h5")]
     fn quick_decode_with_one_bit_error() {
         let family = crate::family::tag16h5();
         let qd = QuickDecode::new(&family, 2);
@@ -409,6 +411,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag36h11")]
     fn quick_decode_too_many_errors_returns_none() {
         let family = crate::family::tag36h11();
         let qd = QuickDecode::new(&family, 1);
@@ -421,6 +424,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag16h5")]
     fn quick_decode_rotated_code() {
         let family = crate::family::tag16h5();
         let qd = QuickDecode::new(&family, 2);
@@ -435,6 +439,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag36h11")]
     fn quick_decode_tag36h11() {
         let family = crate::family::tag36h11();
         let qd = QuickDecode::new(&family, 2);

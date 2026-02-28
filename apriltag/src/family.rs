@@ -108,37 +108,61 @@ macro_rules! builtin_family {
     };
 }
 
+#[cfg(feature = "family-tag16h5")]
 builtin_family!(tag16h5, "tag16h5.toml", "tag16h5.bin");
+#[cfg(feature = "family-tag25h9")]
 builtin_family!(tag25h9, "tag25h9.toml", "tag25h9.bin");
+#[cfg(feature = "family-tag36h11")]
 builtin_family!(tag36h11, "tag36h11.toml", "tag36h11.bin");
+#[cfg(feature = "family-circle21h7")]
 builtin_family!(tag_circle21h7, "tagCircle21h7.toml", "tagCircle21h7.bin");
+#[cfg(feature = "family-circle49h12")]
 builtin_family!(tag_circle49h12, "tagCircle49h12.toml", "tagCircle49h12.bin");
+#[cfg(feature = "family-custom48h12")]
 builtin_family!(tag_custom48h12, "tagCustom48h12.toml", "tagCustom48h12.bin");
+#[cfg(feature = "family-standard41h12")]
 builtin_family!(tag_standard41h12, "tagStandard41h12.toml", "tagStandard41h12.bin");
+#[cfg(feature = "family-standard52h13")]
 builtin_family!(tag_standard52h13, "tagStandard52h13.toml", "tagStandard52h13.bin");
 
-/// List of all built-in family names.
+/// List of all built-in family names (varies based on enabled features).
 pub const BUILTIN_NAMES: &[&str] = &[
+    #[cfg(feature = "family-tag16h5")]
     "tag16h5",
+    #[cfg(feature = "family-tag25h9")]
     "tag25h9",
+    #[cfg(feature = "family-tag36h11")]
     "tag36h11",
+    #[cfg(feature = "family-circle21h7")]
     "tagCircle21h7",
+    #[cfg(feature = "family-circle49h12")]
     "tagCircle49h12",
+    #[cfg(feature = "family-custom48h12")]
     "tagCustom48h12",
+    #[cfg(feature = "family-standard41h12")]
     "tagStandard41h12",
+    #[cfg(feature = "family-standard52h13")]
     "tagStandard52h13",
 ];
 
 /// Load a built-in family by name.
 pub fn builtin_family(name: &str) -> Option<TagFamily> {
     match name {
+        #[cfg(feature = "family-tag16h5")]
         "tag16h5" => Some(tag16h5()),
+        #[cfg(feature = "family-tag25h9")]
         "tag25h9" => Some(tag25h9()),
+        #[cfg(feature = "family-tag36h11")]
         "tag36h11" => Some(tag36h11()),
+        #[cfg(feature = "family-circle21h7")]
         "tagCircle21h7" => Some(tag_circle21h7()),
+        #[cfg(feature = "family-circle49h12")]
         "tagCircle49h12" => Some(tag_circle49h12()),
+        #[cfg(feature = "family-custom48h12")]
         "tagCustom48h12" => Some(tag_custom48h12()),
+        #[cfg(feature = "family-standard41h12")]
         "tagStandard41h12" => Some(tag_standard41h12()),
+        #[cfg(feature = "family-standard52h13")]
         "tagStandard52h13" => Some(tag_standard52h13()),
         _ => None,
     }
@@ -149,6 +173,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(feature = "family-tag16h5")]
     fn load_tag16h5() {
         let f = tag16h5();
         assert_eq!(f.config.name, "tag16h5");
@@ -163,6 +188,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag25h9")]
     fn load_tag25h9() {
         let f = tag25h9();
         assert_eq!(f.codes.len(), 35);
@@ -171,6 +197,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag36h11")]
     fn load_tag36h11() {
         let f = tag36h11();
         assert_eq!(f.codes.len(), 587);
@@ -182,6 +209,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-circle21h7")]
     fn load_tag_circle21h7() {
         let f = tag_circle21h7();
         assert_eq!(f.codes.len(), 38);
@@ -193,6 +221,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-standard41h12")]
     fn load_tag_standard41h12() {
         let f = tag_standard41h12();
         assert_eq!(f.codes.len(), 2115);
@@ -203,6 +232,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-standard52h13")]
     fn load_tag_standard52h13() {
         let f = tag_standard52h13();
         assert_eq!(f.codes.len(), 48714);
@@ -211,6 +241,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-circle49h12")]
     fn load_tag_circle49h12() {
         let f = tag_circle49h12();
         assert_eq!(f.codes.len(), 65535);
@@ -219,6 +250,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-custom48h12")]
     fn load_tag_custom48h12() {
         let f = tag_custom48h12();
         assert_eq!(f.codes.len(), 42211);
@@ -251,6 +283,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag16h5")]
     fn tag16h5_bit_locations_match_c_reference() {
         let f = tag16h5();
         assert_eq!(f.bit_locations.len(), 16);
@@ -259,6 +292,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-circle21h7")]
     fn tag_circle21h7_bit_locations_match_c_reference() {
         let f = tag_circle21h7();
         assert_eq!(f.bit_locations.len(), 21);
