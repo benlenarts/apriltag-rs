@@ -752,6 +752,42 @@ mod tests {
     }
 
     #[test]
+    fn build_line_fit_pts_pixel_center_delta() {
+        // Three collinear points at fixed-point y=20 (pixel y=10).
+        // With +0.5 pixel-center delta, centroid py should be 10.5, not 10.0.
+        let points = [
+            Pt {
+                x: 0,
+                y: 20,
+                gx: 255,
+                gy: 0,
+                slope: 0.0,
+            },
+            Pt {
+                x: 2,
+                y: 20,
+                gx: 255,
+                gy: 0,
+                slope: 0.0,
+            },
+            Pt {
+                x: 4,
+                y: 20,
+                gx: 255,
+                gy: 0,
+                slope: 0.0,
+            },
+        ];
+        let lfps = build_line_fit_pts(&points);
+        let total = &lfps[2];
+        let py = total.my / total.w;
+        assert!(
+            (py - 10.5).abs() < 1e-10,
+            "Expected centroid py=10.5 (with pixel-center delta), got {py}"
+        );
+    }
+
+    #[test]
     fn fit_quad_synthetic_rectangle() {
         // Create a cluster of points tracing a rectangle
         let mut points = Vec::new();
