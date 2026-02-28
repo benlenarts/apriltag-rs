@@ -10,3 +10,4 @@ pub mod homography;
 pub mod decode;
 pub mod detector;
 pub mod dedup;
+pub mod pose;
