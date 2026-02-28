@@ -32,6 +32,26 @@ pub struct WasmDetectorConfig {
     /// Maximum Hamming distance for matching (default: 2).
     #[serde(default)]
     pub max_hamming: Option<u32>,
+
+    // ── QuadThreshParams overrides ──
+    /// Minimum pixels in a cluster (default: 5).
+    #[serde(default)]
+    pub min_cluster_pixels: Option<i32>,
+    /// Maximum number of local maxima (default: 10).
+    #[serde(default)]
+    pub max_nmaxima: Option<i32>,
+    /// Cosine of critical angle for quad detection (default: cos(10°)).
+    #[serde(default)]
+    pub cos_critical_rad: Option<f32>,
+    /// Maximum line-fit mean-squared error (default: 10.0).
+    #[serde(default)]
+    pub max_line_fit_mse: Option<f32>,
+    /// Minimum white-black pixel difference (default: 5).
+    #[serde(default)]
+    pub min_white_black_diff: Option<i32>,
+    /// Enable deglitching (default: false).
+    #[serde(default)]
+    pub deglitch: Option<bool>,
 }
 
 fn default_decimate() -> Option<f32> {
@@ -88,6 +108,26 @@ impl Detector {
         }
         if let Some(s) = config.decode_sharpening {
             det_config.decode_sharpening = s;
+        }
+
+        // QuadThreshParams overrides
+        if let Some(v) = config.min_cluster_pixels {
+            det_config.qtp.min_cluster_pixels = v;
+        }
+        if let Some(v) = config.max_nmaxima {
+            det_config.qtp.max_nmaxima = v;
+        }
+        if let Some(v) = config.cos_critical_rad {
+            det_config.qtp.cos_critical_rad = v;
+        }
+        if let Some(v) = config.max_line_fit_mse {
+            det_config.qtp.max_line_fit_mse = v;
+        }
+        if let Some(v) = config.min_white_black_diff {
+            det_config.qtp.min_white_black_diff = v;
+        }
+        if let Some(v) = config.deglitch {
+            det_config.qtp.deglitch = v;
         }
 
         let max_hamming = config.max_hamming.unwrap_or(2);
