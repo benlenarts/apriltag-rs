@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2021"
 description = "AprilTag core types, families, and rendering"
 
+[features]
+default = []
+parallel = ["rayon"]
+
 [dependencies]
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+rayon = { version = "1.10", optional = true }

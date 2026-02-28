@@ -1,5 +1,8 @@
 use super::cluster::{Cluster, Pt};
 
+#[cfg(feature = "parallel")]
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+
 /// A detected quadrilateral with four corners in pixel coordinates.
 #[derive(Debug, Clone)]
 pub struct Quad {
@@ -64,18 +67,37 @@ pub fn fit_quads(
 ) -> Vec<Quad> {
     let max_perimeter = 2 * (image_width + image_height) as usize;
 
-    clusters
-        .iter_mut()
-        .filter_map(|cluster| {
-            fit_quad(
-                cluster,
-                params,
-                max_perimeter,
-                normal_border,
-                reversed_border,
-            )
-        })
-        .collect()
+    #[cfg(feature = "parallel")]
+    {
+        clusters
+            .par_iter_mut()
+            .filter_map(|cluster| {
+                fit_quad(
+                    cluster,
+                    params,
+                    max_perimeter,
+                    normal_border,
+                    reversed_border,
+                )
+            })
+            .collect()
+    }
+
+    #[cfg(not(feature = "parallel"))]
+    {
+        clusters
+            .iter_mut()
+            .filter_map(|cluster| {
+                fit_quad(
+                    cluster,
+                    params,
+                    max_perimeter,
+                    normal_border,
+                    reversed_border,
+                )
+            })
+            .collect()
+    }
 }
 
 /// Try to fit a single quad from a cluster of edge points.
