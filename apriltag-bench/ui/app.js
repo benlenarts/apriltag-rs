@@ -22,8 +22,8 @@ async function initWasm() {
   try {
     // Try loading WASM modules from expected paths
     // wasm-pack builds to pkg/ directories
-    const benchPkg = "../apriltag-bench-wasm/pkg/apriltag_bench_wasm.js";
-    const detectorPkg = "../apriltag-wasm/pkg/apriltag_wasm.js";
+    const benchPkg = "../../apriltag-bench-wasm/pkg/apriltag_bench_wasm.js";
+    const detectorPkg = "../../apriltag-wasm/pkg/apriltag_wasm.js";
 
     const [benchMod, detectorMod] = await Promise.all([
       import(benchPkg).catch(() => null),
