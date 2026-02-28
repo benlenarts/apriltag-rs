@@ -317,12 +317,10 @@ fn cmd_serve(port: u16) {
     let ui_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let project_root = ui_dir.parent().unwrap_or(ui_dir);
 
-    println!("Serving web UI at http://localhost:{port}/apriltag-bench/ui/");
-    println!("Press Ctrl+C to stop.");
     println!();
-    println!("Note: build WASM modules first for full functionality:");
-    println!("  wasm-pack build apriltag-bench-wasm --target web");
-    println!("  wasm-pack build apriltag-wasm --target web");
+    println!("  => http://localhost:{port}/apriltag-bench/ui/");
+    println!();
+    println!("Press Ctrl+C to stop.");
 
     let status = std::process::Command::new("python3")
         .args([
