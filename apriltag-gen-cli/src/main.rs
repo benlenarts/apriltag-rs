@@ -266,6 +266,61 @@ fn cmd_mosaic(
 
 fn cmd_generate(name: &str) -> Result<()> {
     let family = load_family(name)?;
+
+    let codes = if matches!(
+        family.config.layout,
+        apriltag_gen::family::LayoutConfig::Classic { .. }
+    ) {
+        generate_classic(&family)?
+    } else {
+        generate_era2(&family)?
+    };
+
+    println!("Generated {} codes.", codes.len());
+
+    // Write .bin file
+    let bin_path = format!("{}.bin", family.config.name);
+    let mut bin_data = Vec::with_capacity(codes.len() * 8);
+    for &code in &codes {
+        bin_data.extend_from_slice(&code.to_le_bytes());
+    }
+    std::fs::write(&bin_path, &bin_data).with_context(|| format!("writing {}", bin_path))?;
+    println!("Wrote {} codes to {}", codes.len(), bin_path);
+
+    Ok(())
+}
+
+/// Generate codes for a classic family by upgrading old row-major codes.
+fn generate_classic(family: &apriltag_gen::family::TagFamily) -> Result<Vec<u64>> {
+    let old_codes =
+        apriltag_gen::upgrade::classic_old_codes(&family.config.name).with_context(|| {
+            format!(
+                "classic family '{}' has no known old codes — classic families cannot be \
+             regenerated algorithmically, they require the original row-major codes \
+             from the apriltag-generation Java source",
+                family.config.name
+            )
+        })?;
+
+    let data_size = (family.layout.nbits as f64).sqrt() as usize;
+
+    println!(
+        "Upgrading {} old codes for {} (nbits={}, data_size={})...",
+        old_codes.len(),
+        family.config.name,
+        family.layout.nbits,
+        data_size,
+    );
+
+    Ok(apriltag_gen::upgrade::upgrade_codes(
+        old_codes,
+        &family.bit_locations,
+        data_size,
+    ))
+}
+
+/// Generate codes for an Era 2 family using the lexicode algorithm.
+fn generate_era2(family: &apriltag_gen::family::TagFamily) -> Result<Vec<u64>> {
     let min_complexity = family
         .config
         .min_complexity
@@ -284,11 +339,8 @@ fn cmd_generate(name: &str) -> Result<()> {
             let mut last_print = std::time::Instant::now();
             let mut decimals = None;
             move |iter, total, codes_found| {
-                let d = *decimals.get_or_insert_with(|| {
-                    // Enough decimal places so each 1M-iteration tick is visible.
-                    // step% = 1_000_000 / total * 100; decimals = ceil(-log10(step))
-                    ((total as f64).log10() - 8.0).ceil().max(1.0) as usize
-                });
+                let d = *decimals
+                    .get_or_insert_with(|| ((total as f64).log10() - 8.0).ceil().max(1.0) as usize);
                 let now = std::time::Instant::now();
                 if iter == 0 || now.duration_since(last_print).as_millis() >= 100 {
                     let pct = iter as f64 / total as f64 * 100.0;
@@ -306,16 +358,5 @@ fn cmd_generate(name: &str) -> Result<()> {
     );
     eprintln!();
 
-    println!("Generated {} codes.", codes.len());
-
-    // Write .bin file
-    let bin_path = format!("{}.bin", family.config.name);
-    let mut bin_data = Vec::with_capacity(codes.len() * 8);
-    for &code in &codes {
-        bin_data.extend_from_slice(&code.to_le_bytes());
-    }
-    std::fs::write(&bin_path, &bin_data).with_context(|| format!("writing {}", bin_path))?;
-    println!("Wrote {} codes to {}", codes.len(), bin_path);
-
-    Ok(())
+    Ok(codes)
 }
