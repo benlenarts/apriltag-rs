@@ -9,7 +9,7 @@ pub fn decimate(img: &ImageU8, f: u32) -> ImageU8 {
     let out_w = img.width / f;
     let out_h = img.height / f;
     let mut out = ImageU8::new(out_w, out_h);
-    let area = (f * f) as u32;
+    let area = f * f;
 
     for oy in 0..out_h {
         for ox in 0..out_w {
@@ -91,7 +91,7 @@ pub fn apply_sigma(img: &ImageU8, quad_sigma: f32) -> ImageU8 {
 
     let sigma = quad_sigma.abs();
     let mut ksz = (4.0 * sigma) as usize;
-    if ksz % 2 == 0 {
+    if ksz.is_multiple_of(2) {
         ksz += 1;
     }
     if ksz <= 1 {

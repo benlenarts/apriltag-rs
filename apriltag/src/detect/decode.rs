@@ -106,7 +106,7 @@ impl QuickDecode {
     /// Build a quick decode table from a tag family.
     pub fn new(family: &TagFamily, maxhamming: u32) -> Self {
         let nbits = family.layout.nbits as u32;
-        let chunk_size = (nbits + 3) / 4;
+        let chunk_size = nbits.div_ceil(4);
         let capacity = 1u32 << chunk_size;
         let chunk_mask = capacity - 1;
         let shifts = [0, chunk_size, 2 * chunk_size, 3 * chunk_size];
@@ -266,8 +266,8 @@ pub fn decode_quad(
     let mut values = vec![vec![0.0f64; total_width]; total_width];
 
     for i in 0..nbits {
-        let bx = (bit_locs[i].x as f64 + 0.5) as f64;
-        let by = (bit_locs[i].y as f64 + 0.5) as f64;
+        let bx = bit_locs[i].x as f64 + 0.5;
+        let by = bit_locs[i].y as f64 + 0.5;
 
         let tagx = 2.0 * (bx / w - 0.5);
         let tagy = 2.0 * (by / w - 0.5);
