@@ -33,6 +33,7 @@ fn build_reference() {
         "common/getopt.c",
         "common/homography.c",
         "common/image_u8.c",
+        "common/image_u8_parallel.c",
         "common/image_u8x3.c",
         "common/image_u8x4.c",
         "common/matd.c",
