@@ -38,10 +38,10 @@ async function initWasm() {
     if (detectorMod) {
       if (detectorMod.default) await detectorMod.default();
       detectorWasm = detectorMod;
-      // Create a detector instance
-      detector = new detectorMod.Detector({
-        families: [getFamily()],
-      });
+      // Create a detector instance with full config
+      const config = buildDetectorConfig(getFamily());
+      detector = new detectorMod.Detector(config);
+      lastDetectorKey = detectorConfigKey(getFamily());
     }
 
     if (benchWasm && detectorWasm) {
@@ -81,6 +81,20 @@ const controls = {
   noise:    { el: document.getElementById("noise"),     valEl: document.getElementById("noiseVal") },
   blur:     { el: document.getElementById("blur"),      valEl: document.getElementById("blurVal"),     decimals: 1 },
   contrast: { el: document.getElementById("contrast"),  valEl: document.getElementById("contrastVal"), decimals: 2 },
+  // Detector config
+  quadDecimate:    { el: document.getElementById("quadDecimate"),    valEl: document.getElementById("quadDecimateVal"),    decimals: 1 },
+  quadSigma:       { el: document.getElementById("quadSigma"),       valEl: document.getElementById("quadSigmaVal"),       decimals: 1 },
+  refineEdges:     { el: document.getElementById("refineEdges") },
+  decodeSharpening:{ el: document.getElementById("decodeSharpening"),valEl: document.getElementById("decodeSharpeningVal"),decimals: 2 },
+  maxHamming:      { el: document.getElementById("maxHamming") },
+  // Quad threshold params
+  minClusterPixels:  { el: document.getElementById("minClusterPixels") },
+  maxNmaxima:        { el: document.getElementById("maxNmaxima") },
+  criticalAngle:     { el: document.getElementById("criticalAngle"),     valEl: document.getElementById("criticalAngleVal"),     suffix: "\u00B0" },
+  maxLineFitMse:     { el: document.getElementById("maxLineFitMse"),     valEl: document.getElementById("maxLineFitMseVal") },
+  minWhiteBlackDiff: { el: document.getElementById("minWhiteBlackDiff") },
+  deglitch:          { el: document.getElementById("deglitch") },
+  // Overlay
   showGT:   { el: document.getElementById("showGT") },
   showDet:  { el: document.getElementById("showDet") },
   showErrors: { el: document.getElementById("showErrors") },
@@ -111,9 +125,49 @@ function getHeight()   { return parseInt(controls.imgHeight.el.value, 10); }
 function getNoise()    { return parseFloat(controls.noise.el.value); }
 function getBlur()     { return parseFloat(controls.blur.el.value); }
 function getContrast() { return parseFloat(controls.contrast.el.value); }
+// Detector config getters
+function getQuadDecimate()    { return parseFloat(controls.quadDecimate.el.value); }
+function getQuadSigma()       { return parseFloat(controls.quadSigma.el.value); }
+function getRefineEdges()     { return controls.refineEdges.el.checked; }
+function getDecodeSharpening(){ return parseFloat(controls.decodeSharpening.el.value); }
+function getMaxHamming()      { return parseInt(controls.maxHamming.el.value, 10); }
+function getMinClusterPixels(){ return parseInt(controls.minClusterPixels.el.value, 10); }
+function getMaxNmaxima()      { return parseInt(controls.maxNmaxima.el.value, 10); }
+function getCriticalAngle()   { return parseFloat(controls.criticalAngle.el.value); }
+function getMaxLineFitMse()   { return parseFloat(controls.maxLineFitMse.el.value); }
+function getMinWhiteBlackDiff(){ return parseInt(controls.minWhiteBlackDiff.el.value, 10); }
+function getDeglitch()        { return controls.deglitch.el.checked; }
 function showGT()      { return controls.showGT.el.checked; }
 function showDet()     { return controls.showDet.el.checked; }
 function showErrors()  { return controls.showErrors.el.checked; }
+
+/**
+ * Build a WasmDetectorConfig from current UI state.
+ * Returns a plain object matching the WasmDetectorConfig shape.
+ */
+function buildDetectorConfig(family) {
+  const angleDeg = getCriticalAngle();
+  const angleRad = angleDeg * Math.PI / 180;
+  return {
+    families: [family],
+    quad_decimate: getQuadDecimate(),
+    quad_sigma: getQuadSigma(),
+    refine_edges: getRefineEdges(),
+    decode_sharpening: getDecodeSharpening(),
+    max_hamming: getMaxHamming(),
+    min_cluster_pixels: getMinClusterPixels(),
+    max_nmaxima: getMaxNmaxima(),
+    cos_critical_rad: Math.cos(angleRad),
+    max_line_fit_mse: getMaxLineFitMse(),
+    min_white_black_diff: getMinWhiteBlackDiff(),
+    deglitch: getDeglitch(),
+  };
+}
+
+/** Serialize detector config to a string for change detection. */
+function detectorConfigKey(family) {
+  return JSON.stringify(buildDetectorConfig(family));
+}
 
 // ── Event Binding ────────────────────────────────────────────────────
 
@@ -142,6 +196,7 @@ for (const [, ctrl] of Object.entries(controls)) {
 
 let lastScene = null;
 let lastDetections = [];
+let lastDetectorKey = "";
 
 async function update() {
   const width = getWidth();
@@ -212,10 +267,11 @@ async function update() {
 
   if (detector && lastScene) {
     try {
-      // Recreate detector if family changed
-      if (!detector._family || detector._family !== family) {
-        detector = new detectorWasm.Detector({ families: [family] });
-        detector._family = family;
+      // Recreate detector if config changed (family, thresholds, etc.)
+      const configKey = detectorConfigKey(family);
+      if (configKey !== lastDetectorKey) {
+        detector = new detectorWasm.Detector(buildDetectorConfig(family));
+        lastDetectorKey = configKey;
       }
       const grayData = lastScene.imageData;
       const t0 = performance.now();
