@@ -2,7 +2,7 @@
 name = "apriltag"
 version = "0.1.0"
 edition = "2021"
-description = "AprilTag core types, families, and rendering"
+description = "AprilTag core types, families, detection, and rendering"
 license.workspace = true
 repository.workspace = true
 
