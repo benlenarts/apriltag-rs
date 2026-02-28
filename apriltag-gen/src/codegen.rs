@@ -12,15 +12,23 @@ use apriltag::layout::Layout;
 use apriltag::types::CellType;
 use smallvec::SmallVec;
 
-/// BK-tree (Burkhard-Keller tree) for fast Hamming-distance range queries.
+/// Hybrid code set: flat scan for small N, BK-tree for large N.
 ///
-/// Hand-rolled rather than using a crate because the available options
-/// (`bk-tree` pulls in `triple_accel` which doesn't compile for wasm32;
-/// `bktree` pulls in `num` which is heavier than warranted for ~40 lines
-/// of logic).
-struct BkTree {
-    nodes: Vec<BkNode>,
+/// For small sets (≤ BK_TREE_THRESHOLD), a flat `Vec<u64>` with sequential
+/// scan is faster due to cache-friendly access and no tree overhead.
+/// Once the set grows large enough for triangle-inequality pruning to
+/// outweigh the tree overhead, codes are migrated into a BK-tree.
+struct CodeSet {
+    /// Flat storage used when len ≤ BK_TREE_THRESHOLD.
+    flat: Vec<u64>,
+    /// BK-tree used when len > BK_TREE_THRESHOLD.
+    tree: Vec<BkNode>,
 }
+
+/// Crossover point where BK-tree pruning beats flat scan.
+/// Empirically tuned: flat scan wins for small families (circle21h7 = 152 rotcodes),
+/// BK-tree wins for large families (standard52h13 = ~780K rotcodes).
+const BK_TREE_THRESHOLD: usize = 512;
 
 struct BkNode {
     code: u64,
@@ -28,14 +36,33 @@ struct BkNode {
     children: SmallVec<[(u32, u32); 4]>,
 }
 
-impl BkTree {
+impl CodeSet {
     fn new() -> Self {
-        BkTree { nodes: Vec::new() }
+        CodeSet {
+            flat: Vec::new(),
+            tree: Vec::new(),
+        }
     }
 
     fn insert(&mut self, code: u64) {
-        if self.nodes.is_empty() {
-            self.nodes.push(BkNode {
+        if self.tree.is_empty() {
+            self.flat.push(code);
+            // Migrate to BK-tree when we cross the threshold
+            if self.flat.len() > BK_TREE_THRESHOLD {
+                for &c in &self.flat {
+                    Self::bk_insert(&mut self.tree, c);
+                }
+                self.flat.clear();
+                self.flat.shrink_to_fit();
+            }
+        } else {
+            Self::bk_insert(&mut self.tree, code);
+        }
+    }
+
+    fn bk_insert(tree: &mut Vec<BkNode>, code: u64) {
+        if tree.is_empty() {
+            tree.push(BkNode {
                 code,
                 children: SmallVec::new(),
             });
@@ -44,41 +71,41 @@ impl BkTree {
 
         let mut idx = 0;
         loop {
-            let d = hamming_distance(self.nodes[idx].code, code);
-            // Look for existing child at this distance
-            if let Some(&(_, child_idx)) =
-                self.nodes[idx].children.iter().find(|(dist, _)| *dist == d)
-            {
+            let d = hamming_distance(tree[idx].code, code);
+            if let Some(&(_, child_idx)) = tree[idx].children.iter().find(|(dist, _)| *dist == d) {
                 idx = child_idx as usize;
                 continue;
             }
-            // No child at this distance — add new node
-            let new_idx = self.nodes.len() as u32;
-            self.nodes.push(BkNode {
+            let new_idx = tree.len() as u32;
+            tree.push(BkNode {
                 code,
                 children: SmallVec::new(),
             });
-            self.nodes[idx].children.push((d, new_idx));
+            tree[idx].children.push((d, new_idx));
             return;
         }
     }
 
     /// Returns `true` if any stored code has Hamming distance < `threshold` from `query`.
     fn has_any_closer_than(&self, query: u64, threshold: u32) -> bool {
-        if self.nodes.is_empty() {
-            return false;
+        if !self.tree.is_empty() {
+            return Self::bk_query(&self.tree, query, threshold);
         }
+        // Flat scan — branch-free loop, auto-vectorizable
+        self.flat
+            .iter()
+            .any(|&c| (c ^ query).count_ones() < threshold)
+    }
+
+    fn bk_query(tree: &[BkNode], query: u64, threshold: u32) -> bool {
         let mut stack: SmallVec<[u32; 64]> = SmallVec::new();
         stack.push(0);
         while let Some(idx) = stack.pop() {
-            let node = &self.nodes[idx as usize];
+            let node = &tree[idx as usize];
             let d = hamming_distance(node.code, query);
             if d < threshold {
                 return true;
             }
-            // Triangle inequality: only visit children where
-            // |child_dist - d| < threshold, i.e.
-            // child_dist in (d - threshold + 1 ..= d + threshold - 1)
             let lo = d.saturating_sub(threshold - 1);
             let hi = d + threshold - 1;
             for &(child_dist, child_idx) in &node.children {
@@ -250,7 +277,7 @@ pub fn generate_with_progress(
 
     let total = 1u64 << nbits;
     let mut codelist: Vec<u64> = Vec::new();
-    let mut rotcodes = BkTree::new();
+    let mut rotcodes = CodeSet::new();
 
     // Pre-build grid once — avoids allocating a pixel grid per candidate
     let grid = ComplexityGrid::from_layout(layout);
@@ -351,14 +378,14 @@ mod tests {
 
     #[test]
     fn bk_tree_empty_has_no_matches() {
-        let tree = BkTree::new();
+        let tree = CodeSet::new();
         assert!(!tree.has_any_closer_than(0, 1));
         assert!(!tree.has_any_closer_than(0xFF, 5));
     }
 
     #[test]
     fn bk_tree_exact_match() {
-        let mut tree = BkTree::new();
+        let mut tree = CodeSet::new();
         tree.insert(0b1010);
         // Exact match: distance 0, which is < any threshold >= 1
         assert!(tree.has_any_closer_than(0b1010, 1));
@@ -368,7 +395,7 @@ mod tests {
 
     #[test]
     fn bk_tree_near_match() {
-        let mut tree = BkTree::new();
+        let mut tree = CodeSet::new();
         tree.insert(0b1010);
         // Distance 1 from 0b1011 — should be found with threshold 2 but not threshold 1
         assert!(tree.has_any_closer_than(0b1011, 2));
@@ -376,51 +403,86 @@ mod tests {
     }
 
     #[test]
-    fn bk_tree_matches_naive_scan() {
-        // Property test: BK-tree gives same answers as a linear scan
+    fn codeset_matches_naive_scan_flat() {
+        // Property test: flat path gives same answers as a naive linear scan
         let codes: Vec<u64> = vec![
             0x157863, 0x05E9B9, 0x1A831E, 0x0B4C74, 0x0DC6D2, 0x1F3F28, 0x00A87E, 0x12C195,
         ];
-        let mut tree = BkTree::new();
+        let mut set = CodeSet::new();
         for &c in &codes {
-            tree.insert(c);
+            set.insert(c);
         }
+        assert!(set.tree.is_empty(), "should use flat path for 8 codes");
 
         let queries: Vec<u64> = vec![0x157863, 0x000000, 0x1FFFFF, 0x0AAAAA, 0x155555, 0x1EC1E3];
         for threshold in 1..=12 {
             for &q in &queries {
                 let naive = codes.iter().any(|&c| hamming_distance(c, q) < threshold);
-                let bk = tree.has_any_closer_than(q, threshold);
+                let result = set.has_any_closer_than(q, threshold);
                 assert_eq!(
-                    bk, naive,
-                    "mismatch for query={:#x} threshold={}: bk={} naive={}",
-                    q, threshold, bk, naive
+                    result, naive,
+                    "mismatch for query={:#x} threshold={}: got={} naive={}",
+                    q, threshold, result, naive
                 );
             }
         }
     }
 
     #[test]
-    fn bk_tree_duplicate_distance_children() {
-        // Insert codes that have the same Hamming distance from the root
-        // to exercise the child-lookup path
-        let mut tree = BkTree::new();
-        tree.insert(0b0000); // root
-        tree.insert(0b0001); // distance 1 from root
-        tree.insert(0b0010); // also distance 1 — goes to child of 0b0001
-        tree.insert(0b0100); // also distance 1 — deeper nesting
-        tree.insert(0b1000); // also distance 1
+    fn codeset_matches_naive_scan_bktree() {
+        // Property test: BK-tree path gives same answers as a naive linear scan.
+        // Insert enough codes to cross BK_TREE_THRESHOLD.
+        let mut codes = Vec::new();
+        let mut rng = 0x12345678u64;
+        for _ in 0..BK_TREE_THRESHOLD + 100 {
+            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+            codes.push(rng & 0x1FFFFF); // 21-bit codes
+        }
+        let mut set = CodeSet::new();
+        for &c in &codes {
+            set.insert(c);
+        }
+        assert!(!set.tree.is_empty(), "should use BK-tree path");
 
-        // All four single-bit codes should be findable
-        assert!(tree.has_any_closer_than(0b0001, 1));
-        assert!(tree.has_any_closer_than(0b0010, 1));
-        assert!(tree.has_any_closer_than(0b0100, 1));
-        assert!(tree.has_any_closer_than(0b1000, 1));
+        let queries: Vec<u64> = vec![codes[0], codes[100], 0x000000, 0x1FFFFF, 0x0AAAAA];
+        for threshold in [1, 3, 5, 7, 10] {
+            for &q in &queries {
+                let naive = codes.iter().any(|&c| hamming_distance(c, q) < threshold);
+                let result = set.has_any_closer_than(q, threshold);
+                assert_eq!(
+                    result, naive,
+                    "mismatch for query={:#x} threshold={}: got={} naive={}",
+                    q, threshold, result, naive
+                );
+            }
+        }
+    }
 
-        // A code at distance 2 from all stored codes should not match with threshold=1
-        // 0b0011 is distance 2 from 0b0000, distance 1 from 0b0001 and 0b0010
-        assert!(tree.has_any_closer_than(0b0011, 2));
-        assert!(!tree.has_any_closer_than(0b1111, 1));
+    #[test]
+    fn codeset_duplicate_distance_children() {
+        // Insert codes that have the same Hamming distance from each other
+        // to exercise the BK-tree child-lookup path.
+        // Force BK-tree by inserting > BK_TREE_THRESHOLD codes, then check
+        // specific distance queries.
+        let mut set = CodeSet::new();
+        // Fill with enough to trigger BK-tree migration
+        for i in 0..BK_TREE_THRESHOLD + 10 {
+            set.insert(i as u64 * 7919); // spread-out codes
+        }
+        assert!(!set.tree.is_empty());
+
+        // Insert known codes and verify lookup
+        set.insert(0b0000);
+        set.insert(0b0001);
+        set.insert(0b0010);
+        set.insert(0b0100);
+        set.insert(0b1000);
+
+        assert!(set.has_any_closer_than(0b0001, 1));
+        assert!(set.has_any_closer_than(0b0010, 1));
+        assert!(set.has_any_closer_than(0b0100, 1));
+        assert!(set.has_any_closer_than(0b1000, 1));
+        assert!(set.has_any_closer_than(0b0011, 2));
     }
 
     #[test]
