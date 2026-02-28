@@ -28,6 +28,20 @@ The detection pipeline follows the reference AprilTag implementation:
 - **`apriltag/`** — core types, families, and rendering (42 tests). Contains `TagFamily`, `Layout`, `BitLocation`, `hamming`, `render`, and built-in family data (`.toml` + `.bin` in `apriltag/families/`).
 - **`apriltag-gen/`** — generation-only code (5 tests). Re-exports `apriltag::*` plus `codegen` and `upgrade` modules.
 - **`apriltag-gen-cli/`** — CLI for tag generation and rendering. Depends on `apriltag-gen`.
+- **`apriltag-bench/`** — detection test harness and benchmark suite. Library core (scene generation, transforms, distortions, metrics) is WASM-compatible. CLI binary provides batch testing, regression checks, and C reference comparison (behind `reference` feature). Web UI in `ui/` for interactive exploration.
+- **`apriltag-bench-wasm/`** — thin WASM wrapper for `apriltag-bench` scene generation, used by the web UI.
+- **`apriltag-wasm/`** — WASM bindings for AprilTag detection. Used by the web UI alongside `apriltag-bench-wasm`.
+
+### Detection Test Harness (`apriltag-bench/`)
+
+Two interfaces for testing detection quality:
+
+- **Web UI** (`apriltag-bench/ui/`) — interactive exploration via WASM. Sliders for distortion, perspective, noise. Uses `apriltag-wasm` for detection and `apriltag-bench-wasm` for scene generation. No C reference needed in the browser.
+- **CLI** — batch test runs, regression checks, reference comparison via C FFI. Machine-readable output (JSON, HTML) for CI.
+
+Scene generation code is shared between CLI and web UI (identical Rust, WASM-compatible). C reference comparison stays native-only (behind `reference` feature flag).
+
+**Tag-space convention:** transforms map tag-space [-1, 1] to the border region (`[border_start, grid_size - border_start]` in grid coordinates), matching the detector's homography. The white border extends beyond [-1, 1]. Ground-truth corners at tag-space ±1 align with detected quad corners.
 
 ### Tag Families
 
@@ -75,6 +89,28 @@ Verify WASM compatibility
 
 ```bash
 cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen
+```
+
+Bench test harness
+
+```bash
+# Run bench test scenarios
+cargo run -p apriltag-bench -- run --category baseline
+
+# CI regression gate (exit 1 on failure)
+cargo run -p apriltag-bench -- regression
+
+# Compare against C reference (requires reference feature + fetch-references.sh)
+cargo run -p apriltag-bench --features reference -- compare --format html
+
+# Interactive single-scene exploration
+cargo run -p apriltag-bench -- explore --tag-size 60 --tilt-x 30 --noise 15
+
+# Launch web UI for interactive testing
+cargo run -p apriltag-bench -- serve --open
+
+# Build scene generation WASM module for web UI
+wasm-pack build apriltag-bench-wasm --target web
 ```
 
 ## Code Style
