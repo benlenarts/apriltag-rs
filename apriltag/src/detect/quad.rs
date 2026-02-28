@@ -220,8 +220,8 @@ fn build_line_fit_pts(points: &[Pt]) -> Vec<LineFitPt> {
     let mut cum = LineFitPt::default();
 
     for p in points {
-        let x = p.x as f64 / 2.0;
-        let y = p.y as f64 / 2.0;
+        let x = p.x as f64 * 0.5 + 0.5;
+        let y = p.y as f64 * 0.5 + 0.5;
         let w = ((p.gx as f64).powi(2) + (p.gy as f64).powi(2)).sqrt() + 1.0;
 
         cum.mx += w * x;
