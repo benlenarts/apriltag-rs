@@ -7,10 +7,89 @@
 //! and Custom tag families. Classic families use `upgrade.rs` instead.
 
 use apriltag::bits;
-use apriltag::hamming::{hamming_distance_at_least, rotate90};
+use apriltag::hamming::{hamming_distance, hamming_distance_at_least, rotate90};
 use apriltag::layout::Layout;
 use apriltag::types::CellType;
 use smallvec::SmallVec;
+
+/// BK-tree (Burkhard-Keller tree) for fast Hamming-distance range queries.
+///
+/// Hand-rolled rather than using a crate because the available options
+/// (`bk-tree` pulls in `triple_accel` which doesn't compile for wasm32;
+/// `bktree` pulls in `num` which is heavier than warranted for ~40 lines
+/// of logic).
+struct BkTree {
+    nodes: Vec<BkNode>,
+}
+
+struct BkNode {
+    code: u64,
+    /// (hamming_distance_to_parent, arena_index)
+    children: SmallVec<[(u32, u32); 4]>,
+}
+
+impl BkTree {
+    fn new() -> Self {
+        BkTree { nodes: Vec::new() }
+    }
+
+    fn insert(&mut self, code: u64) {
+        if self.nodes.is_empty() {
+            self.nodes.push(BkNode {
+                code,
+                children: SmallVec::new(),
+            });
+            return;
+        }
+
+        let mut idx = 0;
+        loop {
+            let d = hamming_distance(self.nodes[idx].code, code);
+            // Look for existing child at this distance
+            if let Some(&(_, child_idx)) =
+                self.nodes[idx].children.iter().find(|(dist, _)| *dist == d)
+            {
+                idx = child_idx as usize;
+                continue;
+            }
+            // No child at this distance — add new node
+            let new_idx = self.nodes.len() as u32;
+            self.nodes.push(BkNode {
+                code,
+                children: SmallVec::new(),
+            });
+            self.nodes[idx].children.push((d, new_idx));
+            return;
+        }
+    }
+
+    /// Returns `true` if any stored code has Hamming distance < `threshold` from `query`.
+    fn has_any_closer_than(&self, query: u64, threshold: u32) -> bool {
+        if self.nodes.is_empty() {
+            return false;
+        }
+        let mut stack: SmallVec<[u32; 64]> = SmallVec::new();
+        stack.push(0);
+        while let Some(idx) = stack.pop() {
+            let node = &self.nodes[idx as usize];
+            let d = hamming_distance(node.code, query);
+            if d < threshold {
+                return true;
+            }
+            // Triangle inequality: only visit children where
+            // |child_dist - d| < threshold, i.e.
+            // child_dist in (d - threshold + 1 ..= d + threshold - 1)
+            let lo = d.saturating_sub(threshold - 1);
+            let hi = d + threshold - 1;
+            for &(child_dist, child_idx) in &node.children {
+                if child_dist >= lo && child_dist <= hi {
+                    stack.push(child_idx);
+                }
+            }
+        }
+        false
+    }
+}
 
 const PRIME: u64 = 982_451_653;
 
@@ -187,7 +266,7 @@ pub fn generate_with_progress(
 
     let total = 1u64 << nbits;
     let mut codelist: Vec<u64> = Vec::new();
-    let mut rotcodes: Vec<u64> = Vec::new();
+    let mut rotcodes = BkTree::new();
 
     // Pre-build grid once — avoids allocating a pixel grid per candidate
     let grid = ComplexityGrid::from_layout(layout);
@@ -223,22 +302,15 @@ pub fn generate_with_progress(
         }
 
         // Distance from all previously accepted codes (and their rotations)
-        let mut ok = true;
-        for &w in &rotcodes {
-            if !hamming_distance_at_least(v, w, min_hamming) {
-                ok = false;
-                break;
-            }
-        }
-        if !ok {
+        if rotcodes.has_any_closer_than(v, min_hamming) {
             continue;
         }
 
         codelist.push(v);
-        rotcodes.push(v);
-        rotcodes.push(rv1);
-        rotcodes.push(rv2);
-        rotcodes.push(rv3);
+        rotcodes.insert(v);
+        rotcodes.insert(rv1);
+        rotcodes.insert(rv2);
+        rotcodes.insert(rv3);
     }
 
     codelist
@@ -300,6 +372,80 @@ fn java_random_next_long(seed: i64) -> i64 {
 mod tests {
     use super::*;
     use apriltag::layout::Layout;
+
+    #[test]
+    fn bk_tree_empty_has_no_matches() {
+        let tree = BkTree::new();
+        assert!(!tree.has_any_closer_than(0, 1));
+        assert!(!tree.has_any_closer_than(0xFF, 5));
+    }
+
+    #[test]
+    fn bk_tree_exact_match() {
+        let mut tree = BkTree::new();
+        tree.insert(0b1010);
+        // Exact match: distance 0, which is < any threshold >= 1
+        assert!(tree.has_any_closer_than(0b1010, 1));
+        // Distance 0 is not < 0... but threshold=0 means "closer than 0" which nothing can be
+        // (threshold of 0 is a degenerate case but let's not test that — min_hamming is always >= 1)
+    }
+
+    #[test]
+    fn bk_tree_near_match() {
+        let mut tree = BkTree::new();
+        tree.insert(0b1010);
+        // Distance 1 from 0b1011 — should be found with threshold 2 but not threshold 1
+        assert!(tree.has_any_closer_than(0b1011, 2));
+        assert!(!tree.has_any_closer_than(0b1011, 1));
+    }
+
+    #[test]
+    fn bk_tree_matches_naive_scan() {
+        // Property test: BK-tree gives same answers as a linear scan
+        let codes: Vec<u64> = vec![
+            0x157863, 0x05E9B9, 0x1A831E, 0x0B4C74, 0x0DC6D2, 0x1F3F28, 0x00A87E, 0x12C195,
+        ];
+        let mut tree = BkTree::new();
+        for &c in &codes {
+            tree.insert(c);
+        }
+
+        let queries: Vec<u64> = vec![0x157863, 0x000000, 0x1FFFFF, 0x0AAAAA, 0x155555, 0x1EC1E3];
+        for threshold in 1..=12 {
+            for &q in &queries {
+                let naive = codes.iter().any(|&c| hamming_distance(c, q) < threshold);
+                let bk = tree.has_any_closer_than(q, threshold);
+                assert_eq!(
+                    bk, naive,
+                    "mismatch for query={:#x} threshold={}: bk={} naive={}",
+                    q, threshold, bk, naive
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bk_tree_duplicate_distance_children() {
+        // Insert codes that have the same Hamming distance from the root
+        // to exercise the child-lookup path
+        let mut tree = BkTree::new();
+        tree.insert(0b0000); // root
+        tree.insert(0b0001); // distance 1 from root
+        tree.insert(0b0010); // also distance 1 — goes to child of 0b0001
+        tree.insert(0b0100); // also distance 1 — deeper nesting
+        tree.insert(0b1000); // also distance 1
+
+        // All four single-bit codes should be findable
+        assert!(tree.has_any_closer_than(0b0001, 1));
+        assert!(tree.has_any_closer_than(0b0010, 1));
+        assert!(tree.has_any_closer_than(0b0100, 1));
+        assert!(tree.has_any_closer_than(0b1000, 1));
+
+        // A code at distance 2 from all stored codes should not match with threshold=1
+        // 0b0011 is distance 2 from 0b0000, distance 1 from 0b0001 and 0b0010
+        assert!(tree.has_any_closer_than(0b0011, 2));
+        assert!(!tree.has_any_closer_than(0b1111, 1));
+    }
 
     #[test]
     fn java_random_deterministic() {
