@@ -829,4 +829,155 @@ mod tests {
         );
         assert!(err < 1e-4, "error={err}");
     }
+
+    #[test]
+    fn mat_inv_singular_returns_none() {
+        let m = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]; // det = 0
+        assert!(mat_inv(&m).is_none());
+    }
+
+    #[test]
+    fn svd_rank_deficient() {
+        // Rank-1 matrix: only one nonzero singular value
+        let m = [[1.0, 2.0, 3.0], [2.0, 4.0, 6.0], [3.0, 6.0, 9.0]];
+        let (u, s, v) = svd_3x3(&m);
+        // Only first singular value should be nonzero
+        assert!(s[0] > 1.0, "s[0]={}", s[0]);
+        assert!(s[1] < 1e-8, "s[1]={}", s[1]);
+        assert!(s[2] < 1e-8, "s[2]={}", s[2]);
+
+        // Reconstruct
+        let mut us = [[0.0; 3]; 3];
+        for i in 0..3 {
+            for j in 0..3 {
+                us[i][j] = u[i][j] * s[j];
+            }
+        }
+        let vt = mat_transpose(&v);
+        let recon = mat_mul(&us, &vt);
+        for i in 0..3 {
+            for j in 0..3 {
+                assert!(
+                    (recon[i][j] - m[i][j]).abs() < 1e-6,
+                    "recon[{i}][{j}]={} vs m={}",
+                    recon[i][j],
+                    m[i][j],
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn project_to_so3_negative_det() {
+        // A matrix with negative determinant should still project to SO(3)
+        let m = [[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let r = project_to_so3(&m);
+        let rrt = mat_mul(&r, &mat_transpose(&r));
+        for i in 0..3 {
+            for j in 0..3 {
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!(
+                    (rrt[i][j] - expected).abs() < 1e-10,
+                    "R*R^T[{i}][{j}]={}",
+                    rrt[i][j]
+                );
+            }
+        }
+        assert!((mat_det(&r) - 1.0).abs() < 1e-10, "det={}", mat_det(&r));
+    }
+
+    #[test]
+    fn pose_degenerate_detection() {
+        // All corners at the same point → degenerate homography
+        let params = PoseParams {
+            tagsize: 0.1,
+            fx: 500.0,
+            fy: 500.0,
+            cx: 320.0,
+            cy: 240.0,
+        };
+        let det = Detection {
+            family_name: "test".to_string(),
+            id: 0,
+            hamming: 0,
+            decision_margin: 100.0,
+            corners: [[320.0, 240.0]; 4],
+            center: [320.0, 240.0],
+        };
+        let (_pose, err, alt, _) = estimate_tag_pose(&det, &params);
+        assert_eq!(err, f64::MAX);
+        assert!(alt.is_none());
+    }
+
+    #[test]
+    fn pose_oblique_tag_finds_two_solutions() {
+        // Tag at an oblique angle — should find two pose solutions
+        let params = PoseParams {
+            tagsize: 0.2,
+            fx: 500.0,
+            fy: 500.0,
+            cx: 320.0,
+            cy: 240.0,
+        };
+
+        let s = params.tagsize / 2.0;
+        let z = 3.0;
+
+        // Rotate tag 45 degrees around Y axis
+        let angle: f64 = 0.7;
+        let ca = angle.cos();
+        let sa = angle.sin();
+        // R_y(angle) = [[cos, 0, sin], [0, 1, 0], [-sin, 0, cos]]
+        let tag_corners_3d: [[f64; 3]; 4] = [
+            [-s, s, 0.0],
+            [s, s, 0.0],
+            [s, -s, 0.0],
+            [-s, -s, 0.0],
+        ];
+
+        let mut corners = [[0.0f64; 2]; 4];
+        for i in 0..4 {
+            // Apply rotation around Y
+            let rx = ca * tag_corners_3d[i][0] + sa * tag_corners_3d[i][2];
+            let ry = tag_corners_3d[i][1];
+            let rz = -sa * tag_corners_3d[i][0] + ca * tag_corners_3d[i][2] + z;
+
+            corners[i][0] = params.fx * rx / rz + params.cx;
+            corners[i][1] = params.fy * ry / rz + params.cy;
+        }
+
+        let det = Detection {
+            family_name: "test".to_string(),
+            id: 0,
+            hamming: 0,
+            decision_margin: 100.0,
+            corners,
+            center: [params.cx, params.cy],
+        };
+
+        let (pose, err, alt, _) = estimate_tag_pose(&det, &params);
+        // Should find a pose with reasonable error
+        assert!(err < 1.0, "error={err}");
+        // Oblique tag should produce two solutions
+        assert!(alt.is_some(), "Expected two pose solutions for oblique tag");
+        // The best pose should place the tag at approximately z=3
+        assert!(
+            (pose.t[2] - z).abs() < 1.0,
+            "tz={}, expected ~{z}",
+            pose.t[2],
+        );
+    }
+
+    #[test]
+    fn svd_eigenvalue_ordering() {
+        // Matrix whose eigenvalues of M^T*M need re-sorting
+        let m = [[0.0, 0.0, 5.0], [0.0, 3.0, 0.0], [1.0, 0.0, 0.0]];
+        let (_u, s, _v) = svd_3x3(&m);
+        // Singular values should be in decreasing order
+        assert!(s[0] >= s[1], "s[0]={} < s[1]={}", s[0], s[1]);
+        assert!(s[1] >= s[2], "s[1]={} < s[2]={}", s[1], s[2]);
+        assert!((s[0] - 5.0).abs() < 1e-8, "s[0]={}", s[0]);
+        assert!((s[1] - 3.0).abs() < 1e-8, "s[1]={}", s[1]);
+        assert!((s[2] - 1.0).abs() < 1e-8, "s[2]={}", s[2]);
+    }
 }
