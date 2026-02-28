@@ -62,6 +62,12 @@ enum Command {
         #[arg(long, default_value = "terminal")]
         format: String,
     },
+    /// Start a local HTTP server for the web UI.
+    Serve {
+        /// Port to listen on.
+        #[arg(long, default_value_t = 8080)]
+        port: u16,
+    },
     /// Generate and detect a single scene with custom parameters.
     Explore {
         /// Tag family.
@@ -121,6 +127,7 @@ fn main() {
             scenario,
             format,
         } => cmd_compare(category, scenario, &format),
+        Command::Serve { port } => cmd_serve(port),
         Command::Explore {
             family,
             tag_id,
@@ -247,6 +254,45 @@ fn cmd_regression(category: Option<String>) {
 
     if !full.all_passed() {
         std::process::exit(1);
+    }
+}
+
+fn cmd_serve(port: u16) {
+    // Serve the web UI from the project root so that both ui/ and WASM pkg/ dirs are accessible
+    let ui_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let project_root = ui_dir.parent().unwrap_or(ui_dir);
+
+    println!("Serving web UI at http://localhost:{port}/apriltag-bench/ui/");
+    println!("Press Ctrl+C to stop.");
+    println!();
+    println!("Note: build WASM modules first for full functionality:");
+    println!("  wasm-pack build apriltag-bench-wasm --target web");
+    println!("  wasm-pack build apriltag-wasm --target web");
+
+    let status = std::process::Command::new("python3")
+        .args([
+            "-m",
+            "http.server",
+            &port.to_string(),
+            "--bind",
+            "127.0.0.1",
+        ])
+        .current_dir(project_root)
+        .status();
+
+    match status {
+        Ok(s) if !s.success() => {
+            eprintln!("Server exited with status: {s}");
+        }
+        Err(_) => {
+            eprintln!("Could not start python3 http.server.");
+            eprintln!("You can manually serve the project root:");
+            eprintln!(
+                "  cd {} && python3 -m http.server {port}",
+                project_root.display()
+            );
+        }
+        _ => {}
     }
 }
 
