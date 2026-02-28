@@ -106,18 +106,17 @@ enum CellKind {
 
 /// Pre-computed adjacency data for fast Ising energy complexity checks.
 ///
-/// Instead of scanning the full grid on every candidate, we precompute
-/// all adjacent cell pairs during construction and store compact lists
-/// of shift amounts. This eliminates the nested grid loop, all `resolve()`
-/// calls, and skip-cell processing from the hot path.
+/// Uses bitmask + popcount instead of per-shift loops. For each data bit,
+/// we precompute `net = black_adj - white_adj` and group bits by net value
+/// into bitmasks. The energy from fixed-data adjacencies reduces to a few
+/// `count_ones()` calls (hardware popcount) instead of iterating shift lists.
 struct ComplexityGrid {
-    /// Constant energy from Fixed-Fixed adjacent pairs.
-    base_energy: i32,
-    /// Shift amounts for data bits adjacent to white fixed cells.
-    /// A data bit adjacent to N white cells appears N times.
-    white_data_shifts: SmallVec<[u32; 64]>,
-    /// Shift amounts for data bits adjacent to black fixed cells.
-    black_data_shifts: SmallVec<[u32; 64]>,
+    /// Constant energy: Fixed-Fixed pairs + total white adjacencies.
+    /// `base_energy + total_white_adj` gives energy assuming all data bits are 0.
+    constant_energy: i32,
+    /// Bitmasks grouped by net coefficient (black_adj - white_adj).
+    /// `coeff_masks[i]` holds the mask for bits where net == `coeff_values[i]`.
+    coeff_masks: SmallVec<[(i32, u64); 4]>,
     /// (shift_a, shift_b) for each Data-Data adjacency.
     data_pair_shifts: SmallVec<[(u32, u32); 32]>,
     /// Precomputed threshold: `2 * area` for integer comparison
@@ -157,8 +156,8 @@ impl ComplexityGrid {
 
         // Precompute adjacency pairs
         let mut base_energy = 0i32;
-        let mut white_data_shifts: SmallVec<[u32; 64]> = SmallVec::new();
-        let mut black_data_shifts: SmallVec<[u32; 64]> = SmallVec::new();
+        let mut white_adj = vec![0i32; nbits]; // per-bit white adjacency count
+        let mut black_adj = vec![0i32; nbits]; // per-bit black adjacency count
         let mut data_pair_shifts: SmallVec<[(u32, u32); 32]> = SmallVec::new();
 
         // Process all adjacent pairs (horizontal and vertical)
@@ -166,76 +165,61 @@ impl ComplexityGrid {
             for x in 0..size {
                 let a = cells[y * size + x];
 
-                // Horizontal neighbor (x+1, y)
-                if x + 1 < size {
-                    let b = cells[y * size + x + 1];
-                    classify_pair(
-                        a,
-                        b,
-                        nbits,
-                        &mut base_energy,
-                        &mut white_data_shifts,
-                        &mut black_data_shifts,
-                        &mut data_pair_shifts,
-                    );
-                }
+                // Check both horizontal (x+1, y) and vertical (x, y+1) neighbors
+                let neighbors = [
+                    (x + 1 < size).then(|| cells[y * size + x + 1]),
+                    (y + 1 < size).then(|| cells[(y + 1) * size + x]),
+                ];
 
-                // Vertical neighbor (x, y+1)
-                if y + 1 < size {
-                    let b = cells[(y + 1) * size + x];
-                    classify_pair(
-                        a,
-                        b,
-                        nbits,
-                        &mut base_energy,
-                        &mut white_data_shifts,
-                        &mut black_data_shifts,
-                        &mut data_pair_shifts,
-                    );
+                for b in neighbors.into_iter().flatten() {
+                    match (a, b) {
+                        (CellKind::Fixed(va), CellKind::Fixed(vb)) => {
+                            if va != vb {
+                                base_energy += 1;
+                            }
+                        }
+                        (CellKind::Fixed(v), CellKind::Data(i))
+                        | (CellKind::Data(i), CellKind::Fixed(v)) => {
+                            if v {
+                                white_adj[i] += 1;
+                            } else {
+                                black_adj[i] += 1;
+                            }
+                        }
+                        (CellKind::Data(i), CellKind::Data(j)) => {
+                            data_pair_shifts.push(((nbits - 1 - i) as u32, (nbits - 1 - j) as u32));
+                        }
+                        _ => {}
+                    }
                 }
+            }
+        }
+
+        // Build bitmasks grouped by net coefficient (black_adj - white_adj).
+        // Energy from fixed-data pairs = sum_white + sum_bits(net_i * bit_i),
+        // where net_i = black_adj[i] - white_adj[i].
+        let mut total_white = 0i32;
+        let mut coeff_map: SmallVec<[(i32, u64); 4]> = SmallVec::new();
+        for i in 0..nbits {
+            total_white += white_adj[i];
+            let net = black_adj[i] - white_adj[i];
+            if net == 0 {
+                continue;
+            }
+            let shift = (nbits - 1 - i) as u32;
+            if let Some(entry) = coeff_map.iter_mut().find(|(c, _)| *c == net) {
+                entry.1 |= 1u64 << shift;
+            } else {
+                coeff_map.push((net, 1u64 << shift));
             }
         }
 
         ComplexityGrid {
-            base_energy,
-            white_data_shifts,
-            black_data_shifts,
+            constant_energy: base_energy + total_white,
+            coeff_masks: coeff_map,
             data_pair_shifts,
             threshold: 2 * area,
         }
-    }
-}
-
-/// Classify an adjacent cell pair and update the precomputed lists.
-fn classify_pair(
-    a: CellKind,
-    b: CellKind,
-    nbits: usize,
-    base_energy: &mut i32,
-    white_data_shifts: &mut SmallVec<[u32; 64]>,
-    black_data_shifts: &mut SmallVec<[u32; 64]>,
-    data_pair_shifts: &mut SmallVec<[(u32, u32); 32]>,
-) {
-    match (a, b) {
-        (CellKind::Fixed(va), CellKind::Fixed(vb)) => {
-            if va != vb {
-                *base_energy += 1;
-            }
-        }
-        (CellKind::Fixed(v), CellKind::Data(i)) | (CellKind::Data(i), CellKind::Fixed(v)) => {
-            let shift = (nbits - 1 - i) as u32;
-            if v {
-                // White fixed: transition when data bit is 0
-                white_data_shifts.push(shift);
-            } else {
-                // Black fixed: transition when data bit is 1
-                black_data_shifts.push(shift);
-            }
-        }
-        (CellKind::Data(i), CellKind::Data(j)) => {
-            data_pair_shifts.push(((nbits - 1 - i) as u32, (nbits - 1 - j) as u32));
-        }
-        _ => {} // Skip-anything: no energy contribution
     }
 }
 
@@ -321,23 +305,15 @@ pub fn generate_with_progress(
 /// Counts 4-connected black/white transitions and requires
 /// `energy >= 0.3333 * max_energy` where `max_energy = 2 * area`.
 ///
-/// Uses precomputed adjacency pair lists for speed — no grid scan,
-/// no match dispatch, no skip-cell overhead.
+/// Fixed-data energy uses bitmask + `count_ones()` (hardware popcount)
+/// instead of per-shift loops. Each distinct net coefficient
+/// `(black_adj - white_adj)` gets one popcount call, typically 1-2 total.
 fn is_complex_enough(grid: &ComplexityGrid, code: u64) -> bool {
-    let mut energy = grid.base_energy;
+    let mut energy = grid.constant_energy;
 
-    // Fixed-white ↔ data: transition when data bit is 0 (black)
-    for &shift in &grid.white_data_shifts {
-        if (code >> shift) & 1 == 0 {
-            energy += 1;
-        }
-    }
-
-    // Fixed-black ↔ data: transition when data bit is 1 (white)
-    for &shift in &grid.black_data_shifts {
-        if (code >> shift) & 1 != 0 {
-            energy += 1;
-        }
+    // Fixed ↔ data: popcount per net-coefficient group
+    for &(coeff, mask) in &grid.coeff_masks {
+        energy += coeff * (code & mask).count_ones() as i32;
     }
 
     // Data ↔ data: transition when bits differ
