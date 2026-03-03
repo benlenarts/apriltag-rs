@@ -16,9 +16,13 @@ pub fn threshold(img: &ImageU8, min_white_black_diff: i32, deglitch: bool) -> Im
         return ImageU8::new(w, h);
     }
 
-    // Compute per-tile min/max
-    let mut tile_min = vec![255u8; (tw * th) as usize];
-    let mut tile_max = vec![0u8; (tw * th) as usize];
+    // Compute per-tile min/max with 1-element padding border.
+    // Padding uses neutral values (255 for min, 0 for max) so the 3×3
+    // dilation/erosion loop can index unconditionally without bounds checks.
+    let padded_w = tw + 2;
+    let padded_h = th + 2;
+    let mut tile_min = vec![255u8; (padded_w * padded_h) as usize];
+    let mut tile_max = vec![0u8; (padded_w * padded_h) as usize];
 
     for ty in 0..th {
         for tx in 0..tw {
@@ -31,31 +35,27 @@ pub fn threshold(img: &ImageU8, min_white_black_diff: i32, deglitch: bool) -> Im
                     hi = hi.max(v);
                 }
             }
-            tile_min[(ty * tw + tx) as usize] = lo;
-            tile_max[(ty * tw + tx) as usize] = hi;
+            tile_min[((ty + 1) * padded_w + (tx + 1)) as usize] = lo;
+            tile_max[((ty + 1) * padded_w + (tx + 1)) as usize] = hi;
         }
     }
 
-    // Dilate max, erode min using 3x3 tile neighborhood
+    // Dilate max, erode min using 3x3 tile neighborhood (no bounds checks needed)
     let mut dilated_max = vec![0u8; (tw * th) as usize];
     let mut eroded_min = vec![255u8; (tw * th) as usize];
 
-    for ty in 0..th as i32 {
-        for tx in 0..tw as i32 {
+    for ty in 0..th {
+        for tx in 0..tw {
             let mut hi = 0u8;
             let mut lo = 255u8;
-            for dy in -1..=1i32 {
-                for dx in -1..=1i32 {
-                    let nx = tx + dx;
-                    let ny = ty + dy;
-                    if nx >= 0 && nx < tw as i32 && ny >= 0 && ny < th as i32 {
-                        let idx = (ny * tw as i32 + nx) as usize;
-                        hi = hi.max(tile_max[idx]);
-                        lo = lo.min(tile_min[idx]);
-                    }
+            for dy in 0..3u32 {
+                for dx in 0..3u32 {
+                    let idx = ((ty + dy) * padded_w + (tx + dx)) as usize;
+                    hi = hi.max(tile_max[idx]);
+                    lo = lo.min(tile_min[idx]);
                 }
             }
-            let idx = (ty * tw as i32 + tx) as usize;
+            let idx = (ty * tw + tx) as usize;
             dilated_max[idx] = hi;
             eroded_min[idx] = lo;
         }
