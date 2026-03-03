@@ -189,7 +189,7 @@ fn sort_by_angle(points: &mut [Pt]) {
         p.slope = slope_proxy(dx, dy);
     }
 
-    points.sort_by(|a, b| a.slope.partial_cmp(&b.slope).unwrap());
+    points.sort_by(|a, b| a.slope.total_cmp(&b.slope));
 }
 
 /// Fast slope proxy that maps an angle to a monotonic value in [0, 4).
@@ -370,7 +370,7 @@ fn find_corners(
 
     // Keep top max_nmaxima by error magnitude
     if maxima.len() > params.max_nmaxima as usize {
-        maxima.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        maxima.sort_by(|a, b| b.1.total_cmp(&a.1));
         maxima.truncate(params.max_nmaxima as usize);
         maxima.sort_by_key(|&(idx, _)| idx);
     }
