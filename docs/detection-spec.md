@@ -381,8 +381,18 @@ grouping them by the pair of component IDs they border.
 For each non-unknown pixel at `(x, y)` with value `v0`:
 
 1. Skip if its connected component has fewer than 25 pixels
-2. Check neighbors at offsets `(1,0)`, `(0,1)`, `(-1,1)`, `(1,1)`
-3. For each neighbor at `(x+dx, y+dy)` with value `v1`:
+2. Track a `connected_last` boolean per row, reset to `false` at each row
+   start and whenever a pixel is unknown (`v0 == 127`) or its component is
+   too small
+3. Check 4-connectivity neighbors at offsets `(1,0)` and `(0,1)`
+4. Check 8-connectivity diagonal neighbors with deduplication:
+   - Only check `(-1,1)` when `!connected_last` (the previous pixel's
+     `(1,1)` did not produce a boundary point). Checking `(1,1)` on the
+     previous pixel and `(-1,1)` on the current pixel produces the same
+     midpoint coordinates — skipping avoids duplicates.
+   - Reset a local `connected` flag to `false`, then check `(1,1)`.
+     Set `connected_last = connected` for the next pixel.
+5. For each valid neighbor at `(x+dx, y+dy)` with value `v1`:
    - If `v0 + v1 == 255` (one black, one white):
      - The neighbor's component must also have ≥ 25 pixels
      - Compute a cluster ID from the ordered pair of component
@@ -394,6 +404,8 @@ For each non-unknown pixel at `(x, y)` with value `v0`:
        pt.gx = dx * (v1 − v0)  // points toward white if positive
        pt.gy = dy * (v1 − v0)
        ```
+     - Set `connected = true` (used by the `(1,1)` check to update
+       `connected_last`)
 
 ### 6.2 Cluster Storage
 
