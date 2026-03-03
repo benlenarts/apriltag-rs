@@ -23,24 +23,31 @@ pub fn decimate(img: &ImageU8, f: u32) -> ImageU8 {
 
 /// Build a 1D Gaussian kernel with the given sigma and kernel size.
 ///
-/// Returns normalized kernel values. `ksz` must be odd.
-fn gaussian_kernel(sigma: f32, ksz: usize) -> Vec<f32> {
+/// Returns fixed-point kernel values scaled so they sum to `1 << 15` (32768).
+/// `ksz` must be odd.
+///
+/// Overflow safety: the blur accumulates `255 * 32768 * ksz` in a `u32`.
+/// This fits for `ksz <= 514` (sigma <= 128). Practical sigma values (0-2)
+/// yield `ksz` in the range 3-9.
+fn gaussian_kernel(sigma: f32, ksz: usize) -> Vec<u16> {
     let half = ksz as i32 / 2;
-    let mut kernel = Vec::with_capacity(ksz);
+    let mut raw = Vec::with_capacity(ksz);
     let mut sum = 0.0f32;
     for i in 0..ksz as i32 {
         let x = (i - half) as f32;
         let v = (-x * x / (2.0 * sigma * sigma)).exp();
-        kernel.push(v);
+        raw.push(v);
         sum += v;
     }
-    for v in &mut kernel {
-        *v /= sum;
-    }
-    kernel
+    raw.iter()
+        .map(|&v| ((v / sum) * 32768.0 + 0.5) as u16)
+        .collect()
 }
 
 /// Apply separable Gaussian blur with the given sigma and kernel size.
+///
+/// Uses fixed-point integer arithmetic (Q15) to avoid all float ops in the
+/// inner loops. Accumulates in `u32` and rounds via `(sum + (1 << 14)) >> 15`.
 fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
     let kernel = gaussian_kernel(sigma, ksz);
     let half = ksz as i32 / 2;
@@ -52,12 +59,12 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
     for y in 0..h {
         let row = img.row(y as u32);
         for x in 0..w {
-            let mut sum = 0.0f32;
+            let mut acc = 0u32;
             for k in 0..ksz as i32 {
                 let sx = (x + k - half).clamp(0, w - 1) as usize;
-                sum += row[sx] as f32 * kernel[k as usize];
+                acc += row[sx] as u32 * kernel[k as usize] as u32;
             }
-            tmp.set(x as u32, y as u32, sum.round() as u8);
+            tmp.set(x as u32, y as u32, ((acc + (1 << 14)) >> 15) as u8);
         }
     }
 
@@ -69,11 +76,11 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
             .map(|k| tmp.row((y + k - half).clamp(0, h - 1) as u32))
             .collect();
         for x in 0..w as usize {
-            let mut sum = 0.0f32;
+            let mut acc = 0u32;
             for (k, &kv) in kernel.iter().enumerate() {
-                sum += rows[k][x] as f32 * kv;
+                acc += rows[k][x] as u32 * kv as u32;
             }
-            out.set(x as u32, y as u32, sum.round() as u8);
+            out.set(x as u32, y as u32, ((acc + (1 << 14)) >> 15) as u8);
         }
     }
     out
@@ -160,15 +167,19 @@ mod tests {
     fn gaussian_kernel_sums_to_one() {
         let k = gaussian_kernel(1.0, 5);
         assert_eq!(k.len(), 5);
-        let sum: f32 = k.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-5);
+        let sum: u32 = k.iter().map(|&v| v as u32).sum();
+        // Fixed-point sum should be close to 1 << 15 = 32768 (within ±1 rounding)
+        assert!(
+            (sum as i32 - 32768).unsigned_abs() <= 1,
+            "kernel sum {sum} not close to 32768"
+        );
     }
 
     #[test]
     fn gaussian_kernel_is_symmetric() {
         let k = gaussian_kernel(1.0, 5);
-        assert!((k[0] - k[4]).abs() < 1e-6);
-        assert!((k[1] - k[3]).abs() < 1e-6);
+        assert_eq!(k[0], k[4]);
+        assert_eq!(k[1], k[3]);
     }
 
     #[test]
