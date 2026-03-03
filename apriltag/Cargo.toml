@@ -37,3 +37,10 @@ thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 rayon = { version = "1.10", optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "detection"
+harness = false
