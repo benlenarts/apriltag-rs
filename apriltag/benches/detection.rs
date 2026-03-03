@@ -163,7 +163,11 @@ fn bench_decode(c: &mut Criterion) {
 
 fn bench_end_to_end(c: &mut Criterion) {
     let img = build_bench_image();
-    let mut detector = Detector::new(DetectorConfig::default());
+    let config = DetectorConfig {
+        quad_sigma: 0.8,
+        ..DetectorConfig::default()
+    };
+    let mut detector = Detector::new(config);
     detector.add_family(family::tag36h11(), 2);
 
     // Sanity check: the image should produce a detection
