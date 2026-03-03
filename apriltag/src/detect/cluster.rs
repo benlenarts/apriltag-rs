@@ -183,6 +183,45 @@ mod tests {
     }
 
     #[test]
+    fn no_duplicate_midpoints_on_horizontal_boundary() {
+        // A horizontal boundary (top black, bottom white) causes duplicate
+        // midpoints when pixel (x,y) checks (1,1) → (x+1,y+1) and then
+        // pixel (x+1,y) checks (-1,1) → (x,y+1). Both produce a midpoint
+        // at the same (2x+1, 2y+1) coordinates. The C reference avoids
+        // this with `connected_last` tracking.
+        let size = 40u32;
+        let mut pixels = vec![0u8; (size * size) as usize];
+        // Bottom half white
+        for y in (size / 2)..size {
+            for x in 0..size {
+                pixels[(y * size + x) as usize] = 255;
+            }
+        }
+        let img = make_thresh(size, size, &pixels);
+        let mut uf = connected_components(&img);
+        let clusters = gradient_clusters(&img, &mut uf, 1);
+
+        // Collect all midpoints across all clusters
+        let mut all_points: Vec<(u16, u16)> = clusters
+            .iter()
+            .flat_map(|c| c.points.iter())
+            .map(|p| (p.x, p.y))
+            .collect();
+        let total = all_points.len();
+        all_points.sort();
+        all_points.dedup();
+        let unique = all_points.len();
+
+        assert_eq!(
+            total,
+            unique,
+            "found {} duplicate midpoints out of {} total",
+            total - unique,
+            total
+        );
+    }
+
+    #[test]
     fn unknown_pixels_ignored() {
         let mut pixels = vec![127u8; 64];
         // Set a small region to black/white
