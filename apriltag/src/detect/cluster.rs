@@ -39,12 +39,13 @@ pub fn gradient_clusters(
 
     let mut cluster_map: HashMap<u64, Vec<Pt>> = HashMap::new();
 
-    // Macro to check a neighbor offset and optionally add a boundary point.
-    // Sets `connected = true` when a valid boundary point is added.
+    // Check a neighbor offset and add a boundary point if valid.
+    // Returns true when a boundary point was added.
     macro_rules! do_conn {
         ($cluster_map:expr, $uf:expr, $threshed:expr, $x:expr, $y:expr,
          $v0:expr, $dx:expr, $dy:expr, $w:expr, $h:expr,
-         $min_component_size:expr, $connected:expr) => {{
+         $min_component_size:expr) => {{
+            let mut added = false;
             let nx = $x as i32 + $dx;
             let ny = $y as i32 + $dy;
             if nx >= 0 && nx < $w as i32 && ny >= 0 && ny < $h as i32 {
@@ -71,10 +72,11 @@ pub fn gradient_clusters(
                             slope: 0.0,
                         };
                         $cluster_map.entry(key).or_default().push(pt);
-                        $connected = true;
+                        added = true;
                     }
                 }
             }
+            added
         }};
     }
 
@@ -93,7 +95,6 @@ pub fn gradient_clusters(
             }
 
             // 4-connectivity
-            let mut connected = false;
             do_conn!(
                 cluster_map,
                 uf,
@@ -105,8 +106,7 @@ pub fn gradient_clusters(
                 0,
                 w,
                 h,
-                min_component_size,
-                connected
+                min_component_size
             );
             do_conn!(
                 cluster_map,
@@ -119,8 +119,7 @@ pub fn gradient_clusters(
                 1,
                 w,
                 h,
-                min_component_size,
-                connected
+                min_component_size
             );
 
             // 8-connectivity with deduplication: checking (1,1) on the
@@ -139,12 +138,10 @@ pub fn gradient_clusters(
                     1,
                     w,
                     h,
-                    min_component_size,
-                    connected
+                    min_component_size
                 );
             }
-            connected = false;
-            do_conn!(
+            connected_last = do_conn!(
                 cluster_map,
                 uf,
                 threshed,
@@ -155,10 +152,8 @@ pub fn gradient_clusters(
                 1,
                 w,
                 h,
-                min_component_size,
-                connected
+                min_component_size
             );
-            connected_last = connected;
         }
     }
 
