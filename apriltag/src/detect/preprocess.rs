@@ -213,4 +213,100 @@ mod tests {
         let out = apply_sigma(&img, 0.1);
         assert_eq!(out.get(0, 0), 42);
     }
+
+    /// Reference f32 Gaussian blur for regression testing against fixed-point.
+    fn gaussian_blur_f32(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
+        let half = ksz as i32 / 2;
+        let mut kernel = Vec::with_capacity(ksz);
+        let mut sum = 0.0f32;
+        for i in 0..ksz as i32 {
+            let x = (i - half) as f32;
+            let v = (-x * x / (2.0 * sigma * sigma)).exp();
+            kernel.push(v);
+            sum += v;
+        }
+        for v in &mut kernel {
+            *v /= sum;
+        }
+
+        let w = img.width as i32;
+        let h = img.height as i32;
+
+        // Horizontal pass
+        let mut tmp = ImageU8::new(img.width, img.height);
+        for y in 0..h {
+            let row = img.row(y as u32);
+            for x in 0..w {
+                let mut acc = 0.0f32;
+                for k in 0..ksz as i32 {
+                    let sx = (x + k - half).clamp(0, w - 1) as usize;
+                    acc += row[sx] as f32 * kernel[k as usize];
+                }
+                tmp.set(x as u32, y as u32, acc.round() as u8);
+            }
+        }
+
+        // Vertical pass
+        let mut out = ImageU8::new(img.width, img.height);
+        for y in 0..h {
+            let rows: Vec<&[u8]> = (0..ksz as i32)
+                .map(|k| tmp.row((y + k - half).clamp(0, h - 1) as u32))
+                .collect();
+            for x in 0..w as usize {
+                let mut acc = 0.0f32;
+                for (k, &kv) in kernel.iter().enumerate() {
+                    acc += rows[k][x] as f32 * kv;
+                }
+                out.set(x as u32, y as u32, acc.round() as u8);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn fixed_point_matches_float_blur() {
+        // Build a non-trivial test image with gradients and a bright spot
+        let (w, h) = (64, 48);
+        let mut img = ImageU8::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                // Diagonal gradient + a bright region
+                let base = ((x + y) as f32 / (w + h) as f32 * 200.0) as u8;
+                img.set(x, y, base);
+            }
+        }
+        // Add a bright spot
+        for y in 20..28 {
+            for x in 28..36 {
+                img.set(x, y, 255);
+            }
+        }
+
+        // Test several sigma values covering practical range
+        for sigma in [0.8f32, 1.0, 1.5, 2.0] {
+            let mut ksz = (4.0 * sigma) as usize;
+            if ksz % 2 == 0 {
+                ksz += 1;
+            }
+            if ksz <= 1 {
+                continue;
+            }
+
+            let float_result = gaussian_blur_f32(&img, sigma, ksz);
+            let fixed_result = gaussian_blur(&img, sigma, ksz);
+
+            let mut max_diff = 0i32;
+            for y in 0..h {
+                for x in 0..w {
+                    let diff =
+                        (float_result.get(x, y) as i32 - fixed_result.get(x, y) as i32).abs();
+                    max_diff = max_diff.max(diff);
+                }
+            }
+            assert!(
+                max_diff <= 1,
+                "sigma={sigma}: max pixel diff {max_diff} exceeds tolerance 1"
+            );
+        }
+    }
 }
