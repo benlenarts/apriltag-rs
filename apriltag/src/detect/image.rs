@@ -40,6 +40,13 @@ impl ImageU8 {
         self.buf[(y * self.stride + x) as usize]
     }
 
+    /// Get a slice of the pixel data for row `y` (width pixels, ignoring stride padding).
+    #[inline]
+    pub fn row(&self, y: u32) -> &[u8] {
+        let offset = (y * self.stride) as usize;
+        &self.buf[offset..offset + self.width as usize]
+    }
+
     /// Set the pixel value at (x, y).
     #[inline]
     pub fn set(&mut self, x: u32, y: u32, val: u8) {
@@ -108,6 +115,14 @@ mod tests {
         assert_eq!(img.get(2, 0), 3);
         assert_eq!(img.get(0, 1), 4);
         assert_eq!(img.get(2, 1), 6);
+    }
+
+    #[test]
+    fn row_returns_pixel_slice() {
+        let buf = vec![1, 2, 3, 0, 4, 5, 6, 0]; // stride=4, width=3
+        let img = ImageU8::from_buf(3, 2, 4, buf);
+        assert_eq!(img.row(0), &[1, 2, 3]);
+        assert_eq!(img.row(1), &[4, 5, 6]);
     }
 
     #[test]
