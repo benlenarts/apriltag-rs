@@ -37,64 +37,128 @@ pub fn gradient_clusters(
     let h = threshed.height;
     let min_component_size = 25u32;
 
-    let neighbor_offsets: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 1), (1, 1)];
-
     let mut cluster_map: HashMap<u64, Vec<Pt>> = HashMap::new();
 
+    // Macro to check a neighbor offset and optionally add a boundary point.
+    // Sets `connected = true` when a valid boundary point is added.
+    macro_rules! do_conn {
+        ($cluster_map:expr, $uf:expr, $threshed:expr, $x:expr, $y:expr,
+         $v0:expr, $dx:expr, $dy:expr, $w:expr, $h:expr,
+         $min_component_size:expr, $connected:expr) => {{
+            let nx = $x as i32 + $dx;
+            let ny = $y as i32 + $dy;
+            if nx >= 0 && nx < $w as i32 && ny >= 0 && ny < $h as i32 {
+                let nx = nx as u32;
+                let ny = ny as u32;
+                let v1 = $threshed.get(nx, ny);
+                if $v0 as i32 + v1 as i32 == 255 {
+                    let id1 = ny * $w + nx;
+                    if $uf.set_size(id1) >= $min_component_size {
+                        let rep0 = $uf.find($y * $w + $x) as u64;
+                        let rep1 = $uf.find(id1) as u64;
+                        let key = if rep0 < rep1 {
+                            (rep0 << 32) | rep1
+                        } else {
+                            (rep1 << 32) | rep0
+                        };
+                        let gx = $dx as i16 * (v1 as i16 - $v0 as i16);
+                        let gy = $dy as i16 * (v1 as i16 - $v0 as i16);
+                        let pt = Pt {
+                            x: (2 * $x as i32 + $dx) as u16,
+                            y: (2 * $y as i32 + $dy) as u16,
+                            gx,
+                            gy,
+                            slope: 0.0,
+                        };
+                        $cluster_map.entry(key).or_default().push(pt);
+                        $connected = true;
+                    }
+                }
+            }
+        }};
+    }
+
     for y in 0..h {
+        let mut connected_last = false;
         for x in 0..w {
             let v0 = threshed.get(x, y);
             if v0 == 127 {
+                connected_last = false;
                 continue;
             }
 
-            let id0 = y * w + x;
-            if uf.set_size(id0) < min_component_size {
+            if uf.set_size(y * w + x) < min_component_size {
+                connected_last = false;
                 continue;
             }
 
-            for &(dx, dy) in &neighbor_offsets {
-                let nx = x as i32 + dx;
-                let ny = y as i32 + dy;
+            // 4-connectivity
+            let mut connected = false;
+            do_conn!(
+                cluster_map,
+                uf,
+                threshed,
+                x,
+                y,
+                v0,
+                1,
+                0,
+                w,
+                h,
+                min_component_size,
+                connected
+            );
+            do_conn!(
+                cluster_map,
+                uf,
+                threshed,
+                x,
+                y,
+                v0,
+                0,
+                1,
+                w,
+                h,
+                min_component_size,
+                connected
+            );
 
-                if nx < 0 || nx >= w as i32 || ny < 0 || ny >= h as i32 {
-                    continue;
-                }
-
-                let nx = nx as u32;
-                let ny = ny as u32;
-                let v1 = threshed.get(nx, ny);
-
-                if v0 as i32 + v1 as i32 != 255 {
-                    continue;
-                }
-
-                let id1 = ny * w + nx;
-                if uf.set_size(id1) < min_component_size {
-                    continue;
-                }
-
-                let rep0 = uf.find(id0) as u64;
-                let rep1 = uf.find(id1) as u64;
-                let key = if rep0 < rep1 {
-                    (rep0 << 32) | rep1
-                } else {
-                    (rep1 << 32) | rep0
-                };
-
-                let gx = dx as i16 * (v1 as i16 - v0 as i16);
-                let gy = dy as i16 * (v1 as i16 - v0 as i16);
-
-                let pt = Pt {
-                    x: (2 * x as i32 + dx) as u16,
-                    y: (2 * y as i32 + dy) as u16,
-                    gx,
-                    gy,
-                    slope: 0.0,
-                };
-
-                cluster_map.entry(key).or_default().push(pt);
+            // 8-connectivity with deduplication: checking (1,1) on the
+            // previous pixel and (-1,1) on the current pixel produces the
+            // same midpoint. Only check (-1,1) when the previous pixel
+            // did not connect via (1,1).
+            if !connected_last {
+                do_conn!(
+                    cluster_map,
+                    uf,
+                    threshed,
+                    x,
+                    y,
+                    v0,
+                    -1,
+                    1,
+                    w,
+                    h,
+                    min_component_size,
+                    connected
+                );
             }
+            connected = false;
+            do_conn!(
+                cluster_map,
+                uf,
+                threshed,
+                x,
+                y,
+                v0,
+                1,
+                1,
+                w,
+                h,
+                min_component_size,
+                connected
+            );
+            connected_last = connected;
         }
     }
 
