@@ -50,11 +50,12 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
     // Horizontal pass
     let mut tmp = ImageU8::new(img.width, img.height);
     for y in 0..h {
+        let row = img.row(y as u32);
         for x in 0..w {
             let mut sum = 0.0f32;
             for k in 0..ksz as i32 {
-                let sx = (x + k - half).clamp(0, w - 1);
-                sum += img.get(sx as u32, y as u32) as f32 * kernel[k as usize];
+                let sx = (x + k - half).clamp(0, w - 1) as usize;
+                sum += row[sx] as f32 * kernel[k as usize];
             }
             tmp.set(x as u32, y as u32, sum.round() as u8);
         }
@@ -63,11 +64,14 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
     // Vertical pass
     let mut out = ImageU8::new(img.width, img.height);
     for y in 0..h {
-        for x in 0..w {
+        // Pre-fetch row slices for all kernel taps
+        let rows: Vec<&[u8]> = (0..ksz as i32)
+            .map(|k| tmp.row((y + k - half).clamp(0, h - 1) as u32))
+            .collect();
+        for x in 0..w as usize {
             let mut sum = 0.0f32;
-            for k in 0..ksz as i32 {
-                let sy = (y + k - half).clamp(0, h - 1);
-                sum += tmp.get(x as u32, sy as u32) as f32 * kernel[k as usize];
+            for (k, &kv) in kernel.iter().enumerate() {
+                sum += rows[k][x] as f32 * kv;
             }
             out.set(x as u32, y as u32, sum.round() as u8);
         }
@@ -102,9 +106,11 @@ pub fn apply_sigma(img: &ImageU8, quad_sigma: f32) -> ImageU8 {
         // Unsharp mask: 2*original - blurred
         let mut out = ImageU8::new(img.width, img.height);
         for y in 0..img.height {
-            for x in 0..img.width {
-                let v = 2 * img.get(x, y) as i32 - blurred.get(x, y) as i32;
-                out.set(x, y, v.clamp(0, 255) as u8);
+            let orig_row = img.row(y);
+            let blur_row = blurred.row(y);
+            for x in 0..img.width as usize {
+                let v = 2 * orig_row[x] as i32 - blur_row[x] as i32;
+                out.set(x as u32, y, v.clamp(0, 255) as u8);
             }
         }
         out
