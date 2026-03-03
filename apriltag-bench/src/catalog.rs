@@ -137,10 +137,7 @@ fn baseline_scenarios() -> Vec<Scenario> {
 }
 
 fn rotation_scenarios() -> Vec<Scenario> {
-    // Note: rotations ~12-27° and ~65-79° currently fail detection due to
-    // gradient clustering limitations with near-diagonal edges. Using angles
-    // that the detector currently handles; failing angles are tracked separately.
-    let angles_deg = [10, 30, 45, 60, 80, 90];
+    let angles_deg = [0, 10, 15, 20, 25, 30, 45, 60, 70, 75, 80, 90];
     angles_deg
         .iter()
         .map(|&deg| {
