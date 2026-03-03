@@ -845,4 +845,52 @@ mod tests {
             "Should find a quad from a perfect rectangle"
         );
     }
+
+    #[test]
+    fn slope_proxy_zero_displacement_is_nan() {
+        // When a point coincides with the centroid, dx=dy=0 yields NaN
+        let s = slope_proxy(0.0, 0.0);
+        assert!(s.is_nan(), "slope_proxy(0,0) should be NaN, got {s}");
+    }
+
+    #[test]
+    fn sort_by_angle_with_nan_slope_does_not_panic() {
+        // If any point's slope is NaN (e.g. from coincident centroid),
+        // the sort must not panic. With partial_cmp().unwrap() it does.
+        let mut points: Vec<Pt> = (0..4)
+            .map(|i| {
+                let angle = std::f64::consts::FRAC_PI_2 * i as f64;
+                Pt {
+                    x: (100.0 + 40.0 * angle.cos()) as u16,
+                    y: (100.0 + 40.0 * angle.sin()) as u16,
+                    gx: 0,
+                    gy: 0,
+                    slope: 0.0,
+                }
+            })
+            .collect();
+
+        // Manually inject a NaN slope after the sort_by_angle centroid
+        // computation would have run — simulate the bug by setting slope
+        // directly and calling sort_by on the same comparator.
+        points[0].slope = f32::NAN;
+        points[1].slope = 1.0;
+        points[2].slope = 2.0;
+        points[3].slope = 3.0;
+
+        // This is the exact comparator from sort_by_angle.
+        // With partial_cmp().unwrap() this panics; with total_cmp() it doesn't.
+        points.sort_by(|a, b| a.slope.partial_cmp(&b.slope).unwrap());
+    }
+
+    #[test]
+    fn find_corners_sort_with_nan_error_does_not_panic() {
+        // The maxima sort in find_corners uses partial_cmp().unwrap() on f64.
+        // If an error value is NaN, it panics. Verify the comparator is safe.
+        let mut maxima: Vec<(usize, f64)> = vec![(0, 1.0), (1, f64::NAN), (2, 3.0), (3, 2.0)];
+
+        // This is the exact comparator from find_corners line 373.
+        // With partial_cmp().unwrap() this panics; with total_cmp() it doesn't.
+        maxima.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    }
 }
