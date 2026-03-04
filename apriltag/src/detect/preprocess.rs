@@ -58,17 +58,19 @@ fn gaussian_kernel(sigma: f32, ksz: usize) -> Vec<u16> {
 /// inner loops. Accumulates in `u32` and rounds via `(sum + (1 << 14)) >> 15`.
 #[cfg(test)]
 fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
-    gaussian_blur_into(img, sigma, ksz, Vec::new(), Vec::new())
+    gaussian_blur_into(img, sigma, ksz, Vec::new(), Vec::new()).0
 }
 
 /// Like [`gaussian_blur`], but reuses `out_buf` and `tmp_buf` to avoid allocation.
+///
+/// Returns `(output_image, reclaimed_tmp_buf)`.
 fn gaussian_blur_into(
     img: &ImageU8,
     sigma: f32,
     ksz: usize,
     tmp_buf: Vec<u8>,
     out_buf: Vec<u8>,
-) -> ImageU8 {
+) -> (ImageU8, Vec<u8>) {
     let kernel = gaussian_kernel(sigma, ksz);
     let half = ksz as i32 / 2;
     let w = img.width as i32;
@@ -103,7 +105,7 @@ fn gaussian_blur_into(
             out.set(x as u32, y as u32, ((acc + (1 << 14)) >> 15) as u8);
         }
     }
-    out
+    (out, tmp.into_buf())
 }
 
 /// Apply Gaussian blur or sharpening based on `quad_sigma`.
@@ -112,21 +114,23 @@ fn gaussian_blur_into(
 /// - `quad_sigma < 0` → Unsharp mask (sharpening)
 /// - `quad_sigma == 0` → No filtering
 pub fn apply_sigma(img: &ImageU8, quad_sigma: f32) -> ImageU8 {
-    apply_sigma_into(img, quad_sigma, Vec::new(), Vec::new())
+    apply_sigma_into(img, quad_sigma, Vec::new(), Vec::new()).0
 }
 
 /// Like [`apply_sigma`], but reuses `out_buf` and `tmp_buf` to avoid allocation.
 ///
 /// `out_buf` is used for the final output image. `tmp_buf` is used for the
 /// intermediate horizontal-pass buffer inside the Gaussian blur.
+///
+/// Returns `(output_image, reclaimed_tmp_buf)`.
 pub fn apply_sigma_into(
     img: &ImageU8,
     quad_sigma: f32,
     out_buf: Vec<u8>,
     tmp_buf: Vec<u8>,
-) -> ImageU8 {
+) -> (ImageU8, Vec<u8>) {
     if quad_sigma == 0.0 {
-        return img.clone();
+        return (img.clone(), tmp_buf);
     }
 
     let sigma = quad_sigma.abs();
@@ -135,16 +139,15 @@ pub fn apply_sigma_into(
         ksz += 1;
     }
     if ksz <= 1 {
-        return img.clone();
+        return (img.clone(), tmp_buf);
     }
 
-    let blurred = gaussian_blur_into(img, sigma, ksz, tmp_buf, out_buf);
+    let (blurred, reclaimed_tmp) = gaussian_blur_into(img, sigma, ksz, tmp_buf, out_buf);
 
     if quad_sigma > 0.0 {
-        blurred
+        (blurred, reclaimed_tmp)
     } else {
         // Unsharp mask: 2*original - blurred
-        // Reuse the blurred image's buffer for the output
         let blur_buf = blurred.buf;
         let mut out = ImageU8::new_reuse(img.width, img.height, Vec::new());
         for y in 0..img.height {
@@ -155,7 +158,7 @@ pub fn apply_sigma_into(
                 out.set(x as u32, y, v.clamp(0, 255) as u8);
             }
         }
-        out
+        (out, reclaimed_tmp)
     }
 }
 
@@ -297,7 +300,7 @@ mod tests {
         let mut img = ImageU8::new(10, 10);
         img.set(5, 5, 255);
         let expected = apply_sigma(&img, 1.0);
-        let actual = apply_sigma_into(&img, 1.0, Vec::new(), Vec::new());
+        let (actual, _tmp) = apply_sigma_into(&img, 1.0, Vec::new(), Vec::new());
         assert_eq!(expected.buf, actual.buf);
     }
 
@@ -311,7 +314,7 @@ mod tests {
         }
         img.set(5, 5, 100);
         let expected = apply_sigma(&img, -1.0);
-        let actual = apply_sigma_into(&img, -1.0, Vec::new(), Vec::new());
+        let (actual, _tmp) = apply_sigma_into(&img, -1.0, Vec::new(), Vec::new());
         assert_eq!(expected.buf, actual.buf);
     }
 
@@ -319,7 +322,7 @@ mod tests {
     fn apply_sigma_into_zero_clones() {
         let mut img = ImageU8::new(4, 4);
         img.set(0, 0, 42);
-        let out = apply_sigma_into(&img, 0.0, Vec::new(), Vec::new());
+        let (out, _tmp) = apply_sigma_into(&img, 0.0, Vec::new(), Vec::new());
         assert_eq!(out.get(0, 0), 42);
     }
 
