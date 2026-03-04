@@ -61,27 +61,41 @@ pub fn threshold(img: &ImageU8, min_white_black_diff: i32, deglitch: bool) -> Im
         }
     }
 
-    // Binarize each pixel
-    let mut out = ImageU8::new(w, h);
+    // Pass 1: Expand tiles to full resolution (nearest-neighbor upscale)
+    let pixel_count = (w * h) as usize;
+    let mut lo_full = vec![0u8; pixel_count];
+    let mut hi_full = vec![0u8; pixel_count];
     for y in 0..h {
+        let ty = (y / TILESZ).min(th - 1);
         for x in 0..w {
             let tx = (x / TILESZ).min(tw - 1);
-            let ty = (y / TILESZ).min(th - 1);
             let idx = (ty * tw + tx) as usize;
-            let lo = eroded_min[idx];
-            let hi = dilated_max[idx];
+            let pixel_idx = (y * w + x) as usize;
+            lo_full[pixel_idx] = eroded_min[idx];
+            hi_full[pixel_idx] = dilated_max[idx];
+        }
+    }
 
-            let val = if (hi as i32 - lo as i32) < min_white_black_diff {
+    // Pass 2: Binarize on contiguous arrays (auto-vectorizable)
+    let mut out = ImageU8::new(w, h);
+    let out_buf = &mut out.buf;
+    for y in 0..h {
+        let img_row = (y * img.stride) as usize;
+        let out_row = (y * w) as usize;
+        for x in 0..w as usize {
+            let i = out_row + x;
+            let lo = lo_full[i];
+            let hi = hi_full[i];
+            out_buf[i] = if (hi as i32 - lo as i32) < min_white_black_diff {
                 127
             } else {
                 let thresh = lo as i32 + (hi as i32 - lo as i32) / 2;
-                if img.get(x, y) as i32 > thresh {
+                if img.buf[img_row + x] as i32 > thresh {
                     255
                 } else {
                     0
                 }
             };
-            out.set(x, y, val);
         }
     }
 
