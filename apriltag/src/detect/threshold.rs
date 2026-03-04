@@ -45,6 +45,16 @@ fn binarize_block(
 /// Uses tile-based adaptive thresholding with min/max dilation to handle
 /// spatially varying illumination.
 pub fn threshold(img: &ImageU8, min_white_black_diff: i32, deglitch: bool) -> ImageU8 {
+    threshold_into(img, min_white_black_diff, deglitch, Vec::new())
+}
+
+/// Like [`threshold`], but reuses `buf` for the output image to avoid allocation.
+pub fn threshold_into(
+    img: &ImageU8,
+    min_white_black_diff: i32,
+    deglitch: bool,
+    buf: Vec<u8>,
+) -> ImageU8 {
     let w = img.width;
     let h = img.height;
     let tw = w / TILESZ;
@@ -101,7 +111,7 @@ pub fn threshold(img: &ImageU8, min_white_black_diff: i32, deglitch: bool) -> Im
 
     // Binarize each pixel, processing tile-by-tile to load lo/hi once per tile.
     // Remainder pixels (beyond tile-aligned region) use the last tile's values.
-    let mut out = ImageU8::new(w, h);
+    let mut out = ImageU8::new_reuse(w, h, buf);
 
     for ty in 0..th {
         let y_start = (ty * TILESZ) as usize;
@@ -230,6 +240,35 @@ fn morph_op(img: &ImageU8, dilate: bool) -> ImageU8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn threshold_into_matches_threshold() {
+        let mut img = ImageU8::new(8, 8);
+        for y in 0..8 {
+            for x in 0..4 {
+                img.set(x, y, 0);
+            }
+            for x in 4..8 {
+                img.set(x, y, 255);
+            }
+        }
+        let expected = threshold(&img, 5, false);
+        let actual = threshold_into(&img, 5, false, Vec::new());
+        assert_eq!(expected.buf, actual.buf);
+    }
+
+    #[test]
+    fn threshold_into_reuses_buffer() {
+        let mut img = ImageU8::new(8, 8);
+        for y in 0..8 {
+            for x in 0..8 {
+                img.set(x, y, if x < 4 { 0 } else { 255 });
+            }
+        }
+        let buf = Vec::with_capacity(1024);
+        let out = threshold_into(&img, 5, false, buf);
+        assert!(out.buf.capacity() >= 1024);
+    }
 
     #[test]
     fn threshold_uniform_white_returns_unknown() {
