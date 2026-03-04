@@ -1,26 +1,43 @@
 const UNSET: u32 = 0xFFFF_FFFF;
 
+/// Packed parent (low 32 bits) + size (high 32 bits) in a single u64.
+/// Sharing a cache line eliminates one memory access per find/union step.
+#[inline(always)]
+fn pack(parent: u32, size: u32) -> u64 {
+    (size as u64) << 32 | parent as u64
+}
+
+#[inline(always)]
+fn unpack_parent(v: u64) -> u32 {
+    v as u32
+}
+
+#[inline(always)]
+fn unpack_size(v: u64) -> u32 {
+    (v >> 32) as u32
+}
+
 /// Weighted union-find (disjoint-set) with path halving.
+///
+/// Parent and size are interleaved in a single `Vec<u64>` so that both
+/// fields share a cache line, matching the C reference implementation's
+/// layout and eliminating extra memory accesses.
 pub struct UnionFind {
-    parent: Vec<u32>,
-    size: Vec<u32>,
+    /// Packed entries: low 32 bits = parent, high 32 bits = size.
+    data: Vec<u64>,
 }
 
 impl UnionFind {
     /// Create a new union-find with `n` elements, all initially unset.
     pub fn new(n: usize) -> Self {
         Self {
-            parent: vec![UNSET; n],
-            size: vec![0; n],
+            data: vec![pack(UNSET, 0); n],
         }
     }
 
     /// Create an empty union-find with no elements and no allocation.
     pub fn empty() -> Self {
-        Self {
-            parent: Vec::new(),
-            size: Vec::new(),
-        }
+        Self { data: Vec::new() }
     }
 
     /// Reset the union-find for `n` elements, reusing existing allocations.
@@ -29,24 +46,34 @@ impl UnionFind {
     /// if the internal vectors already have sufficient capacity, no
     /// allocation occurs.
     pub fn reset(&mut self, n: usize) {
-        self.parent.clear();
-        self.parent.resize(n, UNSET);
-        self.size.clear();
-        self.size.resize(n, 0);
+        self.data.clear();
+        self.data.resize(n, pack(UNSET, 0));
     }
 
     /// Find the representative of the set containing `id`, with path halving.
     ///
     /// If `id` has not been initialized, it becomes its own representative.
+    ///
+    /// # Safety invariant
+    /// All indices stored in parent fields are < data.len(), guaranteed by
+    /// the public API (new/reset set bounds, union only stores find results).
     pub fn find(&mut self, mut id: u32) -> u32 {
-        if self.parent[id as usize] == UNSET {
-            self.parent[id as usize] = id;
-            return id;
-        }
-        while self.parent[id as usize] != id {
-            let grandparent = self.parent[self.parent[id as usize] as usize];
-            self.parent[id as usize] = grandparent;
-            id = grandparent;
+        // SAFETY: callers guarantee id < data.len() (set by new/reset/union).
+        // Parent values are always valid indices (set to self or another valid id).
+        unsafe {
+            let parent = unpack_parent(*self.data.get_unchecked(id as usize));
+            if parent == UNSET {
+                *self.data.get_unchecked_mut(id as usize) = pack(id, 0);
+                return id;
+            }
+            while unpack_parent(*self.data.get_unchecked(id as usize)) != id {
+                let parent = unpack_parent(*self.data.get_unchecked(id as usize));
+                let grandparent = unpack_parent(*self.data.get_unchecked(parent as usize));
+                // Path halving: point to grandparent, preserving size
+                let size = unpack_size(*self.data.get_unchecked(id as usize));
+                *self.data.get_unchecked_mut(id as usize) = pack(grandparent, size);
+                id = grandparent;
+            }
         }
         id
     }
@@ -60,15 +87,15 @@ impl UnionFind {
         if ra == rb {
             return ra;
         }
-        let sa = self.size[ra as usize] + 1;
-        let sb = self.size[rb as usize] + 1;
+        let sa = unpack_size(self.data[ra as usize]) + 1;
+        let sb = unpack_size(self.data[rb as usize]) + 1;
         if sa > sb {
-            self.parent[rb as usize] = ra;
-            self.size[ra as usize] += sb;
+            self.data[rb as usize] = pack(ra, unpack_size(self.data[rb as usize]));
+            self.data[ra as usize] = pack(ra, unpack_size(self.data[ra as usize]) + sb);
             ra
         } else {
-            self.parent[ra as usize] = rb;
-            self.size[rb as usize] += sa;
+            self.data[ra as usize] = pack(rb, unpack_size(self.data[ra as usize]));
+            self.data[rb as usize] = pack(rb, unpack_size(self.data[rb as usize]) + sa);
             rb
         }
     }
@@ -76,7 +103,7 @@ impl UnionFind {
     /// Get the size of the set containing `id` (including `id` itself).
     pub fn set_size(&mut self, id: u32) -> u32 {
         let r = self.find(id);
-        self.size[r as usize] + 1
+        unpack_size(self.data[r as usize]) + 1
     }
 }
 
@@ -149,8 +176,7 @@ mod tests {
     #[test]
     fn empty_creates_no_allocation() {
         let uf = UnionFind::empty();
-        assert_eq!(uf.parent.len(), 0);
-        assert_eq!(uf.size.len(), 0);
+        assert_eq!(uf.data.len(), 0);
     }
 
     #[test]
@@ -158,8 +184,7 @@ mod tests {
         let fresh = UnionFind::new(10);
         let mut reused = UnionFind::empty();
         reused.reset(10);
-        assert_eq!(fresh.parent, reused.parent);
-        assert_eq!(fresh.size, reused.size);
+        assert_eq!(fresh.data, reused.data);
     }
 
     #[test]
@@ -170,8 +195,8 @@ mod tests {
         uf.union(2, 3);
         // Reset to smaller size
         uf.reset(10);
-        assert_eq!(uf.parent.len(), 10);
-        assert!(uf.parent.capacity() >= 100);
+        assert_eq!(uf.data.len(), 10);
+        assert!(uf.data.capacity() >= 100);
         // Should work identically to fresh
         uf.union(0, 1);
         assert_eq!(uf.find(0), uf.find(1));
