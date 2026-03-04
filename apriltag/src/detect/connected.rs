@@ -10,11 +10,20 @@ use super::unionfind::UnionFind;
 pub fn connected_components(threshed: &ImageU8) -> UnionFind {
     let w = threshed.width;
     let h = threshed.height;
+    let buf = &threshed.buf;
+    let stride = threshed.stride;
+
+    // Help the compiler elide bounds checks in the inner loop:
+    // all accesses use index < h * stride, and the max index is
+    // (h-1)*stride + (w-1) < h*stride when w <= stride.
+    assert!(buf.len() >= (h * stride) as usize);
+
     let mut uf = UnionFind::new((w * h) as usize);
 
     for y in 0..h {
+        let row = (y * stride) as usize;
         for x in 0..w {
-            let v = threshed.get(x, y);
+            let v = buf[row + x as usize];
             if v == 127 {
                 continue;
             }
@@ -24,7 +33,11 @@ pub fn connected_components(threshed: &ImageU8) -> UnionFind {
             // Cache left neighbor — used 3x across union() calls below.
             // union() clobbers caller-saved registers, forcing redundant
             // reloads of the immutable image buffer.
-            let left = if x > 0 { threshed.get(x - 1, y) } else { 127 };
+            let left = if x > 0 {
+                buf[row + x as usize - 1]
+            } else {
+                127
+            };
 
             // Left neighbor (always check)
             if left == v {
@@ -33,10 +46,11 @@ pub fn connected_components(threshed: &ImageU8) -> UnionFind {
 
             // Up neighbor: skip if left, upper-left, and up all equal v
             if y > 0 {
-                let up = threshed.get(x, y - 1);
+                let prev_row = row - stride as usize;
+                let up = buf[prev_row + x as usize];
                 if up == v {
                     let upper_left = if x > 0 {
-                        threshed.get(x - 1, y - 1)
+                        buf[prev_row + x as usize - 1]
                     } else {
                         127
                     };
@@ -48,9 +62,10 @@ pub fn connected_components(threshed: &ImageU8) -> UnionFind {
 
             // Upper-left diagonal: only for white pixels
             if v == 255 && left != 255 && x > 0 && y > 0 {
-                let up = threshed.get(x, y - 1);
+                let prev_row = row - stride as usize;
+                let up = buf[prev_row + x as usize];
                 if up != 255 {
-                    let upper_left = threshed.get(x - 1, y - 1);
+                    let upper_left = buf[prev_row + x as usize - 1];
                     if upper_left == 255 {
                         uf.union(id, id - w - 1);
                     }
@@ -59,9 +74,10 @@ pub fn connected_components(threshed: &ImageU8) -> UnionFind {
 
             // Upper-right diagonal: only for white pixels
             if v == 255 && x + 1 < w && y > 0 {
-                let up = threshed.get(x, y - 1);
+                let prev_row = row - stride as usize;
+                let up = buf[prev_row + x as usize];
                 if up != 255 {
-                    let upper_right = threshed.get(x + 1, y - 1);
+                    let upper_right = buf[prev_row + x as usize + 1];
                     if upper_right == 255 {
                         uf.union(id, id - w + 1);
                     }
