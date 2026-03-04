@@ -21,41 +21,50 @@ pub fn connected_components(threshed: &ImageU8) -> UnionFind {
 
             let id = y * w + x;
 
+            // Cache left neighbor — used 3x across union() calls below.
+            // union() clobbers caller-saved registers, forcing redundant
+            // reloads of the immutable image buffer.
+            let left = if x > 0 { threshed.get(x - 1, y) } else { 127 };
+
             // Left neighbor (always check)
-            if x > 0 && threshed.get(x - 1, y) == v {
+            if left == v {
                 uf.union(id, id - 1);
             }
 
             // Up neighbor: skip if left, upper-left, and up all equal v
             if y > 0 {
                 let up = threshed.get(x, y - 1);
-                let left = if x > 0 { threshed.get(x - 1, y) } else { 127 };
-                let upper_left = if x > 0 {
-                    threshed.get(x - 1, y - 1)
-                } else {
-                    127
-                };
-                if up == v && !(left == v && upper_left == v) {
-                    uf.union(id, id - w);
+                if up == v {
+                    let upper_left = if x > 0 {
+                        threshed.get(x - 1, y - 1)
+                    } else {
+                        127
+                    };
+                    if !(left == v && upper_left == v) {
+                        uf.union(id, id - w);
+                    }
                 }
             }
 
             // Upper-left diagonal: only for white pixels
-            if v == 255 && x > 0 && y > 0 {
-                let ul = threshed.get(x - 1, y - 1);
-                let left = threshed.get(x - 1, y);
+            if v == 255 && left != 255 && x > 0 && y > 0 {
                 let up = threshed.get(x, y - 1);
-                if ul == v && left != v && up != v {
-                    uf.union(id, id - w - 1);
+                if up != 255 {
+                    let upper_left = threshed.get(x - 1, y - 1);
+                    if upper_left == 255 {
+                        uf.union(id, id - w - 1);
+                    }
                 }
             }
 
             // Upper-right diagonal: only for white pixels
             if v == 255 && x + 1 < w && y > 0 {
-                let ur = threshed.get(x + 1, y - 1);
                 let up = threshed.get(x, y - 1);
-                if ur == v && up != v {
-                    uf.union(id, (y - 1) * w + (x + 1));
+                if up != 255 {
+                    let upper_right = threshed.get(x + 1, y - 1);
+                    if upper_right == 255 {
+                        uf.union(id, id - w + 1);
+                    }
                 }
             }
         }
