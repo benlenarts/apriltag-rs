@@ -10,6 +10,7 @@ use apriltag::detect::homography::Homography;
 use apriltag::detect::image::ImageU8;
 use apriltag::detect::preprocess::{apply_sigma, decimate};
 use apriltag::detect::quad::{fit_quads, QuadThreshParams};
+use apriltag::detect::refine::refine_edges;
 use apriltag::detect::threshold::threshold;
 use apriltag::detect::unionfind::UnionFind;
 use apriltag::family;
@@ -125,6 +126,46 @@ fn bench_fit_quads(c: &mut Criterion) {
     });
 }
 
+fn bench_refine_edges(c: &mut Criterion) {
+    let img = build_bench_image();
+    let decimated = decimate(&img, 2, Vec::new());
+    let threshed = threshold(&decimated, 5, false, Vec::new());
+    let mut uf = UnionFind::empty();
+    connected_components(&threshed, &mut uf);
+    let mut clusters = gradient_clusters(&threshed, &mut uf, 5);
+    let qtp = QuadThreshParams::default();
+    let quads = fit_quads(
+        &mut clusters,
+        decimated.width,
+        decimated.height,
+        &qtp,
+        true,
+        true,
+    );
+    assert!(!quads.is_empty(), "should have quads to refine");
+
+    // Scale corners back to original image coords (as detector does after decimation)
+    let mut quads_scaled: Vec<_> = quads
+        .into_iter()
+        .map(|mut q| {
+            for c in &mut q.corners {
+                c[0] *= 2.0;
+                c[1] *= 2.0;
+            }
+            q
+        })
+        .collect();
+
+    c.bench_function("refine_edges", |b| {
+        b.iter(|| {
+            let mut quads = quads_scaled.clone();
+            for q in &mut quads {
+                refine_edges(black_box(q), black_box(&img), 2.0);
+            }
+        })
+    });
+}
+
 fn bench_decode(c: &mut Criterion) {
     let img = build_bench_image();
     let fam = family::tag36h11();
@@ -213,6 +254,7 @@ criterion_group!(
     bench_connected_components,
     bench_gradient_clusters,
     bench_fit_quads,
+    bench_refine_edges,
     bench_decode,
     bench_end_to_end,
     bench_end_to_end_reuse,
