@@ -10,6 +10,7 @@ use apriltag::detect::homography::Homography;
 use apriltag::detect::image::ImageU8;
 use apriltag::detect::preprocess::{apply_sigma, decimate};
 use apriltag::detect::quad::{fit_quads, QuadThreshParams};
+use apriltag::detect::refine::refine_edges;
 use apriltag::detect::threshold::threshold;
 use apriltag::detect::unionfind::UnionFind;
 use apriltag::family;
@@ -125,6 +126,53 @@ fn bench_fit_quads(c: &mut Criterion) {
     });
 }
 
+fn bench_refine_edges(c: &mut Criterion) {
+    use apriltag::detect::quad::Quad;
+
+    let img = build_bench_image();
+
+    // Create many synthetic quads spread across the interior of the image.
+    // Each is a 60x60 pixel quad — large enough for meaningful refinement,
+    // small enough to tile many across the 640x480 image.
+    let mut quads = Vec::new();
+    let mut y = 40.0f64;
+    while y + 60.0 < 440.0 {
+        let mut x = 40.0f64;
+        while x + 60.0 < 600.0 {
+            quads.push(Quad {
+                corners: [[x, y + 60.0], [x + 60.0, y + 60.0], [x + 60.0, y], [x, y]],
+                reversed_border: false,
+            });
+            x += 70.0;
+        }
+        y += 70.0;
+    }
+    let n_quads = quads.len();
+    assert!(n_quads >= 40, "expected many quads, got {n_quads}");
+
+    let mut group = c.benchmark_group("refine_edges");
+
+    group.bench_function("many_quads", |b| {
+        b.iter(|| {
+            let mut qs = quads.clone();
+            for q in &mut qs {
+                refine_edges(black_box(q), black_box(&img), 2.0);
+            }
+        })
+    });
+
+    group.bench_function("high_decimate", |b| {
+        b.iter(|| {
+            let mut qs = quads.clone();
+            for q in &mut qs {
+                refine_edges(black_box(q), black_box(&img), 4.0);
+            }
+        })
+    });
+
+    group.finish();
+}
+
 fn bench_decode(c: &mut Criterion) {
     let img = build_bench_image();
     let fam = family::tag36h11();
@@ -165,6 +213,70 @@ fn bench_decode(c: &mut Criterion) {
 
     c.bench_function("decode", |b| {
         b.iter(|| decode_quad(black_box(&img), &fam, &qd, black_box(&h), reversed, 0.25))
+    });
+}
+
+/// Build a 1280x960 image with a grid of tag36h11 tags (scale 10px per cell = 100px tags).
+fn build_multi_tag_image() -> ImageU8 {
+    let fam = family::tag36h11();
+    let tag_px = fam.layout.grid_size as u32 * 10; // 100px per tag
+    let spacing = tag_px + 10; // 10px gap between tags
+    let (w, h) = (1280u32, 960u32);
+
+    let mut img = ImageU8::new(w, h);
+    // Fill white
+    for y in 0..h {
+        for x in 0..w {
+            img.set(x, y, 255);
+        }
+    }
+
+    let mut code_idx = 0;
+    let mut oy = 10u32;
+    while oy + tag_px < h {
+        let mut ox = 10u32;
+        while ox + tag_px < w {
+            let rendered = render::render(&fam.layout, fam.codes[code_idx % fam.codes.len()]);
+            for ty in 0..rendered.grid_size {
+                for tx in 0..rendered.grid_size {
+                    let val = match rendered.pixel(tx, ty) {
+                        Pixel::Black => 0u8,
+                        Pixel::White | Pixel::Transparent => 255u8,
+                    };
+                    for dy in 0..10u32 {
+                        for dx in 0..10u32 {
+                            img.set(ox + tx as u32 * 10 + dx, oy + ty as u32 * 10 + dy, val);
+                        }
+                    }
+                }
+            }
+            code_idx += 1;
+            ox += spacing;
+        }
+        oy += spacing;
+    }
+
+    img
+}
+
+fn bench_end_to_end_multi(c: &mut Criterion) {
+    let img = build_multi_tag_image();
+    let config = DetectorConfig {
+        quad_sigma: 0.8,
+        ..DetectorConfig::default()
+    };
+    let mut detector = Detector::new(config);
+    detector.add_family(family::tag36h11(), 2);
+
+    let dets = detector.detect(&img);
+    assert!(
+        dets.len() >= 50,
+        "multi-tag image should produce many detections, got {}",
+        dets.len()
+    );
+
+    c.bench_function("end_to_end_multi", |b| {
+        b.iter(|| detector.detect(black_box(&img)))
     });
 }
 
@@ -213,8 +325,10 @@ criterion_group!(
     bench_connected_components,
     bench_gradient_clusters,
     bench_fit_quads,
+    bench_refine_edges,
     bench_decode,
     bench_end_to_end,
+    bench_end_to_end_multi,
     bench_end_to_end_reuse,
 );
 criterion_main!(benches);

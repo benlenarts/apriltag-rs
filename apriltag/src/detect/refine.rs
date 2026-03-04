@@ -31,6 +31,14 @@ pub fn refine_edges(quad: &mut Quad, img: &ImageU8, quad_decimate: f32) {
 
         let nsamples = 16.max((edge_len / 8.0) as usize);
 
+        // Check if the entire edge search region is safely inside the image,
+        // so we can skip per-pixel clamping in the inner loop.
+        let margin = range + 1.0;
+        let use_fast = img.interpolation_safe(a[0] + margin * nx, a[1] + margin * ny)
+            && img.interpolation_safe(a[0] - margin * nx, a[1] - margin * ny)
+            && img.interpolation_safe(b[0] + margin * nx, b[1] + margin * ny)
+            && img.interpolation_safe(b[0] - margin * nx, b[1] - margin * ny);
+
         let mut mx = 0.0f64;
         let mut my = 0.0f64;
         let mut mxx = 0.0f64;
@@ -54,8 +62,17 @@ pub fn refine_edges(quad: &mut Quad, img: &ImageU8, quad_decimate: f32) {
                 let gy = y0 + n * ny;
 
                 // Sample gradient along the normal
-                let g1 = img.interpolate(gx + nx, gy + ny);
-                let g2 = img.interpolate(gx - nx, gy - ny);
+                let (g1, g2) = if use_fast {
+                    (
+                        img.interpolate_unclamped(gx + nx, gy + ny),
+                        img.interpolate_unclamped(gx - nx, gy - ny),
+                    )
+                } else {
+                    (
+                        img.interpolate(gx + nx, gy + ny),
+                        img.interpolate(gx - nx, gy - ny),
+                    )
+                };
 
                 if g1 < g2 {
                     continue; // backwards gradient
@@ -250,6 +267,26 @@ mod tests {
                 expected[i],
                 expected[shifted],
             );
+        }
+    }
+
+    #[test]
+    fn refine_edges_near_boundary_uses_clamped_path() {
+        // Quad right at the image edge forces the clamped fallback path
+        let mut img = ImageU8::new(50, 50);
+        for y in 0..50 {
+            for x in 0..50 {
+                img.set(x, y, if x < 25 { 0 } else { 255 });
+            }
+        }
+        let mut quad = Quad {
+            corners: [[0.0, 1.0], [48.0, 1.0], [48.0, 48.0], [0.0, 48.0]],
+            reversed_border: false,
+        };
+        refine_edges(&mut quad, &img, 2.0);
+        for c in &quad.corners {
+            assert!(c[0].is_finite());
+            assert!(c[1].is_finite());
         }
     }
 

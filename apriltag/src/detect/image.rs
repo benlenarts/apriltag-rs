@@ -74,6 +74,41 @@ impl ImageU8 {
         self.buf
     }
 
+    /// Returns true if bilinear interpolation at `(px, py)` and one pixel in
+    /// any direction stays within bounds — i.e. all of `(px±1, py±1)` are safe
+    /// for [`interpolate_unclamped`](Self::interpolate_unclamped).
+    #[inline]
+    pub fn interpolation_safe(&self, px: f64, py: f64) -> bool {
+        px >= 1.5 && py >= 1.5 && px <= self.width as f64 - 1.5 && py <= self.height as f64 - 1.5
+    }
+
+    /// Bilinear interpolation without coordinate clamping.
+    ///
+    /// The caller must ensure that `(px, py)` is far enough from the image
+    /// boundary that all four sample pixels are in bounds. Use
+    /// [`interpolation_safe`](Self::interpolation_safe) to check.
+    #[inline]
+    pub fn interpolate_unclamped(&self, px: f64, py: f64) -> f64 {
+        let x = px - 0.5;
+        let y = py - 0.5;
+        let x0 = x.floor() as usize;
+        let y0 = y.floor() as usize;
+        debug_assert!(x0 < self.width as usize - 1);
+        debug_assert!(y0 < self.height as usize - 1);
+        let fx = x - x0 as f64;
+        let fy = y - y0 as f64;
+        let row0 = y0 * self.stride as usize;
+        let row1 = row0 + self.stride as usize;
+        let v00 = self.buf[row0 + x0] as f64;
+        let v10 = self.buf[row0 + x0 + 1] as f64;
+        let v01 = self.buf[row1 + x0] as f64;
+        let v11 = self.buf[row1 + x0 + 1] as f64;
+        v00 * (1.0 - fx) * (1.0 - fy)
+            + v10 * fx * (1.0 - fy)
+            + v01 * (1.0 - fx) * fy
+            + v11 * fx * fy
+    }
+
     /// Bilinear interpolation at sub-pixel coordinates.
     ///
     /// Uses the convention from the spec: floor(px - 0.5) for the base pixel.
@@ -207,6 +242,48 @@ mod tests {
         // = 0*(1-0.5) + 100*0.5 = 50
         let val = img.interpolate(1.0, 0.5);
         assert!((val - 50.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn interpolate_unclamped_matches_interpolate_for_interior() {
+        let mut img = ImageU8::new(10, 10);
+        for y in 0..10 {
+            for x in 0..10 {
+                img.set(x, y, (x * 25 + y * 10) as u8);
+            }
+        }
+        // Sample a grid of interior points
+        let mut px = 2.0;
+        while px <= 8.0 {
+            let mut py = 2.0;
+            while py <= 8.0 {
+                let clamped = img.interpolate(px, py);
+                let unclamped = img.interpolate_unclamped(px, py);
+                assert!(
+                    (clamped - unclamped).abs() < 1e-10,
+                    "mismatch at ({px}, {py}): clamped={clamped}, unclamped={unclamped}"
+                );
+                py += 0.37;
+            }
+            px += 0.37;
+        }
+    }
+
+    #[test]
+    fn interpolation_safe_interior_points() {
+        let img = ImageU8::new(10, 10);
+        assert!(img.interpolation_safe(5.0, 5.0));
+        assert!(img.interpolation_safe(1.5, 1.5));
+        assert!(img.interpolation_safe(8.5, 8.5));
+    }
+
+    #[test]
+    fn interpolation_safe_boundary_points() {
+        let img = ImageU8::new(10, 10);
+        assert!(!img.interpolation_safe(1.0, 5.0));
+        assert!(!img.interpolation_safe(5.0, 1.0));
+        assert!(!img.interpolation_safe(9.0, 5.0));
+        assert!(!img.interpolation_safe(5.0, 9.0));
     }
 
     #[test]
