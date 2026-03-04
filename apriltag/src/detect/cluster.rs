@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use super::image::ImageU8;
 use super::unionfind::UnionFind;
 
@@ -37,7 +35,7 @@ pub fn gradient_clusters(
     let h = threshed.height;
     let min_component_size = 25u32;
 
-    let mut cluster_map: HashMap<u64, Vec<Pt>> = HashMap::new();
+    let mut pairs: Vec<(u64, Pt)> = Vec::new();
 
     // Check a neighbor offset and add a boundary point if valid.
     // Returns true when a boundary point was added.
@@ -71,7 +69,7 @@ pub fn gradient_clusters(
                             gy,
                             slope: 0.0,
                         };
-                        $cluster_map.entry(key).or_default().push(pt);
+                        $cluster_map.push((key, pt));
                         added = true;
                     }
                 }
@@ -96,7 +94,7 @@ pub fn gradient_clusters(
 
             // 4-connectivity
             do_conn!(
-                cluster_map,
+                pairs,
                 uf,
                 threshed,
                 x,
@@ -109,7 +107,7 @@ pub fn gradient_clusters(
                 min_component_size
             );
             do_conn!(
-                cluster_map,
+                pairs,
                 uf,
                 threshed,
                 x,
@@ -128,7 +126,7 @@ pub fn gradient_clusters(
             // did not connect via (1,1).
             if !connected_last {
                 do_conn!(
-                    cluster_map,
+                    pairs,
                     uf,
                     threshed,
                     x,
@@ -142,7 +140,7 @@ pub fn gradient_clusters(
                 );
             }
             connected_last = do_conn!(
-                cluster_map,
+                pairs,
                 uf,
                 threshed,
                 x,
@@ -157,14 +155,25 @@ pub fn gradient_clusters(
         }
     }
 
-    // Filter by minimum cluster size and collect
-    let mut clusters: Vec<Cluster> = cluster_map
-        .into_values()
-        .filter(|pts| pts.len() >= min_cluster_size as usize)
-        .map(|points| Cluster { points })
-        .collect();
+    // Sort by key, then group consecutive equal keys into clusters
+    pairs.sort_unstable_by_key(|p| p.0);
 
-    // Sort for determinism
+    let mut clusters: Vec<Cluster> = Vec::new();
+    let mut i = 0;
+    while i < pairs.len() {
+        let key = pairs[i].0;
+        let start = i;
+        while i < pairs.len() && pairs[i].0 == key {
+            i += 1;
+        }
+        if i - start >= min_cluster_size as usize {
+            clusters.push(Cluster {
+                points: pairs[start..i].iter().map(|&(_, pt)| pt).collect(),
+            });
+        }
+    }
+
+    // Sort by descending size for determinism
     clusters.sort_by(|a, b| b.points.len().cmp(&a.points.len()));
 
     clusters
@@ -278,6 +287,29 @@ mod tests {
             total - unique,
             total
         );
+    }
+
+    #[test]
+    fn small_clusters_filtered_by_min_cluster_size() {
+        // Left half black, right half white in a large-enough image
+        let size = 40u32;
+        let mut pixels = vec![0u8; (size * size) as usize];
+        for y in 0..size {
+            for x in (size / 2)..size {
+                pixels[(y * size + x) as usize] = 255;
+            }
+        }
+        let img = make_thresh(size, size, &pixels);
+        let mut uf = connected_components(&img);
+
+        // With min_cluster_size=1, we get clusters
+        let all = gradient_clusters(&img, &mut uf, 1);
+        assert!(!all.is_empty());
+
+        // With a very high threshold, all clusters are filtered out
+        let mut uf2 = connected_components(&img);
+        let filtered = gradient_clusters(&img, &mut uf2, 100_000);
+        assert!(filtered.is_empty());
     }
 
     #[test]
