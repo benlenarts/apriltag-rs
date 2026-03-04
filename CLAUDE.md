@@ -126,6 +126,43 @@ cargo run -p apriltag-bench -- explore --tag-size 60 --tilt-x 30 --noise 15
 4. If any scenario regresses, fix it before committing. Do not suppress or skip failing scenarios.
 5. For large changes, generate a full HTML comparison report (`--format html`) and review it manually.
 
+### Assembly inspection
+
+When optimizing hot paths, inspect the generated assembly to understand what the compiler is actually emitting. This complements benchmarking — benchmarks tell you *whether* something is fast, assembly tells you *why*.
+
+**When to inspect:** During performance work on hot functions — gradient computation, union-find (segmentation), Gaussian blur, quad fitting, homography sampling, and any inner loop that shows up in profiles.
+
+**What to look for:**
+
+- **Auto-vectorization** — did the compiler emit SIMD instructions, or fall back to scalar code?
+- **Bounds checks** — unnecessary `panic` branches from indexing that survived despite safe-code patterns
+- **Redundant operations** — repeated loads/stores, poor register allocation, function call overhead in inner loops
+- **Inlining** — did small helper functions get inlined, or is there unexpected call overhead?
+
+**Workflow:**
+
+1. Identify the hot function via benchmarking
+2. Inspect its assembly with `cargo asm` to understand current codegen
+3. Make the optimization
+4. Re-inspect assembly to verify the intended effect (e.g., bounds check removed, loop vectorized)
+5. Benchmark to confirm end-to-end improvement
+
+**Commands:**
+
+```bash
+# Install (one-time)
+cargo install cargo-show-asm
+
+# Inspect assembly for a specific function
+cargo asm -p apriltag 'apriltag::detector::gradient::compute_gradient'
+
+# Show LLVM IR instead of assembly
+cargo asm -p apriltag --llvm 'apriltag::detector::gradient::compute_gradient'
+
+# List available functions matching a pattern
+cargo asm -p apriltag --search gradient
+```
+
 ## Commands
 
 Verify WASM compatibility
@@ -161,6 +198,19 @@ cargo run -p apriltag-bench -- serve
 # Build WASM modules for web UI
 wasm-pack build apriltag-bench-wasm --target web
 wasm-pack build apriltag-wasm --target web
+```
+
+Assembly inspection
+
+```bash
+# Inspect assembly for a specific function
+cargo asm -p apriltag 'function::path'
+
+# Show LLVM IR instead
+cargo asm -p apriltag --llvm 'function::path'
+
+# Search for functions matching a pattern
+cargo asm -p apriltag --search pattern
 ```
 
 ## Code Style
