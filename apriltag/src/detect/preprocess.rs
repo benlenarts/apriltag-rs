@@ -4,14 +4,17 @@ use super::image::ImageU8;
 ///
 /// Picks the top-left pixel of each f×f block, matching the C reference
 /// implementation (`image_u8_decimate`).
-pub fn decimate(img: &ImageU8, f: u32) -> ImageU8 {
+///
+/// Pass a pre-allocated `buf` to reuse memory across calls. Use `Vec::new()`
+/// for one-shot usage.
+pub fn decimate(img: &ImageU8, f: u32, buf: Vec<u8>) -> ImageU8 {
     if f <= 1 {
         return img.clone();
     }
 
     let out_w = img.width / f;
     let out_h = img.height / f;
-    let mut out = ImageU8::new(out_w, out_h);
+    let mut out = ImageU8::new_reuse(out_w, out_h, buf);
 
     for oy in 0..out_h {
         for ox in 0..out_w {
@@ -48,14 +51,26 @@ fn gaussian_kernel(sigma: f32, ksz: usize) -> Vec<u16> {
 ///
 /// Uses fixed-point integer arithmetic (Q15) to avoid all float ops in the
 /// inner loops. Accumulates in `u32` and rounds via `(sum + (1 << 14)) >> 15`.
-fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
+/// Apply separable Gaussian blur with the given sigma and kernel size.
+///
+/// Uses fixed-point integer arithmetic (Q15) to avoid all float ops in the
+/// inner loops. Accumulates in `u32` and rounds via `(sum + (1 << 14)) >> 15`.
+///
+/// Returns `(output_image, reclaimed_tmp_buf)`.
+fn gaussian_blur(
+    img: &ImageU8,
+    sigma: f32,
+    ksz: usize,
+    tmp_buf: Vec<u8>,
+    out_buf: Vec<u8>,
+) -> (ImageU8, Vec<u8>) {
     let kernel = gaussian_kernel(sigma, ksz);
     let half = ksz as i32 / 2;
     let w = img.width as i32;
     let h = img.height as i32;
 
     // Horizontal pass
-    let mut tmp = ImageU8::new(img.width, img.height);
+    let mut tmp = ImageU8::new_reuse(img.width, img.height, tmp_buf);
     for y in 0..h {
         let row = img.row(y as u32);
         for x in 0..w {
@@ -69,7 +84,7 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
     }
 
     // Vertical pass
-    let mut out = ImageU8::new(img.width, img.height);
+    let mut out = ImageU8::new_reuse(img.width, img.height, out_buf);
     for y in 0..h {
         // Pre-fetch row slices for all kernel taps
         let rows: Vec<&[u8]> = (0..ksz as i32)
@@ -83,7 +98,7 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
             out.set(x as u32, y as u32, ((acc + (1 << 14)) >> 15) as u8);
         }
     }
-    out
+    (out, tmp.into_buf())
 }
 
 /// Apply Gaussian blur or sharpening based on `quad_sigma`.
@@ -91,9 +106,19 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
 /// - `quad_sigma > 0` → Gaussian blur
 /// - `quad_sigma < 0` → Unsharp mask (sharpening)
 /// - `quad_sigma == 0` → No filtering
-pub fn apply_sigma(img: &ImageU8, quad_sigma: f32) -> ImageU8 {
+///
+/// Pass pre-allocated `out_buf` and `tmp_buf` to reuse memory across calls.
+/// Use `Vec::new()` for one-shot usage.
+///
+/// Returns `(output_image, reclaimed_tmp_buf)`.
+pub fn apply_sigma(
+    img: &ImageU8,
+    quad_sigma: f32,
+    out_buf: Vec<u8>,
+    tmp_buf: Vec<u8>,
+) -> (ImageU8, Vec<u8>) {
     if quad_sigma == 0.0 {
-        return img.clone();
+        return (img.clone(), tmp_buf);
     }
 
     let sigma = quad_sigma.abs();
@@ -102,25 +127,26 @@ pub fn apply_sigma(img: &ImageU8, quad_sigma: f32) -> ImageU8 {
         ksz += 1;
     }
     if ksz <= 1 {
-        return img.clone();
+        return (img.clone(), tmp_buf);
     }
 
-    let blurred = gaussian_blur(img, sigma, ksz);
+    let (blurred, reclaimed_tmp) = gaussian_blur(img, sigma, ksz, tmp_buf, out_buf);
 
     if quad_sigma > 0.0 {
-        blurred
+        (blurred, reclaimed_tmp)
     } else {
         // Unsharp mask: 2*original - blurred
-        let mut out = ImageU8::new(img.width, img.height);
+        let blur_buf = blurred.buf;
+        let mut out = ImageU8::new_reuse(img.width, img.height, Vec::new());
         for y in 0..img.height {
             let orig_row = img.row(y);
-            let blur_row = blurred.row(y);
+            let out_off = (y * img.width) as usize;
             for x in 0..img.width as usize {
-                let v = 2 * orig_row[x] as i32 - blur_row[x] as i32;
+                let v = 2 * orig_row[x] as i32 - blur_buf[out_off + x] as i32;
                 out.set(x as u32, y, v.clamp(0, 255) as u8);
             }
         }
-        out
+        (out, reclaimed_tmp)
     }
 }
 
@@ -132,7 +158,7 @@ mod tests {
     fn decimate_factor_1_returns_clone() {
         let mut img = ImageU8::new(4, 4);
         img.set(0, 0, 100);
-        let out = decimate(&img, 1);
+        let out = decimate(&img, 1, Vec::new());
         assert_eq!(out.width, 4);
         assert_eq!(out.height, 4);
         assert_eq!(out.get(0, 0), 100);
@@ -147,7 +173,7 @@ mod tests {
         img.set(0, 1, 50); // not top-left, should be ignored
         img.set(1, 1, 75); // not top-left, should be ignored
         img.set(2, 0, 180); // top-left of second block
-        let out = decimate(&img, 2);
+        let out = decimate(&img, 2, Vec::new());
         assert_eq!(out.width, 2);
         assert_eq!(out.height, 2);
         // Subsampling picks top-left pixel of each block
@@ -158,9 +184,17 @@ mod tests {
     #[test]
     fn decimate_truncates_partial_blocks() {
         let img = ImageU8::new(5, 5);
-        let out = decimate(&img, 2);
+        let out = decimate(&img, 2, Vec::new());
         assert_eq!(out.width, 2); // 5/2 = 2
         assert_eq!(out.height, 2);
+    }
+
+    #[test]
+    fn decimate_reuses_buffer() {
+        let img = ImageU8::new(8, 8);
+        let buf = Vec::with_capacity(1024);
+        let out = decimate(&img, 2, buf);
+        assert!(out.buf.capacity() >= 1024);
     }
 
     #[test]
@@ -186,7 +220,7 @@ mod tests {
     fn apply_sigma_zero_returns_clone() {
         let mut img = ImageU8::new(4, 4);
         img.set(2, 2, 128);
-        let out = apply_sigma(&img, 0.0);
+        let (out, _) = apply_sigma(&img, 0.0, Vec::new(), Vec::new());
         assert_eq!(out.get(2, 2), 128);
     }
 
@@ -194,7 +228,7 @@ mod tests {
     fn apply_sigma_positive_blurs() {
         let mut img = ImageU8::new(10, 10);
         img.set(5, 5, 255);
-        let out = apply_sigma(&img, 1.0);
+        let (out, _) = apply_sigma(&img, 1.0, Vec::new(), Vec::new());
         // After blur, the peak should be reduced
         assert!(out.get(5, 5) < 255);
         // Neighbors should get some value
@@ -211,7 +245,7 @@ mod tests {
             }
         }
         img.set(5, 5, 100); // a dip
-        let out = apply_sigma(&img, -1.0);
+        let (out, _) = apply_sigma(&img, -1.0, Vec::new(), Vec::new());
         // The dip should be enhanced (lower than original)
         assert!(out.get(5, 5) < 100);
     }
@@ -221,7 +255,7 @@ mod tests {
         // sigma so small that ksz <= 1
         let mut img = ImageU8::new(4, 4);
         img.set(0, 0, 42);
-        let out = apply_sigma(&img, 0.1);
+        let (out, _) = apply_sigma(&img, 0.1, Vec::new(), Vec::new());
         assert_eq!(out.get(0, 0), 42);
     }
 
@@ -304,7 +338,7 @@ mod tests {
             }
 
             let float_result = gaussian_blur_f32(&img, sigma, ksz);
-            let fixed_result = gaussian_blur(&img, sigma, ksz);
+            let (fixed_result, _) = gaussian_blur(&img, sigma, ksz, Vec::new(), Vec::new());
 
             let mut max_diff = 0i32;
             for y in 0..h {

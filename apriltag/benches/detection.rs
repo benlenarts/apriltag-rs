@@ -5,12 +5,13 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use apriltag::detect::cluster::gradient_clusters;
 use apriltag::detect::connected::connected_components;
 use apriltag::detect::decode::{decode_quad, QuickDecode};
-use apriltag::detect::detector::{Detector, DetectorConfig};
+use apriltag::detect::detector::{Detector, DetectorConfig, DetectorState};
 use apriltag::detect::homography::Homography;
 use apriltag::detect::image::ImageU8;
 use apriltag::detect::preprocess::{apply_sigma, decimate};
 use apriltag::detect::quad::{fit_quads, QuadThreshParams};
 use apriltag::detect::threshold::threshold;
+use apriltag::detect::unionfind::UnionFind;
 use apriltag::family;
 use apriltag::render;
 use apriltag::types::Pixel;
@@ -57,41 +58,45 @@ fn build_bench_image() -> ImageU8 {
 fn bench_decimate(c: &mut Criterion) {
     let img = build_bench_image();
     c.bench_function("preprocess/decimate", |b| {
-        b.iter(|| decimate(black_box(&img), 2))
+        b.iter(|| decimate(black_box(&img), 2, Vec::new()))
     });
 }
 
 fn bench_sigma(c: &mut Criterion) {
     let img = build_bench_image();
     c.bench_function("preprocess/sigma", |b| {
-        b.iter(|| apply_sigma(black_box(&img), 0.8))
+        b.iter(|| apply_sigma(black_box(&img), 0.8, Vec::new(), Vec::new()))
     });
 }
 
 fn bench_threshold(c: &mut Criterion) {
     let img = build_bench_image();
-    let decimated = decimate(&img, 2);
+    let decimated = decimate(&img, 2, Vec::new());
     c.bench_function("threshold", |b| {
-        b.iter(|| threshold(black_box(&decimated), 5, false))
+        b.iter(|| threshold(black_box(&decimated), 5, false, Vec::new()))
     });
 }
 
 fn bench_connected_components(c: &mut Criterion) {
     let img = build_bench_image();
-    let decimated = decimate(&img, 2);
-    let threshed = threshold(&decimated, 5, false);
+    let decimated = decimate(&img, 2, Vec::new());
+    let threshed = threshold(&decimated, 5, false, Vec::new());
     c.bench_function("connected_components", |b| {
-        b.iter(|| connected_components(black_box(&threshed)))
+        b.iter(|| {
+            let mut uf = UnionFind::empty();
+            connected_components(black_box(&threshed), &mut uf);
+        })
     });
 }
 
 fn bench_gradient_clusters(c: &mut Criterion) {
     let img = build_bench_image();
-    let decimated = decimate(&img, 2);
-    let threshed = threshold(&decimated, 5, false);
+    let decimated = decimate(&img, 2, Vec::new());
+    let threshed = threshold(&decimated, 5, false, Vec::new());
     c.bench_function("gradient_clusters", |b| {
         b.iter(|| {
-            let mut uf = connected_components(&threshed);
+            let mut uf = UnionFind::empty();
+            connected_components(&threshed, &mut uf);
             gradient_clusters(black_box(&threshed), &mut uf, 5)
         })
     });
@@ -99,9 +104,10 @@ fn bench_gradient_clusters(c: &mut Criterion) {
 
 fn bench_fit_quads(c: &mut Criterion) {
     let img = build_bench_image();
-    let decimated = decimate(&img, 2);
-    let threshed = threshold(&decimated, 5, false);
-    let mut uf = connected_components(&threshed);
+    let decimated = decimate(&img, 2, Vec::new());
+    let threshed = threshold(&decimated, 5, false, Vec::new());
+    let mut uf = UnionFind::empty();
+    connected_components(&threshed, &mut uf);
     let clusters = gradient_clusters(&threshed, &mut uf, 5);
     let qtp = QuadThreshParams::default();
     c.bench_function("fit_quads", |b| {
@@ -125,9 +131,10 @@ fn bench_decode(c: &mut Criterion) {
     let qd = QuickDecode::new(&fam, 2);
 
     // Run the pipeline to get a real quad + homography
-    let decimated = decimate(&img, 2);
-    let threshed = threshold(&decimated, 5, false);
-    let mut uf = connected_components(&threshed);
+    let decimated = decimate(&img, 2, Vec::new());
+    let threshed = threshold(&decimated, 5, false, Vec::new());
+    let mut uf = UnionFind::empty();
+    connected_components(&threshed, &mut uf);
     let mut clusters = gradient_clusters(&threshed, &mut uf, 5);
     let qtp = QuadThreshParams::default();
     let quads = fit_quads(
@@ -179,6 +186,25 @@ fn bench_end_to_end(c: &mut Criterion) {
     });
 }
 
+fn bench_end_to_end_reuse(c: &mut Criterion) {
+    let img = build_bench_image();
+    let config = DetectorConfig {
+        quad_sigma: 0.8,
+        ..DetectorConfig::default()
+    };
+    let mut detector = Detector::new(config);
+    detector.add_family(family::tag36h11(), 2);
+
+    let mut state = DetectorState::new();
+    // Warm up to populate buffers
+    let dets = detector.detect_with_state(&img, &mut state);
+    assert!(!dets.is_empty(), "bench image should produce a detection");
+
+    c.bench_function("end_to_end_reuse", |b| {
+        b.iter(|| detector.detect_with_state(black_box(&img), &mut state))
+    });
+}
+
 criterion_group!(
     benches,
     bench_decimate,
@@ -189,5 +215,6 @@ criterion_group!(
     bench_fit_quads,
     bench_decode,
     bench_end_to_end,
+    bench_end_to_end_reuse,
 );
 criterion_main!(benches);
