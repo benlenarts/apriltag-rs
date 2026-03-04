@@ -216,6 +216,70 @@ fn bench_decode(c: &mut Criterion) {
     });
 }
 
+/// Build a 1280x960 image with a grid of tag36h11 tags (scale 10px per cell = 100px tags).
+fn build_multi_tag_image() -> ImageU8 {
+    let fam = family::tag36h11();
+    let tag_px = fam.layout.grid_size as u32 * 10; // 100px per tag
+    let spacing = tag_px + 10; // 10px gap between tags
+    let (w, h) = (1280u32, 960u32);
+
+    let mut img = ImageU8::new(w, h);
+    // Fill white
+    for y in 0..h {
+        for x in 0..w {
+            img.set(x, y, 255);
+        }
+    }
+
+    let mut code_idx = 0;
+    let mut oy = 10u32;
+    while oy + tag_px < h {
+        let mut ox = 10u32;
+        while ox + tag_px < w {
+            let rendered = render::render(&fam.layout, fam.codes[code_idx % fam.codes.len()]);
+            for ty in 0..rendered.grid_size {
+                for tx in 0..rendered.grid_size {
+                    let val = match rendered.pixel(tx, ty) {
+                        Pixel::Black => 0u8,
+                        Pixel::White | Pixel::Transparent => 255u8,
+                    };
+                    for dy in 0..10u32 {
+                        for dx in 0..10u32 {
+                            img.set(ox + tx as u32 * 10 + dx, oy + ty as u32 * 10 + dy, val);
+                        }
+                    }
+                }
+            }
+            code_idx += 1;
+            ox += spacing;
+        }
+        oy += spacing;
+    }
+
+    img
+}
+
+fn bench_end_to_end_multi(c: &mut Criterion) {
+    let img = build_multi_tag_image();
+    let config = DetectorConfig {
+        quad_sigma: 0.8,
+        ..DetectorConfig::default()
+    };
+    let mut detector = Detector::new(config);
+    detector.add_family(family::tag36h11(), 2);
+
+    let dets = detector.detect(&img);
+    assert!(
+        dets.len() >= 50,
+        "multi-tag image should produce many detections, got {}",
+        dets.len()
+    );
+
+    c.bench_function("end_to_end_multi", |b| {
+        b.iter(|| detector.detect(black_box(&img)))
+    });
+}
+
 fn bench_end_to_end(c: &mut Criterion) {
     let img = build_bench_image();
     let config = DetectorConfig {
@@ -264,6 +328,7 @@ criterion_group!(
     bench_refine_edges,
     bench_decode,
     bench_end_to_end,
+    bench_end_to_end_multi,
     bench_end_to_end_reuse,
 );
 criterion_main!(benches);
