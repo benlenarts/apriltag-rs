@@ -34,12 +34,10 @@ The detection pipeline follows the reference AprilTag implementation:
 
 ### Detection Test Harness (`apriltag-bench/`)
 
-Two interfaces for testing detection quality:
+- **Web UI** (`apriltag-bench/ui/`) — interactive WASM exploration with sliders for distortion, perspective, noise.
+- **CLI** — batch test runs, regression checks, C reference comparison via FFI. Machine-readable output (JSON, HTML).
 
-- **Web UI** (`apriltag-bench/ui/`) — interactive exploration via WASM. Sliders for distortion, perspective, noise. Uses `apriltag-wasm` for detection and `apriltag-bench-wasm` for scene generation. No C reference needed in the browser.
-- **CLI** — batch test runs, regression checks, reference comparison via C FFI. Machine-readable output (JSON, HTML) for CI.
-
-Scene generation code is shared between CLI and web UI (identical Rust, WASM-compatible). C reference comparison stays native-only (behind `reference` feature flag).
+Scene generation is shared between CLI and web UI (identical Rust, WASM-compatible). C reference comparison is native-only (behind `reference` feature flag).
 
 **Tag-space convention:** transforms map tag-space [-1, 1] to the border region (`[border_start, grid_size - border_start]` in grid coordinates), matching the detector's homography. The white border extends beyond [-1, 1]. Ground-truth corners at tag-space ±1 align with detected quad corners.
 
@@ -51,12 +49,8 @@ Scene generation code is shared between CLI and web UI (identical Rust, WASM-com
 
 - **TDD**: Every feature starts with a failing test. No production code without a test driving it.
 - **Branches**: Work on short-lived feature/fix branches off `main`. PR and merge promptly.
-- **Commits**: Small, atomic, well-described. Each commit should compile and pass tests.
+- **Commits**: **You MUST commit early and often — do not wait for the user to ask.** After every small, meaningful unit of progress (a passing test, a new function, a refactor, a bug fix), immediately run `cargo test` and, if tests pass, create a commit. A single user request should typically produce multiple commits, not one large one. Err on the side of committing too often rather than too rarely. Never batch up unrelated changes into a single commit.
 - **Testing**: `cargo test` must pass before every commit. Use `cargo test -- --nocapture` for debug output.
-
-## Commit Policy
-
-**You MUST commit early and often — do not wait for the user to ask.** After every small, meaningful unit of progress (a passing test, a new function, a refactor, a bug fix), immediately run `cargo test` and, if tests pass, create a commit. A single user request should typically produce multiple commits, not one large one. Err on the side of committing too often rather than too rarely. Never batch up unrelated changes into a single commit.
 
 ## Reference Materials (`docs/`)
 
@@ -87,135 +81,44 @@ After completing any feature or fix, run `cargo llvm-cov --text` and inspect for
 
 ## Benchmarking Policy
 
-**Every change must be benchmarked before merging to guard against performance regressions.** Performance parity with the reference C implementation is a project tenet — regressions are bugs.
+**Every change must be benchmarked before merging.** Performance parity with the reference C implementation is a project tenet — regressions are bugs.
 
 ### When to benchmark
 
-- **Before and after every change** — run the bench suite on the working tree before your change and after to compare. Any measurable regression must be investigated and resolved before committing.
-- **Detection-affecting changes** — any change to image processing, gradient computation, segmentation, quad detection, homography, or decoding must run the full detection benchmark suite.
-- **Refactors and "safe" changes** — even seemingly neutral refactors (iterator conversions, allocation changes, data structure swaps) can affect performance. Benchmark them.
+- **Before and after every change** — any measurable regression must be investigated and resolved before committing.
+- **Detection-affecting changes** — image processing, gradient computation, segmentation, quad detection, homography, or decoding must run the full suite.
+- **Refactors and "safe" changes** — even seemingly neutral refactors can affect performance. Benchmark them.
 
-### How to benchmark
-
-```bash
-# Run the regression gate — exits 1 if any scenario regresses
-cargo run -p apriltag-bench -- regression
-
-# Run all bench scenarios and inspect results
-cargo run -p apriltag-bench -- run --category baseline
-
-# Compare against C reference (requires reference feature + fetch-references.sh)
-cargo run -p apriltag-bench --features reference -- compare --format html
-
-# Explore a specific scenario interactively
-cargo run -p apriltag-bench -- explore --tag-size 60 --tilt-x 30 --noise 15
-```
+Run `cargo run -p apriltag-bench -- regression` before and after your change. If any scenario regresses, fix it before committing. For large changes, generate a full HTML report (`--format html`) and review manually.
 
 ### Regression criteria
 
-- **Detection quality** — detection rate, false positive rate, and decode accuracy must not decrease across any scenario category.
-- **Performance (time)** — wall-clock time for the detection pipeline must not regress beyond noise. If a change adds measurable latency, it needs justification and approval.
-- **Performance (space)** — memory usage must not grow unexpectedly. Watch for new allocations, larger buffers, retained temporaries, or data structure bloat. Changes that increase peak memory need justification — WASM targets are memory-constrained.
-- **CI gate** — `cargo run -p apriltag-bench -- regression` is the automated check. It must pass before any PR is merged.
-
-### Workflow integration
-
-1. Run `cargo run -p apriltag-bench -- regression` **before** your change to establish a baseline.
-2. Make your change, ensure `cargo test` passes.
-3. Run `cargo run -p apriltag-bench -- regression` **after** your change.
-4. If any scenario regresses, fix it before committing. Do not suppress or skip failing scenarios.
-5. For large changes, generate a full HTML comparison report (`--format html`) and review it manually.
+- **Detection quality** — detection rate, false positive rate, and decode accuracy must not decrease.
+- **Performance (time)** — no measurable latency regression without justification and approval.
+- **Performance (space)** — no unexpected memory growth. WASM targets are memory-constrained.
+- **CI gate** — `cargo run -p apriltag-bench -- regression` must pass before any PR is merged.
 
 ### Assembly inspection
 
-When optimizing hot paths, inspect the generated assembly to understand what the compiler is actually emitting. This complements benchmarking — benchmarks tell you *whether* something is fast, assembly tells you *why*.
+When optimizing hot paths, inspect generated assembly — benchmarks tell you *whether* something is fast, assembly tells you *why*. Look for: auto-vectorization vs scalar fallback, unnecessary bounds checks, redundant loads/stores, missed inlining.
 
-**When to inspect:** During performance work on hot functions — gradient computation, union-find (segmentation), Gaussian blur, quad fitting, homography sampling, and any inner loop that shows up in profiles.
-
-**What to look for:**
-
-- **Auto-vectorization** — did the compiler emit SIMD instructions, or fall back to scalar code?
-- **Bounds checks** — unnecessary `panic` branches from indexing that survived despite safe-code patterns
-- **Redundant operations** — repeated loads/stores, poor register allocation, function call overhead in inner loops
-- **Inlining** — did small helper functions get inlined, or is there unexpected call overhead?
-
-**Workflow:**
-
-1. Identify the hot function via benchmarking
-2. Inspect its assembly with `cargo asm` to understand current codegen
-3. Make the optimization
-4. Re-inspect assembly to verify the intended effect (e.g., bounds check removed, loop vectorized)
-5. Benchmark to confirm end-to-end improvement
-
-**Commands:**
-
-```bash
-# Install (one-time)
-cargo install cargo-show-asm
-
-# Inspect assembly for a specific function
-cargo asm -p apriltag 'apriltag::detector::gradient::compute_gradient'
-
-# Show LLVM IR instead of assembly
-cargo asm -p apriltag --llvm 'apriltag::detector::gradient::compute_gradient'
-
-# List available functions matching a pattern
-cargo asm -p apriltag --search gradient
-```
+**Workflow:** identify hot function via benchmarking → inspect assembly with `cargo asm` → optimize → re-inspect to verify effect → benchmark to confirm improvement.
 
 ## Commands
 
-Verify WASM compatibility
+See `docs/commands.md` for the full reference (testing, coverage, WASM, bench harness, assembly inspection, linting, reference setup). Key commands:
 
 ```bash
-cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen
-```
-
-Bench test harness
-
-```bash
-# Run bench test scenarios
-cargo run -p apriltag-bench -- run --category baseline
-
-# CI regression gate (exit 1 on failure)
-cargo run -p apriltag-bench -- regression
-
-# Compare against C reference (requires reference feature + fetch-references.sh)
-cargo run -p apriltag-bench --features reference -- compare --format html
-
-# Interactive single-scene exploration
-cargo run -p apriltag-bench -- explore --tag-size 60 --tilt-x 30 --noise 15
-
-# Generate test images (PGM + JSON ground truth) for all scenarios
-cargo run -p apriltag-bench -- generate-images --output output/
-
-# Generate images for a specific category
-cargo run -p apriltag-bench -- generate-images --category rotation --output output/
-
-# Launch web UI for interactive testing
-cargo run -p apriltag-bench -- serve
-
-# Build WASM modules for web UI
-wasm-pack build apriltag-bench-wasm --target web
-wasm-pack build apriltag-wasm --target web
-```
-
-Assembly inspection
-
-```bash
-# Inspect assembly for a specific function
-cargo asm -p apriltag 'function::path'
-
-# Show LLVM IR instead
-cargo asm -p apriltag --llvm 'function::path'
-
-# Search for functions matching a pattern
-cargo asm -p apriltag --search pattern
+cargo test                                           # run all tests
+cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/'  # coverage
+cargo run -p apriltag-bench -- regression            # bench regression gate
+cargo clippy -- -D warnings                          # lint
+cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen  # WASM check
 ```
 
 ## Code Style
 
-- Idiomatic Rust with a preference for pattern matching and 'functional' iteration 
+- Idiomatic Rust with a preference for pattern matching and 'functional' iteration
 - Follow standard `rustfmt` formatting
 - Use `clippy` with default lints: `cargo clippy -- -D warnings`
 - Prefer `&[T]` over `&Vec<T>`, iterators over index loops where natural
