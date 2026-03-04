@@ -8,10 +8,18 @@ pub fn decimate(img: &ImageU8, f: u32) -> ImageU8 {
     if f <= 1 {
         return img.clone();
     }
+    decimate_into(img, f, Vec::new())
+}
+
+/// Like [`decimate`], but reuses `buf` for the output image to avoid allocation.
+pub fn decimate_into(img: &ImageU8, f: u32, buf: Vec<u8>) -> ImageU8 {
+    if f <= 1 {
+        return img.clone();
+    }
 
     let out_w = img.width / f;
     let out_h = img.height / f;
-    let mut out = ImageU8::new(out_w, out_h);
+    let mut out = ImageU8::new_reuse(out_w, out_h, buf);
 
     for oy in 0..out_h {
         for ox in 0..out_w {
@@ -161,6 +169,38 @@ mod tests {
         let out = decimate(&img, 2);
         assert_eq!(out.width, 2); // 5/2 = 2
         assert_eq!(out.height, 2);
+    }
+
+    #[test]
+    fn decimate_into_matches_decimate() {
+        let mut img = ImageU8::new(8, 8);
+        for y in 0..8 {
+            for x in 0..8 {
+                img.set(x, y, (x * 31 + y * 17) as u8);
+            }
+        }
+        let expected = decimate(&img, 2);
+        let actual = decimate_into(&img, 2, Vec::new());
+        assert_eq!(expected.buf, actual.buf);
+        assert_eq!(expected.width, actual.width);
+        assert_eq!(expected.height, actual.height);
+    }
+
+    #[test]
+    fn decimate_into_reuses_buffer() {
+        let img = ImageU8::new(8, 8);
+        let buf = Vec::with_capacity(1024);
+        let out = decimate_into(&img, 2, buf);
+        assert!(out.buf.capacity() >= 1024);
+    }
+
+    #[test]
+    fn decimate_into_factor_1_clones() {
+        let mut img = ImageU8::new(4, 4);
+        img.set(0, 0, 42);
+        let out = decimate_into(&img, 1, Vec::new());
+        assert_eq!(out.get(0, 0), 42);
+        assert_eq!(out.width, 4);
     }
 
     #[test]
