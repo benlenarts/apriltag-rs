@@ -454,9 +454,11 @@ fn cmd_benchmark(
             // Use first family for persistent detector (most scenarios use one family)
             let ref_detector = PersistentReferenceDetector::new(families[0], &ref_config);
 
-            // Warmup run
-            let _ = rust_detector.detect(&scene.image);
-            let _ = ref_detector.detect(&scene.image);
+            // Warmup runs (3 iterations to stabilize caches and allocator)
+            for _ in 0..3 {
+                let _ = rust_detector.detect(&scene.image);
+                let _ = ref_detector.detect(&scene.image);
+            }
 
             // Benchmark Rust detector
             let mut rust_times = Vec::with_capacity(iterations);
@@ -724,9 +726,11 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
             let img = &ss.scene.image;
             let size = [img.width, img.height];
 
-            // Warmup
-            let _ = rust_detector.detect(img);
-            let _ = ref_detector.detect(img);
+            // Warmup runs (3 iterations to stabilize caches and allocator)
+            for _ in 0..3 {
+                let _ = rust_detector.detect(img);
+                let _ = ref_detector.detect(img);
+            }
 
             // Benchmark Rust
             let mut rust_times = Vec::with_capacity(iterations);
