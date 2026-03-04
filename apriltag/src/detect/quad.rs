@@ -214,6 +214,16 @@ fn slope_proxy(dx: f64, dy: f64) -> f32 {
     }
 }
 
+/// Gradient magnitude weight lookup, indexed by `(gx != 0) << 1 | (gy != 0)`.
+/// Since `gx` and `gy` are always in `{-255, 0, 255}`, there are only 4 distinct values.
+#[inline]
+fn grad_weight(gx: i16, gy: i16) -> f64 {
+    // sqrt(255² + 255²) + 1 = sqrt(130050) + 1 ≈ 361.624...
+    const DIAG: f64 = 361.62445840513925;
+    const TABLE: [f64; 4] = [1.0, 256.0, 256.0, DIAG];
+    TABLE[((gx != 0) as usize) << 1 | (gy != 0) as usize]
+}
+
 /// Build cumulative weighted moments for line fitting.
 fn build_line_fit_pts(points: &[Pt]) -> Vec<LineFitPt> {
     let mut lfps = Vec::with_capacity(points.len());
@@ -222,7 +232,7 @@ fn build_line_fit_pts(points: &[Pt]) -> Vec<LineFitPt> {
     for p in points {
         let x = p.x as f64 * 0.5 + 0.5;
         let y = p.y as f64 * 0.5 + 0.5;
-        let w = ((p.gx as f64).powi(2) + (p.gy as f64).powi(2)).sqrt() + 1.0;
+        let w = grad_weight(p.gx, p.gy);
 
         cum.mx += w * x;
         cum.my += w * y;
@@ -892,5 +902,20 @@ mod tests {
         // This is the exact comparator from find_corners line 373.
         // With partial_cmp().unwrap() this panics; with total_cmp() it doesn't.
         maxima.sort_by(|a, b| b.1.total_cmp(&a.1));
+    }
+
+    #[test]
+    fn grad_weight_matches_sqrt_for_all_valid_inputs() {
+        // gx and gy are always in {-255, 0, 255}
+        for &gx in &[-255i16, 0, 255] {
+            for &gy in &[-255i16, 0, 255] {
+                let expected = ((gx as f64).powi(2) + (gy as f64).powi(2)).sqrt() + 1.0;
+                let actual = grad_weight(gx, gy);
+                assert!(
+                    (actual - expected).abs() < 1e-10,
+                    "grad_weight({gx}, {gy}) = {actual}, expected {expected}"
+                );
+            }
+        }
     }
 }
