@@ -61,41 +61,136 @@ pub fn threshold(img: &ImageU8, min_white_black_diff: i32, deglitch: bool) -> Im
         }
     }
 
-    // Pass 1: Expand tiles to full resolution (nearest-neighbor upscale)
-    let pixel_count = (w * h) as usize;
-    let mut lo_full = vec![0u8; pixel_count];
-    let mut hi_full = vec![0u8; pixel_count];
-    for y in 0..h {
-        let ty = (y / TILESZ).min(th - 1);
-        for x in 0..w {
-            let tx = (x / TILESZ).min(tw - 1);
-            let idx = (ty * tw + tx) as usize;
-            let pixel_idx = (y * w + x) as usize;
-            lo_full[pixel_idx] = eroded_min[idx];
-            hi_full[pixel_idx] = dilated_max[idx];
+    // Binarize each pixel, processing tile-by-tile to load lo/hi once per tile.
+    // Remainder pixels (beyond tile-aligned region) use the last tile's values.
+    let mut out = ImageU8::new(w, h);
+    let out_buf = &mut out.buf;
+    let img_buf = &img.buf;
+    let stride = img.stride as usize;
+    let w_usize = w as usize;
+
+    // Process tile-aligned rows
+    for ty in 0..th {
+        let y_start = (ty * TILESZ) as usize;
+        let y_end = y_start + TILESZ as usize;
+        let tile_row = (ty * tw) as usize;
+
+        for tx in 0..tw {
+            let lo = eroded_min[tile_row + tx as usize];
+            let hi = dilated_max[tile_row + tx as usize];
+            let x_start = (tx * TILESZ) as usize;
+            let x_end = x_start + TILESZ as usize;
+
+            if (hi as i32 - lo as i32) < min_white_black_diff {
+                for y in y_start..y_end {
+                    for x in x_start..x_end {
+                        out_buf[y * w_usize + x] = 127;
+                    }
+                }
+            } else {
+                let thresh = lo as i32 + (hi as i32 - lo as i32) / 2;
+                for y in y_start..y_end {
+                    let img_row_off = y * stride;
+                    let out_row_off = y * w_usize;
+                    for x in x_start..x_end {
+                        out_buf[out_row_off + x] = if img_buf[img_row_off + x] as i32 > thresh {
+                            255
+                        } else {
+                            0
+                        };
+                    }
+                }
+            }
+        }
+
+        // Remainder columns: use last tile
+        if (tw * TILESZ) < w {
+            let lo = eroded_min[tile_row + (tw - 1) as usize];
+            let hi = dilated_max[tile_row + (tw - 1) as usize];
+            let x_start = (tw * TILESZ) as usize;
+
+            if (hi as i32 - lo as i32) < min_white_black_diff {
+                for y in y_start..y_end {
+                    for x in x_start..w_usize {
+                        out_buf[y * w_usize + x] = 127;
+                    }
+                }
+            } else {
+                let thresh = lo as i32 + (hi as i32 - lo as i32) / 2;
+                for y in y_start..y_end {
+                    let img_row_off = y * stride;
+                    let out_row_off = y * w_usize;
+                    for x in x_start..w_usize {
+                        out_buf[out_row_off + x] = if img_buf[img_row_off + x] as i32 > thresh {
+                            255
+                        } else {
+                            0
+                        };
+                    }
+                }
+            }
         }
     }
 
-    // Pass 2: Binarize on contiguous arrays (auto-vectorizable)
-    let mut out = ImageU8::new(w, h);
-    let out_buf = &mut out.buf;
-    for y in 0..h {
-        let img_row = (y * img.stride) as usize;
-        let out_row = (y * w) as usize;
-        for x in 0..w as usize {
-            let i = out_row + x;
-            let lo = lo_full[i];
-            let hi = hi_full[i];
-            out_buf[i] = if (hi as i32 - lo as i32) < min_white_black_diff {
-                127
+    // Remainder rows: use last tile row
+    if (th * TILESZ) < h {
+        let y_start = (th * TILESZ) as usize;
+        let tile_row = ((th - 1) * tw) as usize;
+
+        for tx in 0..tw {
+            let lo = eroded_min[tile_row + tx as usize];
+            let hi = dilated_max[tile_row + tx as usize];
+            let x_start = (tx * TILESZ) as usize;
+            let x_end = x_start + TILESZ as usize;
+
+            if (hi as i32 - lo as i32) < min_white_black_diff {
+                for y in y_start..h as usize {
+                    for x in x_start..x_end {
+                        out_buf[y * w_usize + x] = 127;
+                    }
+                }
             } else {
                 let thresh = lo as i32 + (hi as i32 - lo as i32) / 2;
-                if img.buf[img_row + x] as i32 > thresh {
-                    255
-                } else {
-                    0
+                for y in y_start..h as usize {
+                    let img_row_off = y * stride;
+                    let out_row_off = y * w_usize;
+                    for x in x_start..x_end {
+                        out_buf[out_row_off + x] = if img_buf[img_row_off + x] as i32 > thresh {
+                            255
+                        } else {
+                            0
+                        };
+                    }
                 }
-            };
+            }
+        }
+
+        // Corner remainder: last tile for both axes
+        if (tw * TILESZ) < w {
+            let lo = eroded_min[tile_row + (tw - 1) as usize];
+            let hi = dilated_max[tile_row + (tw - 1) as usize];
+            let x_start = (tw * TILESZ) as usize;
+
+            if (hi as i32 - lo as i32) < min_white_black_diff {
+                for y in y_start..h as usize {
+                    for x in x_start..w_usize {
+                        out_buf[y * w_usize + x] = 127;
+                    }
+                }
+            } else {
+                let thresh = lo as i32 + (hi as i32 - lo as i32) / 2;
+                for y in y_start..h as usize {
+                    let img_row_off = y * stride;
+                    let out_row_off = y * w_usize;
+                    for x in x_start..w_usize {
+                        out_buf[out_row_off + x] = if img_buf[img_row_off + x] as i32 > thresh {
+                            255
+                        } else {
+                            0
+                        };
+                    }
+                }
+            }
         }
     }
 
