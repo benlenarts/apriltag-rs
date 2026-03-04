@@ -56,14 +56,26 @@ fn gaussian_kernel(sigma: f32, ksz: usize) -> Vec<u16> {
 ///
 /// Uses fixed-point integer arithmetic (Q15) to avoid all float ops in the
 /// inner loops. Accumulates in `u32` and rounds via `(sum + (1 << 14)) >> 15`.
+#[cfg(test)]
 fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
+    gaussian_blur_into(img, sigma, ksz, Vec::new(), Vec::new())
+}
+
+/// Like [`gaussian_blur`], but reuses `out_buf` and `tmp_buf` to avoid allocation.
+fn gaussian_blur_into(
+    img: &ImageU8,
+    sigma: f32,
+    ksz: usize,
+    tmp_buf: Vec<u8>,
+    out_buf: Vec<u8>,
+) -> ImageU8 {
     let kernel = gaussian_kernel(sigma, ksz);
     let half = ksz as i32 / 2;
     let w = img.width as i32;
     let h = img.height as i32;
 
     // Horizontal pass
-    let mut tmp = ImageU8::new(img.width, img.height);
+    let mut tmp = ImageU8::new_reuse(img.width, img.height, tmp_buf);
     for y in 0..h {
         let row = img.row(y as u32);
         for x in 0..w {
@@ -77,7 +89,7 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
     }
 
     // Vertical pass
-    let mut out = ImageU8::new(img.width, img.height);
+    let mut out = ImageU8::new_reuse(img.width, img.height, out_buf);
     for y in 0..h {
         // Pre-fetch row slices for all kernel taps
         let rows: Vec<&[u8]> = (0..ksz as i32)
@@ -100,6 +112,19 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize) -> ImageU8 {
 /// - `quad_sigma < 0` → Unsharp mask (sharpening)
 /// - `quad_sigma == 0` → No filtering
 pub fn apply_sigma(img: &ImageU8, quad_sigma: f32) -> ImageU8 {
+    apply_sigma_into(img, quad_sigma, Vec::new(), Vec::new())
+}
+
+/// Like [`apply_sigma`], but reuses `out_buf` and `tmp_buf` to avoid allocation.
+///
+/// `out_buf` is used for the final output image. `tmp_buf` is used for the
+/// intermediate horizontal-pass buffer inside the Gaussian blur.
+pub fn apply_sigma_into(
+    img: &ImageU8,
+    quad_sigma: f32,
+    out_buf: Vec<u8>,
+    tmp_buf: Vec<u8>,
+) -> ImageU8 {
     if quad_sigma == 0.0 {
         return img.clone();
     }
@@ -113,18 +138,20 @@ pub fn apply_sigma(img: &ImageU8, quad_sigma: f32) -> ImageU8 {
         return img.clone();
     }
 
-    let blurred = gaussian_blur(img, sigma, ksz);
+    let blurred = gaussian_blur_into(img, sigma, ksz, tmp_buf, out_buf);
 
     if quad_sigma > 0.0 {
         blurred
     } else {
         // Unsharp mask: 2*original - blurred
-        let mut out = ImageU8::new(img.width, img.height);
+        // Reuse the blurred image's buffer for the output
+        let blur_buf = blurred.buf;
+        let mut out = ImageU8::new_reuse(img.width, img.height, Vec::new());
         for y in 0..img.height {
             let orig_row = img.row(y);
-            let blur_row = blurred.row(y);
+            let out_off = (y * img.width) as usize;
             for x in 0..img.width as usize {
-                let v = 2 * orig_row[x] as i32 - blur_row[x] as i32;
+                let v = 2 * orig_row[x] as i32 - blur_buf[out_off + x] as i32;
                 out.set(x as u32, y, v.clamp(0, 255) as u8);
             }
         }
@@ -262,6 +289,37 @@ mod tests {
         let mut img = ImageU8::new(4, 4);
         img.set(0, 0, 42);
         let out = apply_sigma(&img, 0.1);
+        assert_eq!(out.get(0, 0), 42);
+    }
+
+    #[test]
+    fn apply_sigma_into_matches_apply_sigma_blur() {
+        let mut img = ImageU8::new(10, 10);
+        img.set(5, 5, 255);
+        let expected = apply_sigma(&img, 1.0);
+        let actual = apply_sigma_into(&img, 1.0, Vec::new(), Vec::new());
+        assert_eq!(expected.buf, actual.buf);
+    }
+
+    #[test]
+    fn apply_sigma_into_matches_apply_sigma_sharpen() {
+        let mut img = ImageU8::new(10, 10);
+        for y in 0..10 {
+            for x in 0..10 {
+                img.set(x, y, 128);
+            }
+        }
+        img.set(5, 5, 100);
+        let expected = apply_sigma(&img, -1.0);
+        let actual = apply_sigma_into(&img, -1.0, Vec::new(), Vec::new());
+        assert_eq!(expected.buf, actual.buf);
+    }
+
+    #[test]
+    fn apply_sigma_into_zero_clones() {
+        let mut img = ImageU8::new(4, 4);
+        img.set(0, 0, 42);
+        let out = apply_sigma_into(&img, 0.0, Vec::new(), Vec::new());
         assert_eq!(out.get(0, 0), 42);
     }
 
