@@ -2,6 +2,44 @@ use super::image::ImageU8;
 
 const TILESZ: u32 = 4;
 
+/// Binarize a rectangular block of pixels using a single tile's lo/hi values.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn binarize_block(
+    img_buf: &[u8],
+    stride: usize,
+    out_buf: &mut [u8],
+    out_w: usize,
+    lo: u8,
+    hi: u8,
+    min_white_black_diff: i32,
+    x_start: usize,
+    x_end: usize,
+    y_start: usize,
+    y_end: usize,
+) {
+    if (hi as i32 - lo as i32) < min_white_black_diff {
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                out_buf[y * out_w + x] = 127;
+            }
+        }
+    } else {
+        let thresh = lo as i32 + (hi as i32 - lo as i32) / 2;
+        for y in y_start..y_end {
+            let img_row_off = y * stride;
+            let out_row_off = y * out_w;
+            for x in x_start..x_end {
+                out_buf[out_row_off + x] = if img_buf[img_row_off + x] as i32 > thresh {
+                    255
+                } else {
+                    0
+                };
+            }
+        }
+    }
+}
+
 /// Produce a ternary threshold image: 0 (black), 255 (white), or 127 (unknown).
 ///
 /// Uses tile-based adaptive thresholding with min/max dilation to handle
@@ -61,27 +99,88 @@ pub fn threshold(img: &ImageU8, min_white_black_diff: i32, deglitch: bool) -> Im
         }
     }
 
-    // Binarize each pixel
+    // Binarize each pixel, processing tile-by-tile to load lo/hi once per tile.
+    // Remainder pixels (beyond tile-aligned region) use the last tile's values.
     let mut out = ImageU8::new(w, h);
-    for y in 0..h {
-        for x in 0..w {
-            let tx = (x / TILESZ).min(tw - 1);
-            let ty = (y / TILESZ).min(th - 1);
-            let idx = (ty * tw + tx) as usize;
-            let lo = eroded_min[idx];
-            let hi = dilated_max[idx];
 
-            let val = if (hi as i32 - lo as i32) < min_white_black_diff {
-                127
-            } else {
-                let thresh = lo as i32 + (hi as i32 - lo as i32) / 2;
-                if img.get(x, y) as i32 > thresh {
-                    255
-                } else {
-                    0
-                }
-            };
-            out.set(x, y, val);
+    for ty in 0..th {
+        let y_start = (ty * TILESZ) as usize;
+        let y_end = y_start + TILESZ as usize;
+        let tile_row = (ty * tw) as usize;
+
+        for tx in 0..tw {
+            let idx = tile_row + tx as usize;
+            let x_start = (tx * TILESZ) as usize;
+            binarize_block(
+                &img.buf,
+                img.stride as usize,
+                &mut out.buf,
+                w as usize,
+                eroded_min[idx],
+                dilated_max[idx],
+                min_white_black_diff,
+                x_start,
+                x_start + TILESZ as usize,
+                y_start,
+                y_end,
+            );
+        }
+
+        if (tw * TILESZ) < w {
+            let idx = tile_row + (tw - 1) as usize;
+            binarize_block(
+                &img.buf,
+                img.stride as usize,
+                &mut out.buf,
+                w as usize,
+                eroded_min[idx],
+                dilated_max[idx],
+                min_white_black_diff,
+                (tw * TILESZ) as usize,
+                w as usize,
+                y_start,
+                y_end,
+            );
+        }
+    }
+
+    if (th * TILESZ) < h {
+        let y_start = (th * TILESZ) as usize;
+        let tile_row = ((th - 1) * tw) as usize;
+
+        for tx in 0..tw {
+            let idx = tile_row + tx as usize;
+            let x_start = (tx * TILESZ) as usize;
+            binarize_block(
+                &img.buf,
+                img.stride as usize,
+                &mut out.buf,
+                w as usize,
+                eroded_min[idx],
+                dilated_max[idx],
+                min_white_black_diff,
+                x_start,
+                x_start + TILESZ as usize,
+                y_start,
+                h as usize,
+            );
+        }
+
+        if (tw * TILESZ) < w {
+            let idx = tile_row + (tw - 1) as usize;
+            binarize_block(
+                &img.buf,
+                img.stride as usize,
+                &mut out.buf,
+                w as usize,
+                eroded_min[idx],
+                dilated_max[idx],
+                min_white_black_diff,
+                (tw * TILESZ) as usize,
+                w as usize,
+                y_start,
+                h as usize,
+            );
         }
     }
 
