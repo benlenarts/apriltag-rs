@@ -5,7 +5,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use apriltag::detect::cluster::gradient_clusters;
 use apriltag::detect::connected::connected_components;
 use apriltag::detect::decode::{decode_quad, QuickDecode};
-use apriltag::detect::detector::{Detector, DetectorConfig};
+use apriltag::detect::detector::{Detector, DetectorConfig, DetectorState};
 use apriltag::detect::homography::Homography;
 use apriltag::detect::image::ImageU8;
 use apriltag::detect::preprocess::{apply_sigma, decimate};
@@ -179,6 +179,25 @@ fn bench_end_to_end(c: &mut Criterion) {
     });
 }
 
+fn bench_end_to_end_reuse(c: &mut Criterion) {
+    let img = build_bench_image();
+    let config = DetectorConfig {
+        quad_sigma: 0.8,
+        ..DetectorConfig::default()
+    };
+    let mut detector = Detector::new(config);
+    detector.add_family(family::tag36h11(), 2);
+
+    let mut state = DetectorState::new();
+    // Warm up to populate buffers
+    let dets = detector.detect_with_state(&img, &mut state);
+    assert!(!dets.is_empty(), "bench image should produce a detection");
+
+    c.bench_function("end_to_end_reuse", |b| {
+        b.iter(|| detector.detect_with_state(black_box(&img), &mut state))
+    });
+}
+
 criterion_group!(
     benches,
     bench_decimate,
@@ -189,5 +208,6 @@ criterion_group!(
     bench_fit_quads,
     bench_decode,
     bench_end_to_end,
+    bench_end_to_end_reuse,
 );
 criterion_main!(benches);
