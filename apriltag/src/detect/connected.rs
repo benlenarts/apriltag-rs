@@ -8,6 +8,13 @@ use super::unionfind::UnionFind;
 ///
 /// Uses asymmetric connectivity: diagonals are only checked for white pixels.
 pub fn connected_components(threshed: &ImageU8) -> UnionFind {
+    let mut uf = UnionFind::new((threshed.width * threshed.height) as usize);
+    connected_components_into(threshed, &mut uf);
+    uf
+}
+
+/// Like [`connected_components`], but resets and reuses an existing [`UnionFind`].
+pub fn connected_components_into(threshed: &ImageU8, uf: &mut UnionFind) {
     let w = threshed.width;
     let h = threshed.height;
     let buf = &threshed.buf;
@@ -18,7 +25,7 @@ pub fn connected_components(threshed: &ImageU8) -> UnionFind {
     // (h-1)*stride + (w-1) < h*stride when w <= stride.
     assert!(buf.len() >= (h * stride) as usize);
 
-    let mut uf = UnionFind::new((w * h) as usize);
+    uf.reset((w * h) as usize);
 
     for y in 0..h {
         let row = (y * stride) as usize;
@@ -85,8 +92,6 @@ pub fn connected_components(threshed: &ImageU8) -> UnionFind {
             }
         }
     }
-
-    uf
 }
 
 #[cfg(test)]
@@ -95,6 +100,33 @@ mod tests {
 
     fn make_thresh(w: u32, h: u32, pixels: &[u8]) -> ImageU8 {
         ImageU8::from_buf(w, h, w, pixels.to_vec())
+    }
+
+    #[test]
+    fn connected_components_into_matches_new() {
+        #[rustfmt::skip]
+        let pixels = [
+            0,   0, 255,
+            0, 127, 255,
+            0,   0, 255,
+        ];
+        let img = make_thresh(3, 3, &pixels);
+        let mut uf_new = connected_components(&img);
+        let mut uf_reuse = UnionFind::empty();
+        connected_components_into(&img, &mut uf_reuse);
+        // Both should produce identical component structure
+        for i in 0..9u32 {
+            assert_eq!(uf_new.find(i), uf_reuse.find(i));
+        }
+    }
+
+    #[test]
+    fn connected_components_into_reuses_allocation() {
+        let img = make_thresh(3, 3, &[0; 9]);
+        let mut uf = UnionFind::new(100); // larger than needed
+        connected_components_into(&img, &mut uf);
+        // Should have been reset to 9 elements but kept capacity
+        assert_eq!(uf.set_size(0), 9);
     }
 
     #[test]
