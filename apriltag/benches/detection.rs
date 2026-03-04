@@ -127,43 +127,50 @@ fn bench_fit_quads(c: &mut Criterion) {
 }
 
 fn bench_refine_edges(c: &mut Criterion) {
+    use apriltag::detect::quad::Quad;
+
     let img = build_bench_image();
-    let decimated = decimate(&img, 2, Vec::new());
-    let threshed = threshold(&decimated, 5, false, Vec::new());
-    let mut uf = UnionFind::empty();
-    connected_components(&threshed, &mut uf);
-    let mut clusters = gradient_clusters(&threshed, &mut uf, 5);
-    let qtp = QuadThreshParams::default();
-    let quads = fit_quads(
-        &mut clusters,
-        decimated.width,
-        decimated.height,
-        &qtp,
-        true,
-        true,
-    );
-    assert!(!quads.is_empty(), "should have quads to refine");
 
-    // Scale corners back to original image coords (as detector does after decimation)
-    let mut quads_scaled: Vec<_> = quads
-        .into_iter()
-        .map(|mut q| {
-            for c in &mut q.corners {
-                c[0] *= 2.0;
-                c[1] *= 2.0;
-            }
-            q
-        })
-        .collect();
+    // Create many synthetic quads spread across the interior of the image.
+    // Each is a 60x60 pixel quad — large enough for meaningful refinement,
+    // small enough to tile many across the 640x480 image.
+    let mut quads = Vec::new();
+    let mut y = 40.0f64;
+    while y + 60.0 < 440.0 {
+        let mut x = 40.0f64;
+        while x + 60.0 < 600.0 {
+            quads.push(Quad {
+                corners: [[x, y + 60.0], [x + 60.0, y + 60.0], [x + 60.0, y], [x, y]],
+                reversed_border: false,
+            });
+            x += 70.0;
+        }
+        y += 70.0;
+    }
+    let n_quads = quads.len();
+    assert!(n_quads >= 40, "expected many quads, got {n_quads}");
 
-    c.bench_function("refine_edges", |b| {
+    let mut group = c.benchmark_group("refine_edges");
+
+    group.bench_function("many_quads", |b| {
         b.iter(|| {
-            let mut quads = quads_scaled.clone();
-            for q in &mut quads {
+            let mut qs = quads.clone();
+            for q in &mut qs {
                 refine_edges(black_box(q), black_box(&img), 2.0);
             }
         })
     });
+
+    group.bench_function("high_decimate", |b| {
+        b.iter(|| {
+            let mut qs = quads.clone();
+            for q in &mut qs {
+                refine_edges(black_box(q), black_box(&img), 4.0);
+            }
+        })
+    });
+
+    group.finish();
 }
 
 fn bench_decode(c: &mut Criterion) {
