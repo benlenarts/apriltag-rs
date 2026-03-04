@@ -44,12 +44,10 @@ fn binarize_block(
 ///
 /// Uses tile-based adaptive thresholding with min/max dilation to handle
 /// spatially varying illumination.
-pub fn threshold(img: &ImageU8, min_white_black_diff: i32, deglitch: bool) -> ImageU8 {
-    threshold_into(img, min_white_black_diff, deglitch, Vec::new())
-}
-
-/// Like [`threshold`], but reuses `buf` for the output image to avoid allocation.
-pub fn threshold_into(
+///
+/// Pass a pre-allocated `buf` to reuse memory across calls. Use `Vec::new()`
+/// for one-shot usage.
+pub fn threshold(
     img: &ImageU8,
     min_white_black_diff: i32,
     deglitch: bool,
@@ -242,23 +240,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn threshold_into_matches_threshold() {
-        let mut img = ImageU8::new(8, 8);
-        for y in 0..8 {
-            for x in 0..4 {
-                img.set(x, y, 0);
-            }
-            for x in 4..8 {
-                img.set(x, y, 255);
-            }
-        }
-        let expected = threshold(&img, 5, false);
-        let actual = threshold_into(&img, 5, false, Vec::new());
-        assert_eq!(expected.buf, actual.buf);
-    }
-
-    #[test]
-    fn threshold_into_reuses_buffer() {
+    fn threshold_reuses_buffer() {
         let mut img = ImageU8::new(8, 8);
         for y in 0..8 {
             for x in 0..8 {
@@ -266,7 +248,7 @@ mod tests {
             }
         }
         let buf = Vec::with_capacity(1024);
-        let out = threshold_into(&img, 5, false, buf);
+        let out = threshold(&img, 5, false, buf);
         assert!(out.buf.capacity() >= 1024);
     }
 
@@ -279,7 +261,7 @@ mod tests {
                 img.set(x, y, 200);
             }
         }
-        let out = threshold(&img, 5, false);
+        let out = threshold(&img, 5, false, Vec::new());
         for y in 0..8 {
             for x in 0..8 {
                 assert_eq!(out.get(x, y), 127, "({x}, {y})");
@@ -299,7 +281,7 @@ mod tests {
                 img.set(x, y, 255);
             }
         }
-        let out = threshold(&img, 5, false);
+        let out = threshold(&img, 5, false, Vec::new());
         // Tile (0,0) spans x=[0,3], all 0. Tile (1,0) spans x=[4,7], all 255.
         // After dilation, tile (0,0) has min=0, max=255 (from neighbor tile (1,0))
         // thresh = 0 + 255/2 = 127
@@ -311,7 +293,7 @@ mod tests {
     #[test]
     fn threshold_small_image_no_panic() {
         let img = ImageU8::new(2, 2);
-        let out = threshold(&img, 5, false);
+        let out = threshold(&img, 5, false, Vec::new());
         assert_eq!(out.width, 2);
         assert_eq!(out.height, 2);
     }
@@ -327,7 +309,7 @@ mod tests {
         }
         img.set(4, 4, 255); // single bright pixel
                             // With deglitch, the single pixel noise should be removed by close operation
-        let out = threshold(&img, 5, true);
+        let out = threshold(&img, 5, true, Vec::new());
         // The close operation (dilate then erode) should remove or smooth isolated changes
         assert_eq!(out.width, 8);
     }
@@ -341,7 +323,7 @@ mod tests {
                 img.set(x, y, if x < 5 { 0 } else { 255 });
             }
         }
-        let out = threshold(&img, 5, false);
+        let out = threshold(&img, 5, false, Vec::new());
         // Pixel at x=8 should use tile tx=min(8/4, tw-1) = min(2, 1) = 1
         assert_eq!(out.get(8, 0), 255);
     }

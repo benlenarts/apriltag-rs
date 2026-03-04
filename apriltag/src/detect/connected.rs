@@ -7,14 +7,10 @@ use super::unionfind::UnionFind;
 /// (both 0 or both 255). Pixels with value 127 (unknown) are never connected.
 ///
 /// Uses asymmetric connectivity: diagonals are only checked for white pixels.
-pub fn connected_components(threshed: &ImageU8) -> UnionFind {
-    let mut uf = UnionFind::new((threshed.width * threshed.height) as usize);
-    connected_components_into(threshed, &mut uf);
-    uf
-}
-
-/// Like [`connected_components`], but resets and reuses an existing [`UnionFind`].
-pub fn connected_components_into(threshed: &ImageU8, uf: &mut UnionFind) {
+///
+/// Pass a pre-allocated `uf` (e.g. from a previous call) to reuse memory.
+/// Use `&mut UnionFind::empty()` for one-shot usage.
+pub fn connected_components(threshed: &ImageU8, uf: &mut UnionFind) {
     let w = threshed.width;
     let h = threshed.height;
     let buf = &threshed.buf;
@@ -102,29 +98,17 @@ mod tests {
         ImageU8::from_buf(w, h, w, pixels.to_vec())
     }
 
-    #[test]
-    fn connected_components_into_matches_new() {
-        #[rustfmt::skip]
-        let pixels = [
-            0,   0, 255,
-            0, 127, 255,
-            0,   0, 255,
-        ];
-        let img = make_thresh(3, 3, &pixels);
-        let mut uf_new = connected_components(&img);
-        let mut uf_reuse = UnionFind::empty();
-        connected_components_into(&img, &mut uf_reuse);
-        // Both should produce identical component structure
-        for i in 0..9u32 {
-            assert_eq!(uf_new.find(i), uf_reuse.find(i));
-        }
+    fn run_cc(img: &ImageU8) -> UnionFind {
+        let mut uf = UnionFind::empty();
+        connected_components(img, &mut uf);
+        uf
     }
 
     #[test]
-    fn connected_components_into_reuses_allocation() {
+    fn connected_components_reuses_allocation() {
         let img = make_thresh(3, 3, &[0; 9]);
         let mut uf = UnionFind::new(100); // larger than needed
-        connected_components_into(&img, &mut uf);
+        connected_components(&img, &mut uf);
         // Should have been reset to 9 elements but kept capacity
         assert_eq!(uf.set_size(0), 9);
     }
@@ -133,7 +117,7 @@ mod tests {
     fn uniform_black_single_component() {
         // 3x3 all black → one component
         let img = make_thresh(3, 3, &[0; 9]);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         let r = uf.find(0);
         for i in 1..9u32 {
             assert_eq!(uf.find(i), r);
@@ -144,7 +128,7 @@ mod tests {
     fn unknown_pixels_not_connected() {
         // All unknown → each pixel is its own root
         let img = make_thresh(3, 3, &[127; 9]);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         for i in 0..9u32 {
             assert_eq!(uf.find(i), i);
         }
@@ -159,7 +143,7 @@ mod tests {
             0, 255,
         ];
         let img = make_thresh(2, 2, &pixels);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         // Black pixels (0,0) and (0,1) should be in same component
         assert_eq!(uf.find(0), uf.find(2));
         // White pixels (1,0) and (1,1) should be in same component
@@ -177,7 +161,7 @@ mod tests {
               0, 255,
         ];
         let img = make_thresh(2, 2, &pixels);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         // White (0,0) and (1,1) should NOT be connected (upper-right diagonal
         // check is from perspective of (1,1) looking at upper-left, but (0,0)
         // is upper-left of (1,1), and left=(0,1)=0≠255, up=(1,0)=0≠255,
@@ -194,7 +178,7 @@ mod tests {
             255,   0,
         ];
         let img = make_thresh(2, 2, &pixels);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         // Black (0,0) and (1,1) should NOT be connected (diagonals only for white)
         assert_ne!(uf.find(0), uf.find(3));
     }
@@ -208,7 +192,7 @@ mod tests {
             0, 0,
         ];
         let img = make_thresh(2, 2, &pixels);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         // All should still be connected (via left and other paths)
         let r = uf.find(0);
         for i in 1..4u32 {
@@ -225,7 +209,7 @@ mod tests {
             0,   0, 255,
         ];
         let img = make_thresh(3, 3, &pixels);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         // Black component: (0,0),(1,0),(0,1),(0,2),(1,2) = 5 pixels
         assert_eq!(uf.set_size(0), 5);
         // White component: (2,0),(2,1),(2,2) = 3 pixels

@@ -183,15 +183,22 @@ pub fn gradient_clusters(
 mod tests {
     use super::*;
     use crate::detect::connected::connected_components;
+    use crate::detect::unionfind::UnionFind;
 
     fn make_thresh(w: u32, h: u32, pixels: &[u8]) -> ImageU8 {
         ImageU8::from_buf(w, h, w, pixels.to_vec())
     }
 
+    fn run_cc(img: &ImageU8) -> UnionFind {
+        let mut uf = UnionFind::empty();
+        connected_components(img, &mut uf);
+        uf
+    }
+
     #[test]
     fn no_clusters_in_uniform_image() {
         let img = make_thresh(8, 8, &vec![0u8; 64]);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         let clusters = gradient_clusters(&img, &mut uf, 5);
         assert!(clusters.is_empty());
     }
@@ -206,7 +213,7 @@ mod tests {
             }
         }
         let img = make_thresh(8, 8, &pixels);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         let clusters = gradient_clusters(&img, &mut uf, 1);
         assert!(!clusters.is_empty());
     }
@@ -221,7 +228,7 @@ mod tests {
             }
         }
         let img = make_thresh(8, 8, &pixels);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         let clusters = gradient_clusters(&img, &mut uf, 1);
 
         // Find a point on the boundary x=3→4 (dx=1)
@@ -244,7 +251,7 @@ mod tests {
         let mut pixels = vec![0u8; 100]; // 10x10
         pixels[55] = 255; // one pixel
         let img = make_thresh(10, 10, &pixels);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         let clusters = gradient_clusters(&img, &mut uf, 1);
         // White component has only 1 pixel, below threshold of 25
         assert!(clusters.is_empty());
@@ -266,7 +273,7 @@ mod tests {
             }
         }
         let img = make_thresh(size, size, &pixels);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         let clusters = gradient_clusters(&img, &mut uf, 1);
 
         // Collect all midpoints across all clusters
@@ -300,14 +307,14 @@ mod tests {
             }
         }
         let img = make_thresh(size, size, &pixels);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
 
         // With min_cluster_size=1, we get clusters
         let all = gradient_clusters(&img, &mut uf, 1);
         assert!(!all.is_empty());
 
         // With a very high threshold, all clusters are filtered out
-        let mut uf2 = connected_components(&img);
+        let mut uf2 = run_cc(&img);
         let filtered = gradient_clusters(&img, &mut uf2, 100_000);
         assert!(filtered.is_empty());
     }
@@ -322,7 +329,7 @@ mod tests {
             }
         }
         let img = make_thresh(8, 8, &pixels);
-        let mut uf = connected_components(&img);
+        let mut uf = run_cc(&img);
         let clusters = gradient_clusters(&img, &mut uf, 1);
         // No boundary between black and white (only black and unknown)
         assert!(clusters.is_empty());

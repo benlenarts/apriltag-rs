@@ -4,15 +4,15 @@ use crate::family::TagFamily;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use super::cluster::gradient_clusters;
-use super::connected::connected_components_into;
+use super::connected::connected_components;
 use super::decode::{decode_quad, QuickDecode};
 use super::dedup::deduplicate;
 use super::homography::Homography;
 use super::image::ImageU8;
-use super::preprocess::{apply_sigma_into, decimate_into};
+use super::preprocess::{apply_sigma, decimate};
 use super::quad::{fit_quads, QuadThreshParams};
 use super::refine::refine_edges;
-use super::threshold::threshold_into;
+use super::threshold::threshold;
 use super::unionfind::UnionFind;
 
 /// A detected AprilTag in an image.
@@ -122,8 +122,8 @@ impl Detector {
         let f = self.config.quad_decimate as u32;
 
         // Stage 1: Preprocess
-        let decimated = decimate_into(img, f, std::mem::take(&mut state.decimated_buf));
-        let (filtered, blur_tmp) = apply_sigma_into(
+        let decimated = decimate(img, f, std::mem::take(&mut state.decimated_buf));
+        let (filtered, blur_tmp) = apply_sigma(
             &decimated,
             self.config.quad_sigma,
             std::mem::take(&mut state.filtered_buf),
@@ -137,7 +137,7 @@ impl Detector {
         let filtered_h = filtered.height;
 
         // Stage 2: Threshold
-        let threshed = threshold_into(
+        let threshed = threshold(
             &filtered,
             self.config.qtp.min_white_black_diff,
             self.config.qtp.deglitch,
@@ -146,7 +146,7 @@ impl Detector {
         state.filtered_buf = filtered.into_buf();
 
         // Stage 3: Connected components
-        connected_components_into(&threshed, &mut state.uf);
+        connected_components(&threshed, &mut state.uf);
 
         // Stage 4: Gradient clustering
         let mut clusters = gradient_clusters(
@@ -513,7 +513,7 @@ mod tests {
         let (img, _family) = build_synthetic_tag_image();
 
         // Stage 2: Threshold
-        let threshed = threshold::threshold(&img, 5, false);
+        let threshed = threshold::threshold(&img, 5, false, Vec::new());
         let mut black_count = 0;
         let mut white_count = 0;
         let mut unknown_count = 0;
@@ -530,7 +530,8 @@ mod tests {
         assert!(white_count > 0, "No white pixels after threshold");
 
         // Stage 3: Connected components
-        let mut uf = connected::connected_components(&threshed);
+        let mut uf = crate::detect::unionfind::UnionFind::empty();
+        connected::connected_components(&threshed, &mut uf);
 
         // Stage 4: Gradient clustering
         let mut clusters = cluster::gradient_clusters(&threshed, &mut uf, 5);
