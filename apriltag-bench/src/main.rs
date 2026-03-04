@@ -408,16 +408,17 @@ fn cmd_benchmark(
             rust_median_us: u64,
             ref_median_us: u64,
             ratio: f64,
+            iterations: usize,
         }
 
         let mut rows = Vec::new();
 
         if format != "json" {
             println!(
-                "{:<35} {:>10} {:>10} {:>10} {:>8}",
-                "Scenario", "Rust(ms)", "Ref(ms)", "Ratio", "Size"
+                "{:<35} {:>10} {:>10} {:>10} {:>8} {:>6}",
+                "Scenario", "Rust(ms)", "Ref(ms)", "Ratio", "Size", "N"
             );
-            println!("{}", "-".repeat(78));
+            println!("{}", "-".repeat(85));
         }
 
         for s in &scenarios {
@@ -460,17 +461,30 @@ fn cmd_benchmark(
                 let _ = ref_detector.detect(&scene.image);
             }
 
+            // Adaptive iteration count: calibrate from a single timed run,
+            // then target at least 200ms total measurement time per detector.
+            let calib_start = Instant::now();
+            let _ = rust_detector.detect(&scene.image);
+            let calib_dur = calib_start.elapsed();
+            let min_total = std::time::Duration::from_millis(200);
+            let adaptive_iters = if calib_dur.is_zero() {
+                iterations
+            } else {
+                (min_total.as_nanos() / calib_dur.as_nanos()).max(1) as usize
+            }
+            .max(iterations);
+
             // Benchmark Rust detector
-            let mut rust_times = Vec::with_capacity(iterations);
-            for _ in 0..iterations {
+            let mut rust_times = Vec::with_capacity(adaptive_iters);
+            for _ in 0..adaptive_iters {
                 let start = Instant::now();
                 let _ = rust_detector.detect(&scene.image);
                 rust_times.push(start.elapsed());
             }
 
             // Benchmark C reference detector
-            let mut ref_times = Vec::with_capacity(iterations);
-            for _ in 0..iterations {
+            let mut ref_times = Vec::with_capacity(adaptive_iters);
+            for _ in 0..adaptive_iters {
                 let start = Instant::now();
                 let _ = ref_detector.detect(&scene.image);
                 ref_times.push(start.elapsed());
@@ -479,8 +493,8 @@ fn cmd_benchmark(
             rust_times.sort();
             ref_times.sort();
 
-            let rust_median = rust_times[iterations / 2];
-            let ref_median = ref_times[iterations / 2];
+            let rust_median = rust_times[adaptive_iters / 2];
+            let ref_median = ref_times[adaptive_iters / 2];
 
             let rust_us = rust_median.as_micros() as u64;
             let ref_us = ref_median.as_micros() as u64;
@@ -492,13 +506,14 @@ fn cmd_benchmark(
 
             if format != "json" {
                 println!(
-                    "{:<35} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4}",
+                    "{:<35} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4} {:>5}",
                     &s.name,
                     rust_us as f64 / 1000.0,
                     ref_us as f64 / 1000.0,
                     ratio,
                     size[0],
                     size[1],
+                    adaptive_iters,
                 );
             }
 
@@ -508,13 +523,14 @@ fn cmd_benchmark(
                 rust_median_us: rust_us,
                 ref_median_us: ref_us,
                 ratio,
+                iterations: adaptive_iters,
             });
         }
 
         if format == "json" {
             println!("{}", serde_json::to_string_pretty(&rows).unwrap());
         } else {
-            println!("{}", "-".repeat(78));
+            println!("{}", "-".repeat(85));
 
             // Summary statistics
             let total_rust: u64 = rows.iter().map(|r| r.rust_median_us).sum();
@@ -531,10 +547,14 @@ fn cmd_benchmark(
                 total_ref as f64 / 1000.0,
                 overall_ratio,
             );
+            let min_n = rows.iter().map(|r| r.iterations).min().unwrap_or(0);
+            let max_n = rows.iter().map(|r| r.iterations).max().unwrap_or(0);
             println!(
-                "\n{} scenarios, {} iterations each (median times shown)",
+                "\n{} scenarios, {}-{} iterations (adaptive, min {}), median times shown",
                 rows.len(),
-                iterations
+                min_n,
+                max_n,
+                iterations,
             );
         }
     }
@@ -565,6 +585,7 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
             rust_median_us: u64,
             ref_median_us: u64,
             ratio: f64,
+            iterations: usize,
         }
 
         struct SweepScene {
@@ -716,10 +737,10 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
 
         if format != "json" {
             println!(
-                "{:<30} {:>5} {:>10} {:>10} {:>10} {:>10}",
-                "Scenario", "Tags", "Rust(ms)", "Ref(ms)", "Ratio", "Size"
+                "{:<30} {:>5} {:>10} {:>10} {:>10} {:>10} {:>6}",
+                "Scenario", "Tags", "Rust(ms)", "Ref(ms)", "Ratio", "Size", "N"
             );
-            println!("{}", "-".repeat(80));
+            println!("{}", "-".repeat(87));
         }
 
         for ss in &sweep_scenes {
@@ -732,17 +753,29 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
                 let _ = ref_detector.detect(img);
             }
 
+            // Adaptive iteration count
+            let calib_start = Instant::now();
+            let _ = rust_detector.detect(img);
+            let calib_dur = calib_start.elapsed();
+            let min_total = std::time::Duration::from_millis(200);
+            let adaptive_iters = if calib_dur.is_zero() {
+                iterations
+            } else {
+                (min_total.as_nanos() / calib_dur.as_nanos()).max(1) as usize
+            }
+            .max(iterations);
+
             // Benchmark Rust
-            let mut rust_times = Vec::with_capacity(iterations);
-            for _ in 0..iterations {
+            let mut rust_times = Vec::with_capacity(adaptive_iters);
+            for _ in 0..adaptive_iters {
                 let start = Instant::now();
                 let _ = rust_detector.detect(img);
                 rust_times.push(start.elapsed());
             }
 
             // Benchmark C reference
-            let mut ref_times = Vec::with_capacity(iterations);
-            for _ in 0..iterations {
+            let mut ref_times = Vec::with_capacity(adaptive_iters);
+            for _ in 0..adaptive_iters {
                 let start = Instant::now();
                 let _ = ref_detector.detect(img);
                 ref_times.push(start.elapsed());
@@ -751,8 +784,8 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
             rust_times.sort();
             ref_times.sort();
 
-            let rust_us = rust_times[iterations / 2].as_micros() as u64;
-            let ref_us = ref_times[iterations / 2].as_micros() as u64;
+            let rust_us = rust_times[adaptive_iters / 2].as_micros() as u64;
+            let ref_us = ref_times[adaptive_iters / 2].as_micros() as u64;
             let ratio = if ref_us > 0 {
                 rust_us as f64 / ref_us as f64
             } else {
@@ -761,7 +794,7 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
 
             if format != "json" {
                 println!(
-                    "{:<30} {:>5} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4}",
+                    "{:<30} {:>5} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4} {:>5}",
                     &ss.name,
                     ss.tags,
                     rust_us as f64 / 1000.0,
@@ -769,6 +802,7 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
                     ratio,
                     size[0],
                     size[1],
+                    adaptive_iters,
                 );
             }
 
@@ -780,13 +814,14 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
                 rust_median_us: rust_us,
                 ref_median_us: ref_us,
                 ratio,
+                iterations: adaptive_iters,
             });
         }
 
         if format == "json" {
             println!("{}", serde_json::to_string_pretty(&rows).unwrap());
         } else {
-            println!("{}", "-".repeat(80));
+            println!("{}", "-".repeat(87));
 
             // Per-condition summary
             println!("\nPer-condition averages:");
@@ -837,12 +872,16 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
             } else {
                 0.0
             };
+            let min_n = rows.iter().map(|r| r.iterations).min().unwrap_or(0);
+            let max_n = rows.iter().map(|r| r.iterations).max().unwrap_or(0);
             println!(
-                "\nOVERALL: {:.1} vs {:.1} ms ({:.2}x), {} scenarios, {} iterations each",
+                "\nOVERALL: {:.1} vs {:.1} ms ({:.2}x), {} scenarios, {}-{} iterations (adaptive, min {})",
                 total_rust as f64 / 1000.0,
                 total_ref as f64 / 1000.0,
                 overall_ratio,
                 rows.len(),
+                min_n,
+                max_n,
                 iterations,
             );
         }
