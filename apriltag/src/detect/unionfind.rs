@@ -15,6 +15,26 @@ impl UnionFind {
         }
     }
 
+    /// Create an empty union-find with no elements and no allocation.
+    pub fn empty() -> Self {
+        Self {
+            parent: Vec::new(),
+            size: Vec::new(),
+        }
+    }
+
+    /// Reset the union-find for `n` elements, reusing existing allocations.
+    ///
+    /// After reset, the state is identical to `UnionFind::new(n)`, but
+    /// if the internal vectors already have sufficient capacity, no
+    /// allocation occurs.
+    pub fn reset(&mut self, n: usize) {
+        self.parent.clear();
+        self.parent.resize(n, UNSET);
+        self.size.clear();
+        self.size.resize(n, 0);
+    }
+
     /// Find the representative of the set containing `id`, with path halving.
     ///
     /// If `id` has not been initialized, it becomes its own representative.
@@ -124,6 +144,49 @@ mod tests {
         uf.union(0, 1);
         uf.union(2, 3);
         assert_ne!(uf.find(0), uf.find(2));
+    }
+
+    #[test]
+    fn empty_creates_no_allocation() {
+        let uf = UnionFind::empty();
+        assert_eq!(uf.parent.len(), 0);
+        assert_eq!(uf.size.len(), 0);
+    }
+
+    #[test]
+    fn reset_matches_new() {
+        let fresh = UnionFind::new(10);
+        let mut reused = UnionFind::empty();
+        reused.reset(10);
+        assert_eq!(fresh.parent, reused.parent);
+        assert_eq!(fresh.size, reused.size);
+    }
+
+    #[test]
+    fn reset_reuses_capacity() {
+        let mut uf = UnionFind::new(100);
+        // Use it
+        uf.union(0, 1);
+        uf.union(2, 3);
+        // Reset to smaller size
+        uf.reset(10);
+        assert_eq!(uf.parent.len(), 10);
+        assert!(uf.parent.capacity() >= 100);
+        // Should work identically to fresh
+        uf.union(0, 1);
+        assert_eq!(uf.find(0), uf.find(1));
+    }
+
+    #[test]
+    fn reset_clears_previous_unions() {
+        let mut uf = UnionFind::new(5);
+        uf.union(0, 1);
+        uf.union(2, 3);
+        uf.reset(5);
+        // After reset, all elements should be unset (disjoint)
+        for i in 0..5u32 {
+            assert_eq!(uf.find(i), i);
+        }
     }
 
     #[test]
