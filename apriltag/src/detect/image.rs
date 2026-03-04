@@ -53,6 +53,27 @@ impl ImageU8 {
         self.buf[(y * self.stride + x) as usize] = val;
     }
 
+    /// Create a zeroed image, reusing an existing buffer to avoid allocation.
+    ///
+    /// The buffer is cleared and resized to fit `width * height` pixels.
+    /// If the buffer already has sufficient capacity, no allocation occurs.
+    pub fn new_reuse(width: u32, height: u32, mut buf: Vec<u8>) -> Self {
+        let len = (width * height) as usize;
+        buf.clear();
+        buf.resize(len, 0);
+        Self {
+            width,
+            height,
+            stride: width,
+            buf,
+        }
+    }
+
+    /// Consume the image and return the backing buffer for reuse.
+    pub fn into_buf(self) -> Vec<u8> {
+        self.buf
+    }
+
     /// Bilinear interpolation at sub-pixel coordinates.
     ///
     /// Uses the convention from the spec: floor(px - 0.5) for the base pixel.
@@ -123,6 +144,48 @@ mod tests {
         let img = ImageU8::from_buf(3, 2, 4, buf);
         assert_eq!(img.row(0), &[1, 2, 3]);
         assert_eq!(img.row(1), &[4, 5, 6]);
+    }
+
+    #[test]
+    fn new_reuse_produces_identical_image() {
+        let fresh = ImageU8::new(10, 8);
+        let reused = ImageU8::new_reuse(10, 8, Vec::new());
+        assert_eq!(fresh.width, reused.width);
+        assert_eq!(fresh.height, reused.height);
+        assert_eq!(fresh.stride, reused.stride);
+        assert_eq!(fresh.buf, reused.buf);
+    }
+
+    #[test]
+    fn new_reuse_reuses_capacity() {
+        let buf = Vec::with_capacity(1024);
+        let img = ImageU8::new_reuse(10, 8, buf);
+        assert_eq!(img.buf.len(), 80);
+        assert!(img.buf.capacity() >= 1024);
+    }
+
+    #[test]
+    fn new_reuse_clears_old_data() {
+        let buf = vec![42u8; 200];
+        let img = ImageU8::new_reuse(10, 8, buf);
+        assert!(img.buf.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn into_buf_returns_buffer() {
+        let img = ImageU8::new(10, 8);
+        let buf = img.into_buf();
+        assert_eq!(buf.len(), 80);
+    }
+
+    #[test]
+    fn into_buf_roundtrip_preserves_capacity() {
+        let img = ImageU8::new_reuse(10, 8, Vec::with_capacity(1024));
+        let buf = img.into_buf();
+        assert!(buf.capacity() >= 1024);
+        let img2 = ImageU8::new_reuse(5, 5, buf);
+        assert_eq!(img2.buf.len(), 25);
+        assert!(img2.buf.capacity() >= 1024);
     }
 
     #[test]
