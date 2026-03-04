@@ -4,6 +4,7 @@ const TILESZ: u32 = 4;
 
 /// Binarize a rectangular block of pixels using a single tile's lo/hi values.
 #[inline(always)]
+#[allow(clippy::too_many_arguments)]
 fn binarize_block(
     img_buf: &[u8],
     stride: usize,
