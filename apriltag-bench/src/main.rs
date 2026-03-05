@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::time::Instant;
 
 use apriltag::detect::detector::{Detector, DetectorConfig};

@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 /// Reference C apriltag3 implementation via FFI.
 ///
 /// This module is only available when the `reference` feature is enabled.

@@ -31,6 +31,7 @@ pub fn gradient_clusters(
     uf: &mut UnionFind,
     min_cluster_size: u32,
     pairs_buf: &mut Vec<(u64, Pt)>,
+    sort_buf: &mut Vec<(u64, u32)>,
 ) -> Vec<Cluster> {
     let w = threshed.width;
     let h = threshed.height;
@@ -39,57 +40,68 @@ pub fn gradient_clusters(
     pairs_buf.clear();
     let pairs = &mut *pairs_buf;
 
+    let buf = &threshed.buf;
+    let stride = threshed.stride as usize;
+
     // Check a neighbor offset and add a boundary point if valid.
+    // All accesses are guaranteed in-bounds because x ∈ [1, w-2] and y ∈ [1, h-2]
+    // with dx, dy ∈ {-1, 0, 1}.
+    // `rep0` is pre-computed by the caller to avoid redundant find() calls.
     // Returns true when a boundary point was added.
     macro_rules! do_conn {
-        ($cluster_map:expr, $uf:expr, $threshed:expr, $x:expr, $y:expr,
-         $v0:expr, $dx:expr, $dy:expr, $w:expr, $h:expr,
-         $min_component_size:expr) => {{
-            let mut added = false;
-            let nx = $x as i32 + $dx;
-            let ny = $y as i32 + $dy;
-            if nx >= 0 && nx < $w as i32 && ny >= 0 && ny < $h as i32 {
-                let nx = nx as u32;
-                let ny = ny as u32;
-                let v1 = $threshed.get(nx, ny);
-                if $v0 as i32 + v1 as i32 == 255 {
-                    let id1 = ny * $w + nx;
-                    if $uf.set_size(id1) >= $min_component_size {
-                        let rep0 = $uf.find($y * $w + $x) as u64;
-                        let rep1 = $uf.find(id1) as u64;
-                        let key = if rep0 < rep1 {
-                            (rep0 << 32) | rep1
-                        } else {
-                            (rep1 << 32) | rep0
-                        };
-                        let gx = $dx as i16 * (v1 as i16 - $v0 as i16);
-                        let gy = $dy as i16 * (v1 as i16 - $v0 as i16);
-                        let pt = Pt {
-                            x: (2 * $x as i32 + $dx) as u16,
-                            y: (2 * $y as i32 + $dy) as u16,
-                            gx,
-                            gy,
-                            slope: 0.0,
-                        };
-                        $cluster_map.push((key, pt));
-                        added = true;
-                    }
+        ($pairs:expr, $uf:expr, $buf:expr, $stride:expr,
+         $x:expr, $y:expr, $rep0:expr, $v0:expr,
+         $dx:expr, $dy:expr, $w:expr, $min_component_size:expr) => {{
+            let nx = ($x as i32 + $dx) as usize;
+            let ny = ($y as i32 + $dy) as usize;
+            let v1 = $buf[ny * $stride + nx];
+            if $v0 as i32 + v1 as i32 == 255 {
+                let id1 = ny as u32 * $w + nx as u32;
+                let rep1_root = $uf.find(id1);
+                if $uf.root_size(rep1_root) >= $min_component_size {
+                    let rep0 = $rep0 as u64;
+                    let rep1 = rep1_root as u64;
+                    let key = if rep0 < rep1 {
+                        (rep0 << 32) | rep1
+                    } else {
+                        (rep1 << 32) | rep0
+                    };
+                    let gx = $dx as i16 * (v1 as i16 - $v0 as i16);
+                    let gy = $dy as i16 * (v1 as i16 - $v0 as i16);
+                    let pt = Pt {
+                        x: (2 * $x as i32 + $dx) as u16,
+                        y: (2 * $y as i32 + $dy) as u16,
+                        gx,
+                        gy,
+                        slope: 0.0,
+                    };
+                    $pairs.push((key, pt));
+                    true
+                } else {
+                    false
                 }
+            } else {
+                false
             }
-            added
         }};
     }
 
-    for y in 0..h {
+    // Loop over interior pixels only (skip border). All neighbor offsets
+    // (dx,dy) ∈ {-1,0,1} are guaranteed in-bounds, eliminating bounds checks.
+    // The C reference uses the same range restriction.
+    for y in 1..h.saturating_sub(1) {
+        let row_off = y as usize * stride;
         let mut connected_last = false;
-        for x in 0..w {
-            let v0 = threshed.get(x, y);
+        for x in 1..w.saturating_sub(1) {
+            let v0 = buf[row_off + x as usize];
             if v0 == 127 {
                 connected_last = false;
                 continue;
             }
 
-            if uf.set_size(y * w + x) < min_component_size {
+            // Compute rep0 once for this pixel, reuse across all do_conn! calls
+            let rep0 = uf.find(y * w + x);
+            if uf.root_size(rep0) < min_component_size {
                 connected_last = false;
                 continue;
             }
@@ -98,27 +110,29 @@ pub fn gradient_clusters(
             do_conn!(
                 pairs,
                 uf,
-                threshed,
+                buf,
+                stride,
                 x,
                 y,
+                rep0,
                 v0,
                 1,
                 0,
                 w,
-                h,
                 min_component_size
             );
             do_conn!(
                 pairs,
                 uf,
-                threshed,
+                buf,
+                stride,
                 x,
                 y,
+                rep0,
                 v0,
                 0,
                 1,
                 w,
-                h,
                 min_component_size
             );
 
@@ -130,47 +144,55 @@ pub fn gradient_clusters(
                 do_conn!(
                     pairs,
                     uf,
-                    threshed,
+                    buf,
+                    stride,
                     x,
                     y,
+                    rep0,
                     v0,
                     -1,
                     1,
                     w,
-                    h,
                     min_component_size
                 );
             }
             connected_last = do_conn!(
                 pairs,
                 uf,
-                threshed,
+                buf,
+                stride,
                 x,
                 y,
+                rep0,
                 v0,
                 1,
                 1,
                 w,
-                h,
                 min_component_size
             );
         }
     }
 
-    // Sort by key, then group consecutive equal keys into clusters
-    pairs.sort_unstable_by_key(|p| p.0);
+    // Sort lightweight key-index pairs (12 bytes) instead of full (key, Pt) pairs (20 bytes).
+    // This reduces data movement per swap by 40%, then we gather Pt values during grouping.
+    sort_buf.clear();
+    sort_buf.extend(pairs.iter().enumerate().map(|(i, p)| (p.0, i as u32)));
+    sort_buf.sort_unstable_by_key(|p| p.0);
 
     let mut clusters: Vec<Cluster> = Vec::new();
     let mut i = 0;
-    while i < pairs.len() {
-        let key = pairs[i].0;
+    while i < sort_buf.len() {
+        let key = sort_buf[i].0;
         let start = i;
-        while i < pairs.len() && pairs[i].0 == key {
+        while i < sort_buf.len() && sort_buf[i].0 == key {
             i += 1;
         }
         if i - start >= min_cluster_size as usize {
             clusters.push(Cluster {
-                points: pairs[start..i].iter().map(|&(_, pt)| pt).collect(),
+                points: sort_buf[start..i]
+                    .iter()
+                    .map(|&(_, idx)| pairs[idx as usize].1)
+                    .collect(),
             });
         }
     }
@@ -201,7 +223,7 @@ mod tests {
     fn no_clusters_in_uniform_image() {
         let img = make_thresh(8, 8, &vec![0u8; 64]);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 5, &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 5, &mut Vec::new(), &mut Vec::new());
         assert!(clusters.is_empty());
     }
 
@@ -216,7 +238,7 @@ mod tests {
         }
         let img = make_thresh(8, 8, &pixels);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
         assert!(!clusters.is_empty());
     }
 
@@ -231,7 +253,7 @@ mod tests {
         }
         let img = make_thresh(8, 8, &pixels);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
 
         // Find a point on the boundary x=3→4 (dx=1)
         let boundary_pts: Vec<&Pt> = clusters
@@ -254,7 +276,7 @@ mod tests {
         pixels[55] = 255; // one pixel
         let img = make_thresh(10, 10, &pixels);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
         // White component has only 1 pixel, below threshold of 25
         assert!(clusters.is_empty());
     }
@@ -276,7 +298,7 @@ mod tests {
         }
         let img = make_thresh(size, size, &pixels);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
 
         // Collect all midpoints across all clusters
         let mut all_points: Vec<(u16, u16)> = clusters
@@ -312,12 +334,12 @@ mod tests {
         let mut uf = run_cc(&img);
 
         // With min_cluster_size=1, we get clusters
-        let all = gradient_clusters(&img, &mut uf, 1, &mut Vec::new());
+        let all = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
         assert!(!all.is_empty());
 
         // With a very high threshold, all clusters are filtered out
         let mut uf2 = run_cc(&img);
-        let filtered = gradient_clusters(&img, &mut uf2, 100_000, &mut Vec::new());
+        let filtered = gradient_clusters(&img, &mut uf2, 100_000, &mut Vec::new(), &mut Vec::new());
         assert!(filtered.is_empty());
     }
 
@@ -332,7 +354,7 @@ mod tests {
         }
         let img = make_thresh(8, 8, &pixels);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
         // No boundary between black and white (only black and unknown)
         assert!(clusters.is_empty());
     }

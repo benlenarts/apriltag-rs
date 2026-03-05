@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 pub mod catalog;
 pub mod distortion;
 pub mod metrics;
