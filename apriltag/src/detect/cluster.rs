@@ -304,7 +304,7 @@ mod tests {
     fn no_clusters_in_uniform_image() {
         let img = make_thresh(8, 8, &vec![0u8; 64]);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 5, &mut ClusterMap::new());
+        let clusters = gradient_clusters(&img, &mut uf, 5, &mut ClusterMap::default());
         assert!(clusters.is_empty());
     }
 
