@@ -21,3 +21,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Quad detection from clustered edge segments
 - Homography-based decoding and tag family matching
 - CI pipeline with check, clippy, test, fmt, and WASM build jobs
+- Root `README.md` with project description, usage examples, and build instructions
+- `LICENSE` file with BSD 2-Clause license (matching upstream AprilTag)
