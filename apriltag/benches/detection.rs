@@ -408,6 +408,12 @@ fn bench_end_to_end_reuse(c: &mut Criterion) {
 /// Build a 4000x3000 image with ~100 tag36h11 tags in a grid, simulating
 /// a high-resolution camera scene (e.g. industrial inspection, large-area
 /// tracking). Tags are 200px each (20px/cell × 10 cells) with 100px gaps.
+///
+/// Includes realistic distortions:
+/// - Gaussian noise (sigma ~15)
+/// - Lighting gradient (brighter left, darker right)
+/// - Reduced contrast (tags rendered at 20/235 instead of 0/255)
+/// - Slight blur via 2x2 box averaging
 fn build_highres_image() -> ImageU8 {
     let fam = family::tag36h11();
     let scale = 20u32; // 20px per grid cell
@@ -416,12 +422,14 @@ fn build_highres_image() -> ImageU8 {
     let (w, h) = (4000u32, 3000u32);
 
     let mut img = ImageU8::new(w, h);
+    // Gray-128 base background (lighting gradient applied later)
     for y in 0..h {
         for x in 0..w {
-            img.set(x, y, 255);
+            img.set(x, y, 128);
         }
     }
 
+    // Render tags with reduced contrast (dark=30, light=225)
     let mut code_idx = 0;
     let mut oy = 50u32;
     while oy + tag_px < h {
@@ -431,8 +439,8 @@ fn build_highres_image() -> ImageU8 {
             for ty in 0..rendered.grid_size {
                 for tx in 0..rendered.grid_size {
                     let val = match rendered.pixel(tx, ty) {
-                        Pixel::Black => 0u8,
-                        Pixel::White | Pixel::Transparent => 255u8,
+                        Pixel::Black => 30u8,
+                        Pixel::White | Pixel::Transparent => 225u8,
                     };
                     for dy in 0..scale {
                         for dx in 0..scale {
@@ -451,7 +459,44 @@ fn build_highres_image() -> ImageU8 {
         oy += spacing;
     }
 
-    img
+    // Lighting gradient: left side +40, right side -40
+    for y in 0..h {
+        for x in 0..w {
+            let gradient = 40.0 - 80.0 * (x as f32 / w as f32);
+            let v = img.get(x, y) as f32 + gradient;
+            img.set(x, y, v.clamp(0.0, 255.0) as u8);
+        }
+    }
+
+    // Gaussian noise (sigma ~15, deterministic LCG)
+    let mut rng: u32 = 0xCAFE_BABE;
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum: i32 = 0;
+            for _ in 0..4 {
+                rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
+                sum += ((rng >> 16) % 256) as i32 - 128;
+            }
+            let noise = sum * 15 / (4 * 37); // ~sigma 15
+            let v = img.get(x, y) as i32 + noise;
+            img.set(x, y, v.clamp(0, 255) as u8);
+        }
+    }
+
+    // Slight blur: 2x2 box average
+    let mut blurred = ImageU8::new(w, h);
+    for y in 0..h - 1 {
+        for x in 0..w - 1 {
+            let avg = (img.get(x, y) as u32
+                + img.get(x + 1, y) as u32
+                + img.get(x, y + 1) as u32
+                + img.get(x + 1, y + 1) as u32)
+                / 4;
+            blurred.set(x, y, avg as u8);
+        }
+    }
+
+    blurred
 }
 
 fn bench_end_to_end_highres(c: &mut Criterion) {
@@ -472,8 +517,8 @@ fn bench_end_to_end_highres(c: &mut Criterion) {
         img.height
     );
     assert!(
-        dets.len() >= 90,
-        "highres image should detect ~100 tags, got {}",
+        dets.len() >= 50,
+        "highres image should detect many tags, got {}",
         dets.len()
     );
 
