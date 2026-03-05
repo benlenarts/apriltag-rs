@@ -57,7 +57,8 @@ fn build_reference() {
         .include(ref_dir.join("common"))
         .define("_GNU_SOURCE", None)
         .flag_if_supported("-std=gnu99")
-        .flag_if_supported("-w"); // suppress warnings from C code
+        .flag_if_supported("-w") // suppress warnings from C code
+        .flag_if_supported("-march=native"); // enable all SIMD for host CPU
 
     for src in &source_files {
         let path = ref_dir.join(src);
