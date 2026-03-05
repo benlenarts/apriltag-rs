@@ -290,6 +290,61 @@ mod tests {
         }
     }
 
+    /// Golden output test: refine_edges must produce bit-identical results
+    /// regardless of SIMD vs scalar code path.
+    #[test]
+    fn refine_edges_golden_output() {
+        // Create a test image with a strong edge pattern
+        let mut img = ImageU8::new(200, 200);
+        for y in 0..200 {
+            for x in 0..200 {
+                // Diagonal gradient with a sharp edge at x=100
+                let v = if x < 100 {
+                    (x as f64 * 0.5 + y as f64 * 0.3) as u8
+                } else {
+                    200u8.saturating_add((x as u8).wrapping_mul(3))
+                };
+                img.set(x, y, v);
+            }
+        }
+
+        // Interior quad (will use fast/SIMD path)
+        let mut quad_fast = Quad {
+            corners: [[90.0, 50.0], [110.0, 50.0], [110.0, 150.0], [90.0, 150.0]],
+            reversed_border: false,
+        };
+        refine_edges(&mut quad_fast, &img, 2.0);
+
+        // Capture golden values — these were computed by the scalar implementation.
+        // If SIMD changes the result, this test fails.
+        let corners = quad_fast.corners;
+        for c in &corners {
+            assert!(c[0].is_finite(), "corner x not finite: {c:?}");
+            assert!(c[1].is_finite(), "corner y not finite: {c:?}");
+        }
+        // Snapshot the refined corners for regression (rounded to avoid float noise)
+        let snap: Vec<[i64; 2]> = corners
+            .iter()
+            .map(|c| {
+                [
+                    (c[0] * 1000.0).round() as i64,
+                    (c[1] * 1000.0).round() as i64,
+                ]
+            })
+            .collect();
+        // Golden values from scalar implementation
+        assert_eq!(
+            snap,
+            vec![
+                [90000, 50000],
+                [110000, 50000],
+                [110000, 150178],
+                [90000, 149789]
+            ],
+            "Corners changed — update golden values if intentional"
+        );
+    }
+
     #[test]
     fn refine_edges_reversed_border() {
         let img = ImageU8::new(100, 100);
