@@ -1,5 +1,3 @@
-const UNSET: u32 = 0xFFFF_FFFF;
-
 /// Packed parent (low 32 bits) + size (high 32 bits) in a single u64.
 /// Sharing a cache line eliminates one memory access per find/union step.
 #[inline(always)]
@@ -22,17 +20,27 @@ fn unpack_size(v: u64) -> u32 {
 /// Parent and size are interleaved in a single `Vec<u64>` so that both
 /// fields share a cache line, matching the C reference implementation's
 /// layout and eliminating extra memory accesses.
+///
+/// Elements are eagerly initialized: each element starts as its own
+/// representative with size 0, eliminating a branch from `find()`.
 pub struct UnionFind {
     /// Packed entries: low 32 bits = parent, high 32 bits = size.
     data: Vec<u64>,
 }
 
+/// Initialize `data` so that each element is its own representative.
+fn init_data(data: &mut Vec<u64>, n: usize) {
+    data.clear();
+    data.reserve(n.saturating_sub(data.capacity()));
+    data.extend((0..n as u32).map(|i| pack(i, 0)));
+}
+
 impl UnionFind {
-    /// Create a new union-find with `n` elements, all initially unset.
+    /// Create a new union-find with `n` elements, each its own representative.
     pub fn new(n: usize) -> Self {
-        Self {
-            data: vec![pack(UNSET, 0); n],
-        }
+        let mut data = Vec::new();
+        init_data(&mut data, n);
+        Self { data }
     }
 
     /// Create an empty union-find with no elements and no allocation.
@@ -46,19 +54,13 @@ impl UnionFind {
     /// if the internal vectors already have sufficient capacity, no
     /// allocation occurs.
     pub fn reset(&mut self, n: usize) {
-        self.data.clear();
-        self.data.resize(n, pack(UNSET, 0));
+        init_data(&mut self.data, n);
     }
 
     /// Find the representative of the set containing `id`, with path halving.
-    ///
-    /// If `id` has not been initialized, it becomes its own representative.
+    #[inline]
     pub fn find(&mut self, mut id: u32) -> u32 {
-        let parent = unpack_parent(self.data[id as usize]);
-        if parent == UNSET {
-            self.data[id as usize] = pack(id, 0);
-            return id;
-        }
+        assert!((id as usize) < self.data.len());
         while unpack_parent(self.data[id as usize]) != id {
             let parent = unpack_parent(self.data[id as usize]);
             let grandparent = unpack_parent(self.data[parent as usize]);
@@ -73,6 +75,7 @@ impl UnionFind {
     /// Union the sets containing `a` and `b`. Returns the new representative.
     ///
     /// Uses weighted union (larger tree becomes root).
+    #[inline]
     pub fn union(&mut self, a: u32, b: u32) -> u32 {
         let ra = self.find(a);
         let rb = self.find(b);
