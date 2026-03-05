@@ -56,6 +56,21 @@ struct FittedLine {
     ny: f64,
 }
 
+/// Reusable scratch buffers for quad fitting, avoiding per-cluster allocation.
+struct QuadFitBufs {
+    lfps: Vec<LineFitPt>,
+    errors: Vec<f64>,
+}
+
+impl QuadFitBufs {
+    fn new() -> Self {
+        Self {
+            lfps: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+}
+
 /// Fit quads from a list of clusters.
 pub fn fit_quads(
     clusters: &mut [Cluster],
@@ -74,20 +89,23 @@ pub fn fit_quads(
     {
         clusters
             .par_iter_mut()
-            .filter_map(|cluster| {
+            .map_init(QuadFitBufs::new, |bufs, cluster| {
                 fit_quad(
                     cluster,
                     params,
                     max_perimeter,
                     normal_border,
                     reversed_border,
+                    bufs,
                 )
             })
+            .flatten()
             .collect()
     }
 
     #[cfg(not(feature = "parallel"))]
     {
+        let mut bufs = QuadFitBufs::new();
         clusters
             .iter_mut()
             .filter_map(|cluster| {
@@ -97,6 +115,7 @@ pub fn fit_quads(
                     max_perimeter,
                     normal_border,
                     reversed_border,
+                    &mut bufs,
                 )
             })
             .collect()
@@ -110,6 +129,7 @@ fn fit_quad(
     max_perimeter: usize,
     normal_border: bool,
     reversed_border: bool,
+    bufs: &mut QuadFitBufs,
 ) -> Option<Quad> {
     let sz = cluster.points.len();
 
@@ -137,13 +157,13 @@ fn fit_quad(
     sort_by_angle(&mut cluster.points);
 
     // Build cumulative moments
-    let lfps = build_line_fit_pts(&cluster.points);
+    build_line_fit_pts(&cluster.points, &mut bufs.lfps);
 
     // Corner detection
-    let corners_idx = find_corners(&cluster.points, &lfps, params)?;
+    let corners_idx = find_corners(&bufs.lfps, &mut bufs.errors, params)?;
 
     // Fit lines through each segment and compute corners
-    let quad_corners = compute_quad_corners(&lfps, &corners_idx, sz)?;
+    let quad_corners = compute_quad_corners(&bufs.lfps, &corners_idx, sz)?;
 
     // Validate quad
     validate_quad(&quad_corners, params)?;
@@ -224,9 +244,10 @@ fn grad_weight(gx: i16, gy: i16) -> f64 {
     TABLE[((gx != 0) as usize) << 1 | (gy != 0) as usize]
 }
 
-/// Build cumulative weighted moments for line fitting.
-fn build_line_fit_pts(points: &[Pt]) -> Vec<LineFitPt> {
-    let mut lfps = Vec::with_capacity(points.len());
+/// Build cumulative weighted moments for line fitting into a reusable buffer.
+fn build_line_fit_pts(points: &[Pt], lfps: &mut Vec<LineFitPt>) {
+    lfps.clear();
+    lfps.reserve(points.len().saturating_sub(lfps.capacity()));
     let mut cum = LineFitPt::default();
 
     for p in points {
@@ -243,7 +264,6 @@ fn build_line_fit_pts(points: &[Pt]) -> Vec<LineFitPt> {
 
         lfps.push(cum);
     }
-    lfps
 }
 
 /// Compute line fit moments for a range [i0, i1] (inclusive, wrapping).
@@ -344,15 +364,15 @@ fn fit_line(moments: &LineFitPt) -> Option<(FittedLine, f64)> {
 
 /// Find 4 corner indices that partition the sorted points into quad segments.
 fn find_corners(
-    points: &[Pt],
     lfps: &[LineFitPt],
+    errors: &mut Vec<f64>,
     params: &QuadThreshParams,
 ) -> Option<[usize; 4]> {
-    let sz = points.len();
+    let sz = lfps.len();
     let ksz = 20.min(sz / 12).max(1);
 
     // Compute line-fit error at each point
-    let mut errors: Vec<f64> = Vec::with_capacity(sz);
+    errors.clear();
     for i in 0..sz {
         let i0 = (i + sz - ksz) % sz;
         let i1 = (i + ksz) % sz;
@@ -362,7 +382,7 @@ fn find_corners(
     }
 
     // Smooth errors with Gaussian-like filter
-    smooth_errors(&mut errors);
+    smooth_errors(errors);
 
     // Find local maxima (use >= on left to handle plateaus from synthetic images)
     let mut maxima: Vec<(usize, f64)> = Vec::new();
@@ -736,7 +756,8 @@ mod tests {
                 slope: 0.0,
             },
         ];
-        let lfps = build_line_fit_pts(&points);
+        let mut lfps = Vec::new();
+        build_line_fit_pts(&points, &mut lfps);
         let m = range_moments(&lfps, 0, 1);
         assert!((m.w - lfps[1].w).abs() < 1e-10);
     }
@@ -766,7 +787,8 @@ mod tests {
                 slope: 0.0,
             },
         ];
-        let lfps = build_line_fit_pts(&points);
+        let mut lfps = Vec::new();
+        build_line_fit_pts(&points, &mut lfps);
         // Wrapping range [2, 0] = point 2 + point 0
         let m = range_moments(&lfps, 2, 0);
         let w2 = lfps[2].w - lfps[1].w; // weight of point 2
@@ -801,7 +823,8 @@ mod tests {
                 slope: 0.0,
             },
         ];
-        let lfps = build_line_fit_pts(&points);
+        let mut lfps = Vec::new();
+        build_line_fit_pts(&points, &mut lfps);
         let total = &lfps[2];
         let py = total.my / total.w;
         assert!(
