@@ -82,6 +82,27 @@ Enable only the families you need to reduce binary size:
 apriltag = { version = "0.1", default-features = false, features = ["family-tag36h11"] }
 ```
 
+## Performance
+
+Detection performance matches the [reference C implementation](https://github.com/AprilRobotics/apriltag) (apriltag3). Benchmarked on a realistic 4000×3000 scene with 117 tags at varied rotations and perspective tilts, plus noise (sigma 15), lighting gradient, reduced contrast, and blur:
+
+| Scenario | Rust | C reference | Ratio |
+|----------|------|-------------|-------|
+| highres-4000×3000 (117 tags) | 142 ms | 142 ms | 1.00× |
+| 41-scenario suite (all conditions) | 17.4 ms | 17.2 ms | 1.01× |
+
+The 41-scenario suite covers rotation, perspective, scale (16–200px tags), noise (sigma 5–40), contrast (10–50%), lighting gradients, blur, multi-tag, occlusion, and decimation modes.
+
+Run the benchmarks yourself:
+
+```bash
+# Criterion micro-benchmarks (per-stage and end-to-end)
+cargo bench -p apriltag
+
+# Rust vs C reference comparison (requires scripts/fetch-references.sh first)
+cargo run -p apriltag-bench --features reference --release -- benchmark
+```
+
 ## References
 
 - Olson, E. "AprilTag: A robust and flexible visual fiducial system." ICRA 2011.
