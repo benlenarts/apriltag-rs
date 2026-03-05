@@ -98,7 +98,13 @@ fn bench_gradient_clusters(c: &mut Criterion) {
         b.iter(|| {
             let mut uf = UnionFind::empty();
             connected_components(&threshed, &mut uf);
-            gradient_clusters(black_box(&threshed), &mut uf, 5, &mut Vec::new())
+            gradient_clusters(
+                black_box(&threshed),
+                &mut uf,
+                5,
+                &mut Vec::new(),
+                &mut Vec::new(),
+            )
         })
     });
 }
@@ -109,7 +115,7 @@ fn bench_fit_quads(c: &mut Criterion) {
     let threshed = threshold(&decimated, 5, false, Vec::new());
     let mut uf = UnionFind::empty();
     connected_components(&threshed, &mut uf);
-    let clusters = gradient_clusters(&threshed, &mut uf, 5, &mut Vec::new());
+    let clusters = gradient_clusters(&threshed, &mut uf, 5, &mut Vec::new(), &mut Vec::new());
     let qtp = QuadThreshParams::default();
     c.bench_function("fit_quads", |b| {
         b.iter(|| {
@@ -183,7 +189,7 @@ fn bench_decode(c: &mut Criterion) {
     let threshed = threshold(&decimated, 5, false, Vec::new());
     let mut uf = UnionFind::empty();
     connected_components(&threshed, &mut uf);
-    let mut clusters = gradient_clusters(&threshed, &mut uf, 5, &mut Vec::new());
+    let mut clusters = gradient_clusters(&threshed, &mut uf, 5, &mut Vec::new(), &mut Vec::new());
     let qtp = QuadThreshParams::default();
     let quads = fit_quads(
         &mut clusters,
