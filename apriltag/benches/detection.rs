@@ -405,58 +405,118 @@ fn bench_end_to_end_reuse(c: &mut Criterion) {
     });
 }
 
-/// Build a 4000x3000 image with ~100 tag36h11 tags in a grid, simulating
-/// a high-resolution camera scene (e.g. industrial inspection, large-area
-/// tracking). Tags are 200px each (20px/cell × 10 cells) with 100px gaps.
-///
-/// Includes realistic distortions:
-/// - Gaussian noise (sigma ~15)
-/// - Lighting gradient (brighter left, darker right)
-/// - Reduced contrast (tags rendered at 20/235 instead of 0/255)
-/// - Slight blur via 2x2 box averaging
+/// Build a 4000x3000 image with ~100 tag36h11 tags, simulating a realistic
+/// high-resolution camera scene. Each tag has a unique rotation and mild
+/// perspective tilt. Global distortions include noise, a lighting gradient,
+/// and slight blur.
 fn build_highres_image() -> ImageU8 {
     let fam = family::tag36h11();
-    let scale = 20u32; // 20px per grid cell
-    let tag_px = fam.layout.grid_size as u32 * scale; // 200px per tag
-    let spacing = tag_px + 100; // 100px gap
+    let grid = fam.layout.grid_size as f64; // 10 for tag36h11
+    let tag_half = 100.0; // half-size in pixels (200px tags)
+    let spacing = 300.0; // center-to-center distance
     let (w, h) = (4000u32, 3000u32);
 
     let mut img = ImageU8::new(w, h);
-    // Gray-128 base background (lighting gradient applied later)
     for y in 0..h {
         for x in 0..w {
             img.set(x, y, 128);
         }
     }
 
-    // Render tags with reduced contrast (dark=30, light=225)
-    let mut code_idx = 0;
-    let mut oy = 50u32;
-    while oy + tag_px < h {
-        let mut ox = 50u32;
-        while ox + tag_px < w {
+    // Deterministic pseudo-random via LCG (used for per-tag variation)
+    let mut rng: u32 = 0xBAAD_F00D;
+    let next_f32 = |rng: &mut u32| -> f32 {
+        *rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
+        ((*rng >> 16) as f32) / 65535.0 // 0.0 .. 1.0
+    };
+
+    let mut code_idx = 0usize;
+    let mut cy = 180.0f64;
+    while cy + tag_half < h as f64 - 10.0 {
+        let mut cx = 180.0f64;
+        while cx + tag_half < w as f64 - 10.0 {
             let rendered = render::render(&fam.layout, fam.codes[code_idx % fam.codes.len()]);
-            for ty in 0..rendered.grid_size {
-                for tx in 0..rendered.grid_size {
-                    let val = match rendered.pixel(tx, ty) {
+
+            // Per-tag rotation: -30° to +30°
+            let angle = (next_f32(&mut rng) - 0.5) * 60.0_f32.to_radians();
+            let cos_a = angle.cos() as f64;
+            let sin_a = angle.sin() as f64;
+
+            // Per-tag perspective tilt: foreshorten top or bottom by 0–20%
+            let tilt = (next_f32(&mut rng) - 0.5) * 0.4; // -0.2 .. +0.2
+            let top_scale = 1.0 - tilt as f64; // shrink/grow top edge
+            let bot_scale = 1.0 + tilt as f64; // opposite for bottom
+
+            // Compute the 4 destination corners (in image coords) of the tag quad.
+            // Tag corners in tag-local coords: (-1,-1), (1,-1), (1,1), (-1,1)
+            let corners: [(f64, f64); 4] = [
+                (-top_scale, -1.0),
+                (top_scale, -1.0),
+                (bot_scale, 1.0),
+                (-bot_scale, 1.0),
+            ];
+            let dst: [(f64, f64); 4] = corners.map(|(lx, ly)| {
+                let rx = lx * cos_a - ly * sin_a;
+                let ry = lx * sin_a + ly * cos_a;
+                (cx + rx * tag_half, cy + ry * tag_half)
+            });
+
+            // Bounding box of destination quad
+            let min_x = dst.iter().map(|c| c.0).fold(f64::MAX, f64::min);
+            let max_x = dst.iter().map(|c| c.0).fold(f64::MIN, f64::max);
+            let min_y = dst.iter().map(|c| c.1).fold(f64::MAX, f64::min);
+            let max_y = dst.iter().map(|c| c.1).fold(f64::MIN, f64::max);
+
+            let x0 = (min_x as i32).max(0) as u32;
+            let x1 = ((max_x as i32) + 1).min(w as i32) as u32;
+            let y0 = (min_y as i32).max(0) as u32;
+            let y1 = ((max_y as i32) + 1).min(h as i32) as u32;
+
+            // Inverse bilinear: for each pixel in the bounding box, map back
+            // to tag-local coords and sample the rendered tag.
+            // We use the inverse of the affine part (rotation + perspective corners).
+            // For simplicity, use the inverse of the affine transform (ignoring
+            // the mild perspective — it's close enough for benchmarking).
+            let inv_det = cos_a * cos_a + sin_a * sin_a; // = 1.0
+            for py in y0..y1 {
+                for px in x0..x1 {
+                    // Map pixel back to tag-local [-1, 1] space
+                    let dx = px as f64 - cx;
+                    let dy = py as f64 - cy;
+                    let lx = (dx * cos_a + dy * sin_a) / (tag_half * inv_det);
+                    let ly = (-dx * sin_a + dy * cos_a) / (tag_half * inv_det);
+
+                    // Apply inverse perspective (approximate: scale x by row)
+                    let row_scale = if ly <= 0.0 {
+                        top_scale as f64 + (1.0 + ly) * (1.0 - top_scale as f64)
+                    } else {
+                        1.0 + ly * (bot_scale as f64 - 1.0)
+                    };
+                    let lx_corr = lx / row_scale;
+
+                    if lx_corr < -1.0 || lx_corr > 1.0 || ly < -1.0 || ly > 1.0 {
+                        continue;
+                    }
+
+                    // Map [-1, 1] to grid coords [0, grid)
+                    let gx = ((lx_corr + 1.0) / 2.0 * grid).floor() as i32;
+                    let gy = ((ly + 1.0) / 2.0 * grid).floor() as i32;
+                    if gx < 0 || gx >= grid as i32 || gy < 0 || gy >= grid as i32 {
+                        continue;
+                    }
+
+                    let val = match rendered.pixel(gx as usize, gy as usize) {
                         Pixel::Black => 30u8,
                         Pixel::White | Pixel::Transparent => 225u8,
                     };
-                    for dy in 0..scale {
-                        for dx in 0..scale {
-                            img.set(
-                                ox + tx as u32 * scale + dx,
-                                oy + ty as u32 * scale + dy,
-                                val,
-                            );
-                        }
-                    }
+                    img.set(px, py, val);
                 }
             }
+
             code_idx += 1;
-            ox += spacing;
+            cx += spacing;
         }
-        oy += spacing;
+        cy += spacing;
     }
 
     // Lighting gradient: left side +40, right side -40
@@ -469,13 +529,13 @@ fn build_highres_image() -> ImageU8 {
     }
 
     // Gaussian noise (sigma ~15, deterministic LCG)
-    let mut rng: u32 = 0xCAFE_BABE;
+    let mut noise_rng: u32 = 0xCAFE_BABE;
     for y in 0..h {
         for x in 0..w {
             let mut sum: i32 = 0;
             for _ in 0..4 {
-                rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
-                sum += ((rng >> 16) % 256) as i32 - 128;
+                noise_rng = noise_rng.wrapping_mul(1103515245).wrapping_add(12345);
+                sum += ((noise_rng >> 16) % 256) as i32 - 128;
             }
             let noise = sum * 15 / (4 * 37); // ~sigma 15
             let v = img.get(x, y) as i32 + noise;
