@@ -405,6 +405,83 @@ fn bench_end_to_end_reuse(c: &mut Criterion) {
     });
 }
 
+/// Build a 4000x3000 image with ~100 tag36h11 tags in a grid, simulating
+/// a high-resolution camera scene (e.g. industrial inspection, large-area
+/// tracking). Tags are 200px each (20px/cell × 10 cells) with 100px gaps.
+fn build_highres_image() -> ImageU8 {
+    let fam = family::tag36h11();
+    let scale = 20u32; // 20px per grid cell
+    let tag_px = fam.layout.grid_size as u32 * scale; // 200px per tag
+    let spacing = tag_px + 100; // 100px gap
+    let (w, h) = (4000u32, 3000u32);
+
+    let mut img = ImageU8::new(w, h);
+    for y in 0..h {
+        for x in 0..w {
+            img.set(x, y, 255);
+        }
+    }
+
+    let mut code_idx = 0;
+    let mut oy = 50u32;
+    while oy + tag_px < h {
+        let mut ox = 50u32;
+        while ox + tag_px < w {
+            let rendered = render::render(&fam.layout, fam.codes[code_idx % fam.codes.len()]);
+            for ty in 0..rendered.grid_size {
+                for tx in 0..rendered.grid_size {
+                    let val = match rendered.pixel(tx, ty) {
+                        Pixel::Black => 0u8,
+                        Pixel::White | Pixel::Transparent => 255u8,
+                    };
+                    for dy in 0..scale {
+                        for dx in 0..scale {
+                            img.set(
+                                ox + tx as u32 * scale + dx,
+                                oy + ty as u32 * scale + dy,
+                                val,
+                            );
+                        }
+                    }
+                }
+            }
+            code_idx += 1;
+            ox += spacing;
+        }
+        oy += spacing;
+    }
+
+    img
+}
+
+fn bench_end_to_end_highres(c: &mut Criterion) {
+    let img = build_highres_image();
+    let config = DetectorConfig {
+        quad_sigma: 0.8,
+        ..DetectorConfig::default()
+    };
+    let mut detector = Detector::new(config);
+    detector.add_family(family::tag36h11(), 2);
+
+    let mut state = DetectorState::new();
+    let dets = detector.detect_with_state(&img, &mut state);
+    eprintln!(
+        "highres 4000x3000: detected {} tags (image {}x{})",
+        dets.len(),
+        img.width,
+        img.height
+    );
+    assert!(
+        dets.len() >= 90,
+        "highres image should detect ~100 tags, got {}",
+        dets.len()
+    );
+
+    c.bench_function("end_to_end_highres_4000x3000", |b| {
+        b.iter(|| detector.detect_with_state(black_box(&img), &mut state))
+    });
+}
+
 criterion_group!(
     benches,
     bench_decimate,
@@ -419,5 +496,6 @@ criterion_group!(
     bench_end_to_end,
     bench_end_to_end_multi,
     bench_end_to_end_reuse,
+    bench_end_to_end_highres,
 );
 criterion_main!(benches);
