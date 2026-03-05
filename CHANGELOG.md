@@ -23,3 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI pipeline with check, clippy, test, fmt, and WASM build jobs
 - Root `README.md` with project description, usage examples, and build instructions
 - `LICENSE` file with BSD 2-Clause license (matching upstream AprilTag)
+- `UnionFind::root_size()` method to read set size without redundant `find()` call
+
+### Changed
+
+- Quad fitting: use unstable sort for angular sorting, eliminate allocation in `smooth_errors`, reuse buffers across clusters
+- `gradient_clusters` sort uses index indirection (12-byte pairs instead of 20-byte), reducing data movement by 40%
+- `gradient_clusters` inner loop restricted to interior pixels, uses direct buffer indexing and single `find()` per pixel
+- `#![forbid(unsafe_code)]` enforced across all crates (`apriltag-bench` uses `deny` for FFI module)
