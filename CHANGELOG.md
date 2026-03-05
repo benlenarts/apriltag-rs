@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Union-find segmentation and clustering
 - Quad detection from clustered edge segments
 - Homography-based decoding and tag family matching
-- CI pipeline with check, clippy, test, fmt, and WASM build jobs
+- CI pipeline with check, clippy, test, fmt, coverage, and WASM build jobs
 - Root `README.md` with project description, usage examples, and build instructions
 - `LICENSE` file with BSD 2-Clause license (matching upstream AprilTag)
+
+### Changed
+
+- Coverage target now excludes CLI/WASM thin wrappers (`apriltag-gen-cli`, `apriltag-detect-cli`, `apriltag-wasm`, `apriltag-bench-wasm`, `apriltag-bench/src/main.rs`)
