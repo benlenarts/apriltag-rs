@@ -84,6 +84,32 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Get reference detection commit hash
+        id: ref-hash
+        run: echo "sha=$(git ls-remote https://github.com/AprilRobotics/apriltag.git HEAD | cut -f1)" >> "$GITHUB_OUTPUT"
+      - name: Cache reference detection
+        id: cache-ref
+        uses: actions/cache@v4
+        with:
+          path: docs/reference-detection
+          key: reference-detection-${{ steps.ref-hash.outputs.sha }}
+      - name: Fetch reference detection
+        if: steps.cache-ref.outputs.cache-hit != 'true'
+        run: git clone --depth 1 https://github.com/AprilRobotics/apriltag.git docs/reference-detection
+      - name: Run coverage
+        run: cargo llvm-cov --ignore-filename-regex 'apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/main\.rs'
+
   wasm:
     name: WASM build
     runs-on: ubuntu-latest

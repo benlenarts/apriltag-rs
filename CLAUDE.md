@@ -69,14 +69,14 @@ Run `scripts/fetch-references.sh` to download papers and clone reference repos. 
 **Target: 100% test coverage.** TDD is the primary strategy — code written to pass a test is covered by definition. When a coverage gap appears, ask whether the uncovered code is reachable. If it isn't, delete it; unreachable code is a design problem, not a testing problem. If it is reachable, test it through the public API with a realistic scenario (bad input, boundary condition, corrupt data). Never write a test that exists only to hit a line — every test must assert meaningful behavior.
 
 ```bash
-# Quick summary (excludes CLI crate)
-cargo llvm-cov --ignore-filename-regex 'apriltag-gen-cli/'
+# Quick summary (excludes CLI/WASM thin wrappers)
+cargo llvm-cov --ignore-filename-regex 'apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/main\.rs'
 
 # Per-line detail (show uncovered lines)
-cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/'
+cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/main\.rs'
 
 # HTML report
-cargo llvm-cov --html --ignore-filename-regex 'apriltag-gen-cli/' && open target/llvm-cov/html/index.html
+cargo llvm-cov --html --ignore-filename-regex 'apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/main\.rs' && open target/llvm-cov/html/index.html
 ```
 
 After completing any feature or fix, run `cargo llvm-cov --text` and inspect for uncovered lines. If coverage is below 100%, add targeted tests before moving on. Each new test is its own atomic commit.
@@ -112,7 +112,7 @@ See `docs/commands.md` for the full reference (testing, coverage, WASM, bench ha
 
 ```bash
 cargo test                                           # run all tests
-cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/'  # coverage
+cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/main\.rs'  # coverage
 cargo run -p apriltag-bench -- regression            # bench regression gate
 cargo clippy -- -D warnings                          # lint
 cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen  # WASM check

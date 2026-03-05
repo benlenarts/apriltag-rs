@@ -13,14 +13,14 @@ cargo test -- --nocapture
 ## Coverage
 
 ```bash
-# Quick summary (excludes CLI crate)
-cargo llvm-cov --ignore-filename-regex 'apriltag-gen-cli/'
+# Quick summary (excludes CLI/WASM thin wrappers)
+cargo llvm-cov --ignore-filename-regex 'apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/main\.rs'
 
 # Per-line detail (show uncovered lines)
-cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/'
+cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/main\.rs'
 
 # HTML report
-cargo llvm-cov --html --ignore-filename-regex 'apriltag-gen-cli/' && open target/llvm-cov/html/index.html
+cargo llvm-cov --html --ignore-filename-regex 'apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/main\.rs' && open target/llvm-cov/html/index.html
 ```
 
 ## WASM
