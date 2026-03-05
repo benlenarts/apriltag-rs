@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use wasm_bindgen::prelude::*;
 
 use apriltag_bench::distortion::{self, Distortion};

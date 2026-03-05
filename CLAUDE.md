@@ -120,6 +120,7 @@ cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen  # WASM 
 
 ## Code Style
 
+- **No `unsafe` code** — `unsafe` is completely disallowed in this project. No `unsafe` blocks, `unsafe fn`, `unsafe impl`, or `unsafe trait`. Find safe alternatives instead.
 - Idiomatic Rust with a preference for pattern matching and 'functional' iteration
 - Follow standard `rustfmt` formatting
 - Use `clippy` with default lints: `cargo clippy -- -D warnings`

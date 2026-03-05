@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use serde::{Deserialize, Serialize};
 use tsify_next::Tsify;
 use wasm_bindgen::prelude::*;

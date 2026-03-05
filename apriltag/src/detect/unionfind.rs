@@ -53,27 +53,19 @@ impl UnionFind {
     /// Find the representative of the set containing `id`, with path halving.
     ///
     /// If `id` has not been initialized, it becomes its own representative.
-    ///
-    /// # Safety invariant
-    /// All indices stored in parent fields are < data.len(), guaranteed by
-    /// the public API (new/reset set bounds, union only stores find results).
     pub fn find(&mut self, mut id: u32) -> u32 {
-        // SAFETY: callers guarantee id < data.len() (set by new/reset/union).
-        // Parent values are always valid indices (set to self or another valid id).
-        unsafe {
-            let parent = unpack_parent(*self.data.get_unchecked(id as usize));
-            if parent == UNSET {
-                *self.data.get_unchecked_mut(id as usize) = pack(id, 0);
-                return id;
-            }
-            while unpack_parent(*self.data.get_unchecked(id as usize)) != id {
-                let parent = unpack_parent(*self.data.get_unchecked(id as usize));
-                let grandparent = unpack_parent(*self.data.get_unchecked(parent as usize));
-                // Path halving: point to grandparent, preserving size
-                let size = unpack_size(*self.data.get_unchecked(id as usize));
-                *self.data.get_unchecked_mut(id as usize) = pack(grandparent, size);
-                id = grandparent;
-            }
+        let parent = unpack_parent(self.data[id as usize]);
+        if parent == UNSET {
+            self.data[id as usize] = pack(id, 0);
+            return id;
+        }
+        while unpack_parent(self.data[id as usize]) != id {
+            let parent = unpack_parent(self.data[id as usize]);
+            let grandparent = unpack_parent(self.data[parent as usize]);
+            // Path halving: point to grandparent, preserving size
+            let size = unpack_size(self.data[id as usize]);
+            self.data[id as usize] = pack(grandparent, size);
+            id = grandparent;
         }
         id
     }
