@@ -15,7 +15,7 @@ fn unpack_size(v: u64) -> u32 {
     (v >> 32) as u32
 }
 
-/// Weighted union-find (disjoint-set) with path halving.
+/// Weighted union-find (disjoint-set) with path splitting.
 ///
 /// Parent and size are interleaved in a single `Vec<u64>` so that both
 /// fields share a cache line, matching the C reference implementation's
@@ -57,19 +57,26 @@ impl UnionFind {
         init_data(&mut self.data, n);
     }
 
-    /// Find the representative of the set containing `id`, with path halving.
+    /// Find the representative of the set containing `id`, with path splitting.
+    ///
+    /// Path splitting points every node on the find path to its grandparent,
+    /// then advances to the old parent (not the grandparent). This visits
+    /// every node on the path, compressing more aggressively per traversal
+    /// than path halving.
     #[inline]
     pub fn find(&mut self, mut id: u32) -> u32 {
         assert!((id as usize) < self.data.len());
-        while unpack_parent(self.data[id as usize]) != id {
-            let parent = unpack_parent(self.data[id as usize]);
+        loop {
+            let entry = self.data[id as usize];
+            let parent = unpack_parent(entry);
+            if parent == id {
+                return id;
+            }
             let grandparent = unpack_parent(self.data[parent as usize]);
-            // Path halving: point to grandparent, preserving size
-            let size = unpack_size(self.data[id as usize]);
-            self.data[id as usize] = pack(grandparent, size);
-            id = grandparent;
+            // Path splitting: point to grandparent, advance to old parent
+            self.data[id as usize] = pack(grandparent, unpack_size(entry));
+            id = parent;
         }
-        id
     }
 
     /// Union the sets containing `a` and `b`. Returns the new representative.
@@ -155,7 +162,7 @@ mod tests {
     }
 
     #[test]
-    fn path_halving_works() {
+    fn path_compression_works() {
         let mut uf = UnionFind::new(10);
         // Create a chain: 0→1→2→3
         uf.union(0, 1);
