@@ -11,6 +11,13 @@ pub fn refine_edges(quad: &mut Quad, img: &ImageU8, quad_decimate: f32) {
 
     let mut lines = [[0.0f64; 4]; 4]; // [px, py, nx, ny]
 
+    let steps = (2.0 * range * 4.0) as usize;
+    // Precomputed interpolation values: offsets from (n_min - 1) to (n_max + 1) in 0.25 steps.
+    // n ranges [-range, +range], so unique offsets span [-range-1, range+1].
+    // Count: steps + 1 (for g2 values at offsets n-1) + 8 (g1 at n+1 is 8 quarter-steps ahead).
+    let n_vals = steps + 9;
+    let mut vals: Vec<f64> = Vec::with_capacity(n_vals);
+
     for edge in 0..4 {
         let a = quad.corners[edge];
         let b = quad.corners[(edge + 1) % 4];
@@ -51,34 +58,42 @@ pub fn refine_edges(quad: &mut Quad, img: &ImageU8, quad_decimate: f32) {
             let x0 = alpha * b[0] + (1.0 - alpha) * a[0];
             let y0 = alpha * b[1] + (1.0 - alpha) * a[1];
 
+            // Precompute all interpolated values along the normal.
+            // The base offset starts at -range - 1.0 (the smallest offset needed for g2).
+            // vals[i] = interpolation at offset (base_offset + i * 0.25) from (x0, y0).
+            // Then: g2(step) = vals[step] (offset n - 1)
+            //        g1(step) = vals[step + 8] (offset n + 1, which is 8 quarter-steps ahead)
+            let base_offset = -range - 1.0;
+            vals.clear();
+            if use_fast {
+                for i in 0..n_vals {
+                    let offset = base_offset + i as f64 * 0.25;
+                    let px = x0 + offset * nx;
+                    let py = y0 + offset * ny;
+                    vals.push(img.interpolate_unclamped(px, py));
+                }
+            } else {
+                for i in 0..n_vals {
+                    let offset = base_offset + i as f64 * 0.25;
+                    let px = x0 + offset * nx;
+                    let py = y0 + offset * ny;
+                    vals.push(img.interpolate(px, py));
+                }
+            }
+
             let mut mn = 0.0f64;
             let mut mcount = 0.0f64;
 
-            let steps = (2.0 * range * 4.0) as i32;
             for step in 0..=steps {
-                let n = -range + step as f64 * 0.25;
-
-                let gx = x0 + n * nx;
-                let gy = y0 + n * ny;
-
-                // Sample gradient along the normal
-                let (g1, g2) = if use_fast {
-                    (
-                        img.interpolate_unclamped(gx + nx, gy + ny),
-                        img.interpolate_unclamped(gx - nx, gy - ny),
-                    )
-                } else {
-                    (
-                        img.interpolate(gx + nx, gy + ny),
-                        img.interpolate(gx - nx, gy - ny),
-                    )
-                };
+                let g2 = vals[step];
+                let g1 = vals[step + 8];
 
                 if g1 < g2 {
                     continue; // backwards gradient
                 }
 
                 let weight = (g2 - g1) * (g2 - g1);
+                let n = -range + step as f64 * 0.25;
                 mn += weight * n;
                 mcount += weight;
             }
