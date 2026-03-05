@@ -1,5 +1,5 @@
 use super::image::ImageU8;
-use wide::u32x8;
+use wide::{i32x8, u32x8};
 
 /// Decimate an image by factor `f`, subsampling every f-th pixel.
 ///
@@ -214,15 +214,51 @@ pub fn apply_sigma(
     if quad_sigma > 0.0 {
         (blurred, reclaimed_tmp)
     } else {
-        // Unsharp mask: 2*original - blurred
+        // Unsharp mask: 2*original - blurred, clamped to [0, 255]
         let blur_buf = blurred.buf;
         let mut out = ImageU8::new_reuse(img.width, img.height, Vec::new());
+        let wu = img.width as usize;
         for y in 0..img.height {
             let orig_row = img.row(y);
             let out_off = (y * img.width) as usize;
-            for x in 0..img.width as usize {
+
+            // SIMD: process 8 pixels at a time
+            let mut x = 0usize;
+            while x + 8 <= wu {
+                let orig = i32x8::new([
+                    orig_row[x] as i32,
+                    orig_row[x + 1] as i32,
+                    orig_row[x + 2] as i32,
+                    orig_row[x + 3] as i32,
+                    orig_row[x + 4] as i32,
+                    orig_row[x + 5] as i32,
+                    orig_row[x + 6] as i32,
+                    orig_row[x + 7] as i32,
+                ]);
+                let blur = i32x8::new([
+                    blur_buf[out_off + x] as i32,
+                    blur_buf[out_off + x + 1] as i32,
+                    blur_buf[out_off + x + 2] as i32,
+                    blur_buf[out_off + x + 3] as i32,
+                    blur_buf[out_off + x + 4] as i32,
+                    blur_buf[out_off + x + 5] as i32,
+                    blur_buf[out_off + x + 6] as i32,
+                    blur_buf[out_off + x + 7] as i32,
+                ]);
+                let v = orig * i32x8::new([2; 8]) - blur;
+                let clamped = v.max(i32x8::new([0; 8])).min(i32x8::new([255; 8]));
+                let vals = clamped.to_array();
+                for i in 0..8 {
+                    out.buf[out_off + x + i] = vals[i] as u8;
+                }
+                x += 8;
+            }
+
+            // Scalar remainder
+            while x < wu {
                 let v = 2 * orig_row[x] as i32 - blur_buf[out_off + x] as i32;
-                out.set(x as u32, y, v.clamp(0, 255) as u8);
+                out.buf[out_off + x] = v.clamp(0, 255) as u8;
+                x += 1;
             }
         }
         (out, reclaimed_tmp)
@@ -419,6 +455,54 @@ mod tests {
                 max_diff <= 1,
                 "width={width}: max pixel diff {max_diff} exceeds tolerance 1"
             );
+        }
+    }
+
+    /// Scalar reference implementation of unsharp mask for comparison.
+    fn unsharp_scalar(orig: &ImageU8, blur_buf: &[u8]) -> ImageU8 {
+        let mut out = ImageU8::new(orig.width, orig.height);
+        for y in 0..orig.height {
+            let orig_row = orig.row(y);
+            let out_off = (y * orig.width) as usize;
+            for x in 0..orig.width as usize {
+                let v = 2 * orig_row[x] as i32 - blur_buf[out_off + x] as i32;
+                out.set(x as u32, y, v.clamp(0, 255) as u8);
+            }
+        }
+        out
+    }
+
+    /// Test that unsharp mask produces identical results across various widths,
+    /// including SIMD-aligned (8, 16, 32, 64), non-aligned (3, 7, 9, 33, 65), and standard (640).
+    #[test]
+    fn unsharp_consistent_across_widths() {
+        for width in [3u32, 7, 8, 9, 15, 16, 17, 32, 33, 64, 65, 640] {
+            let height = 20u32;
+            let mut img = ImageU8::new(width, height);
+            for y in 0..height {
+                for x in 0..width {
+                    img.set(x, y, ((x * 7 + y * 13) % 256) as u8);
+                }
+            }
+
+            // Get the blurred image via gaussian_blur
+            let (blurred, _) = gaussian_blur(&img, 1.0, 5, Vec::new(), Vec::new());
+
+            // Compute expected via scalar reference
+            let reference = unsharp_scalar(&img, &blurred.buf);
+
+            // Compute actual via apply_sigma (which will use SIMD when available)
+            let (result, _) = apply_sigma(&img, -1.0, Vec::new(), Vec::new());
+
+            for y in 0..height {
+                for x in 0..width {
+                    assert_eq!(
+                        result.get(x, y),
+                        reference.get(x, y),
+                        "width={width}: mismatch at ({x}, {y})"
+                    );
+                }
+            }
         }
     }
 
