@@ -3,5 +3,5 @@ members = ["apriltag", "apriltag-gen", "apriltag-gen-cli", "apriltag-detect-cli"
 resolver = "2"
 
 [workspace.package]
-license = "MIT"
+license = "BSD-2-Clause"
 repository = "https://github.com/benlenarts/apriltag-rs"

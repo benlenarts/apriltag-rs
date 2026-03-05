@@ -90,4 +90,4 @@ apriltag = { version = "0.1", default-features = false, features = ["family-tag3
 
 ## License
 
-MIT
+BSD 2-Clause — see [LICENSE](LICENSE) for details.
