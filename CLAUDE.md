@@ -28,6 +28,7 @@ The detection pipeline follows the reference AprilTag implementation:
 - **`apriltag/`** — core types, families, and rendering (42 tests). Contains `TagFamily`, `Layout`, `BitLocation`, `hamming`, `render`, and built-in family data (`.toml` + `.bin` in `apriltag/families/`).
 - **`apriltag-gen/`** — generation-only code (5 tests). Re-exports `apriltag::*` plus `codegen` and `upgrade` modules.
 - **`apriltag-gen-cli/`** — CLI for tag generation and rendering. Depends on `apriltag-gen`.
+- **`apriltag-detect-cli/`** — CLI for detecting AprilTags in PNG/JPEG images. Wraps the core `apriltag` detector with options for tag family selection, image preprocessing (decimation, blur, sharpening), and optional 6-DOF pose estimation. Outputs JSON to stdout.
 - **`apriltag-bench/`** — detection test harness and benchmark suite. Library core (scene generation, transforms, distortions, metrics) is WASM-compatible. CLI binary provides batch testing, regression checks, and C reference comparison (behind `reference` feature). Web UI in `ui/` for interactive exploration.
 - **`apriltag-bench-wasm/`** — thin WASM wrapper for `apriltag-bench` scene generation, used by the web UI.
 - **`apriltag-wasm/`** — WASM bindings for AprilTag detection. Used by the web UI alongside `apriltag-bench-wasm`.
