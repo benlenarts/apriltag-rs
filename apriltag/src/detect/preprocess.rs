@@ -1,4 +1,5 @@
 use super::image::ImageU8;
+use wide::u32x8;
 
 /// Decimate an image by factor `f`, subsampling every f-th pixel.
 ///
@@ -68,34 +69,112 @@ fn gaussian_blur(
     let half = ksz as i32 / 2;
     let w = img.width as i32;
     let h = img.height as i32;
+    let wu = img.width as usize;
 
-    // Horizontal pass
+    // Horizontal pass: SIMD for interior, scalar for edges
     let mut tmp = ImageU8::new_reuse(img.width, img.height, tmp_buf);
+    let halfu = half as usize;
     for y in 0..h {
         let row = img.row(y as u32);
-        for x in 0..w {
+        let out_off = y as usize * wu;
+
+        // Left edge (scalar with clamping)
+        for x in 0..halfu.min(wu) {
             let mut acc = 0u32;
             for k in 0..ksz as i32 {
-                let sx = (x + k - half).clamp(0, w - 1) as usize;
+                let sx = (x as i32 + k - half).clamp(0, w - 1) as usize;
                 acc += row[sx] as u32 * kernel[k as usize] as u32;
             }
-            tmp.set(x as u32, y as u32, ((acc + (1 << 14)) >> 15) as u8);
+            tmp.buf[out_off + x] = ((acc + (1 << 14)) >> 15) as u8;
+        }
+
+        // Interior (SIMD — no clamping needed)
+        let interior_end = (wu - halfu).max(halfu);
+        let mut x = halfu;
+        while x + 8 <= interior_end {
+            let mut acc = u32x8::ZERO;
+            for (ki, &kv) in kernel.iter().enumerate() {
+                let src_x = x + ki - halfu;
+                let pixels = u32x8::new([
+                    row[src_x] as u32,
+                    row[src_x + 1] as u32,
+                    row[src_x + 2] as u32,
+                    row[src_x + 3] as u32,
+                    row[src_x + 4] as u32,
+                    row[src_x + 5] as u32,
+                    row[src_x + 6] as u32,
+                    row[src_x + 7] as u32,
+                ]);
+                acc += pixels * u32x8::splat(kv as u32);
+            }
+            let rounded: u32x8 = (acc + u32x8::splat(1 << 14)) >> 15;
+            let vals = rounded.to_array();
+            for i in 0..8 {
+                tmp.buf[out_off + x + i] = vals[i] as u8;
+            }
+            x += 8;
+        }
+        // Interior remainder (scalar, no clamping)
+        while x < interior_end {
+            let mut acc = 0u32;
+            for (ki, &kv) in kernel.iter().enumerate() {
+                acc += row[x + ki - halfu] as u32 * kv as u32;
+            }
+            tmp.buf[out_off + x] = ((acc + (1 << 14)) >> 15) as u8;
+            x += 1;
+        }
+
+        // Right edge (scalar with clamping)
+        for x in interior_end..wu {
+            let mut acc = 0u32;
+            for k in 0..ksz as i32 {
+                let sx = (x as i32 + k - half).clamp(0, w - 1) as usize;
+                acc += row[sx] as u32 * kernel[k as usize] as u32;
+            }
+            tmp.buf[out_off + x] = ((acc + (1 << 14)) >> 15) as u8;
         }
     }
 
-    // Vertical pass
+    // Vertical pass: SIMD for 8-wide chunks, scalar remainder
     let mut out = ImageU8::new_reuse(img.width, img.height, out_buf);
     for y in 0..h {
-        // Pre-fetch row slices for all kernel taps
         let rows: Vec<&[u8]> = (0..ksz as i32)
             .map(|k| tmp.row((y + k - half).clamp(0, h - 1) as u32))
             .collect();
-        for x in 0..w as usize {
+        let out_off = y as usize * wu;
+
+        let mut x = 0usize;
+        while x + 8 <= wu {
+            let mut acc = u32x8::ZERO;
+            for (k, &kv) in kernel.iter().enumerate() {
+                let r = rows[k];
+                let pixels = u32x8::new([
+                    r[x] as u32,
+                    r[x + 1] as u32,
+                    r[x + 2] as u32,
+                    r[x + 3] as u32,
+                    r[x + 4] as u32,
+                    r[x + 5] as u32,
+                    r[x + 6] as u32,
+                    r[x + 7] as u32,
+                ]);
+                acc += pixels * u32x8::splat(kv as u32);
+            }
+            let rounded: u32x8 = (acc + u32x8::splat(1 << 14)) >> 15;
+            let vals = rounded.to_array();
+            for i in 0..8 {
+                out.buf[out_off + x + i] = vals[i] as u8;
+            }
+            x += 8;
+        }
+        // Scalar remainder
+        while x < wu {
             let mut acc = 0u32;
             for (k, &kv) in kernel.iter().enumerate() {
                 acc += rows[k][x] as u32 * kv as u32;
             }
-            out.set(x as u32, y as u32, ((acc + (1 << 14)) >> 15) as u8);
+            out.buf[out_off + x] = ((acc + (1 << 14)) >> 15) as u8;
+            x += 1;
         }
     }
     (out, tmp.into_buf())
@@ -306,6 +385,41 @@ mod tests {
             }
         }
         out
+    }
+
+    /// Test that blur produces identical results across various image widths,
+    /// including SIMD-aligned (32, 64), non-aligned (33, 65), narrow (3), and standard (640).
+    #[test]
+    fn blur_consistent_across_widths() {
+        let sigma = 1.0f32;
+        let ksz = 5;
+
+        for width in [3, 32, 33, 64, 65, 640] {
+            let height = 20u32;
+            let mut img = ImageU8::new(width, height);
+            // Fill with a pattern that exercises all pixels
+            for y in 0..height {
+                for x in 0..width {
+                    img.set(x, y, ((x * 7 + y * 13) % 256) as u8);
+                }
+            }
+
+            let float_result = gaussian_blur_f32(&img, sigma, ksz);
+            let (fixed_result, _) = gaussian_blur(&img, sigma, ksz, Vec::new(), Vec::new());
+
+            let mut max_diff = 0i32;
+            for y in 0..height {
+                for x in 0..width {
+                    let diff =
+                        (float_result.get(x, y) as i32 - fixed_result.get(x, y) as i32).abs();
+                    max_diff = max_diff.max(diff);
+                }
+            }
+            assert!(
+                max_diff <= 1,
+                "width={width}: max pixel diff {max_diff} exceeds tolerance 1"
+            );
+        }
     }
 
     #[test]
