@@ -455,6 +455,8 @@ fn evaluate_quad_combination(
 }
 
 /// Smooth the error array using a simple low-pass filter.
+///
+/// Uses a two-variable rolling window to avoid allocating a copy of the array.
 fn smooth_errors(errors: &mut [f64]) {
     let sz = errors.len();
     if sz < 3 {
@@ -462,15 +464,26 @@ fn smooth_errors(errors: &mut [f64]) {
     }
 
     // Gaussian-like smoothing (σ≈1)
-    let kernel = [0.1665, 0.6670, 0.1665];
-    let orig = errors.to_vec();
+    let k0: f64 = 0.1665;
+    let k1: f64 = 0.6670;
+    let k2: f64 = 0.1665;
 
-    for i in 0..sz {
-        let prev = orig[(i + sz - 1) % sz];
-        let curr = orig[i];
-        let next = orig[(i + 1) % sz];
-        errors[i] = kernel[0] * prev + kernel[1] * curr + kernel[2] * next;
+    // Save the original first and last values before they get overwritten
+    let orig_first = errors[0];
+    let orig_last = errors[sz - 1];
+
+    // Process forward: at each step we need orig[i-1], orig[i], orig[i+1].
+    // After writing errors[i], we've lost orig[i], but we still have it as
+    // `prev_orig`. We haven't touched orig[i+1] yet.
+    let mut prev_orig = orig_last; // wrapping: orig[0-1] = orig[sz-1]
+    for i in 0..sz - 1 {
+        let curr_orig = errors[i];
+        let next_orig = errors[i + 1];
+        errors[i] = k0 * prev_orig + k1 * curr_orig + k2 * next_orig;
+        prev_orig = curr_orig;
     }
+    // Last element wraps to first (use saved original first value)
+    errors[sz - 1] = k0 * prev_orig + k1 * orig_last + k2 * orig_first;
 }
 
 /// Compute quad corner positions from line intersections.
