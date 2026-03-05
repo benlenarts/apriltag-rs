@@ -52,7 +52,7 @@ Scene generation is shared between CLI and web UI (identical Rust, WASM-compatib
 - **Branches**: Work on short-lived feature/fix branches off `main`. PR and merge promptly.
 - **Commits**: **You MUST commit early and often — do not wait for the user to ask.** After every small, meaningful unit of progress (a passing test, a new function, a refactor, a bug fix), immediately run `cargo test` and, if tests pass, create a commit. A single user request should typically produce multiple commits, not one large one. Err on the side of committing too often rather than too rarely. Never batch up unrelated changes into a single commit.
 - **Testing**: `cargo test` must pass before every commit. Use `cargo test -- --nocapture` for debug output.
-- **Changelog**: After completing a fix, improvement, or feature, update `CHANGELOG.md` under the `[Unreleased]` section before merging to `main`. The changelog on `main` must always be up to date. Use the appropriate category: Added, Changed, Deprecated, Removed, Fixed, or Security.
+- **Changelog**: Update `CHANGELOG.md` under the `[Unreleased]` section just before creating or updating a PR — this ensures the changelog is always current when code is reviewed. Use the appropriate category: Added, Changed, Deprecated, Removed, Fixed, or Security.
 
 ## Reference Materials (`docs/`)
 
