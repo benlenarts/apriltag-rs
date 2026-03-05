@@ -206,18 +206,23 @@ fn sort_by_angle(points: &mut [Pt]) {
     for p in points.iter_mut() {
         let dx = p.x as f64 - cx;
         let dy = p.y as f64 - cy;
-        p.slope = slope_proxy(dx, dy);
+        p.slope = slope_key(dx, dy);
     }
 
-    points.sort_unstable_by(|a, b| a.slope.total_cmp(&b.slope));
+    points.sort_unstable_by_key(|p| p.slope);
 }
 
-/// Fast slope proxy that maps an angle to a monotonic value in [0, 4).
-fn slope_proxy(dx: f64, dy: f64) -> f32 {
+/// Fast slope key that maps an angle to a monotonically increasing `u32`.
+///
+/// Returns the bit pattern of a non-negative `f32` in `[0, 4)`. Since IEEE 754
+/// bit patterns of non-negative floats preserve ordering, the resulting `u32`
+/// can be compared directly as an integer sort key — avoiding the overhead of
+/// `f32::total_cmp` during sorting.
+fn slope_key(dx: f64, dy: f64) -> u32 {
     let adx = dx.abs();
     let ady = dy.abs();
 
-    if dy > 0.0 {
+    let value = if dy > 0.0 {
         if dx > 0.0 {
             // Quadrant 0: [0, 1)
             (ady / (ady + adx)) as f32
@@ -231,7 +236,8 @@ fn slope_proxy(dx: f64, dy: f64) -> f32 {
     } else {
         // Quadrant 3: [3, 4)
         (3.0 + adx / (ady + adx)) as f32
-    }
+    };
+    value.to_bits()
 }
 
 /// Gradient magnitude weight lookup, indexed by `(gx != 0) << 1 | (gy != 0)`.
@@ -592,15 +598,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn slope_proxy_monotonic_around_circle() {
+    fn slope_key_monotonic_around_circle() {
         let n = 100;
-        let mut prev = -1.0f32;
+        let mut prev = 0u32;
         for i in 0..n {
             let angle = 2.0 * std::f64::consts::PI * i as f64 / n as f64 + 0.01;
             let dx = angle.cos();
             let dy = angle.sin();
-            let s = slope_proxy(dx, dy);
-            assert!(s >= 0.0 && s < 4.0, "slope out of range: {s}");
+            let s = slope_key(dx, dy);
+            let f = f32::from_bits(s);
+            assert!(f >= 0.0 && f < 4.0, "slope out of range: {f}");
             if i > 0 {
                 assert!(s > prev, "not monotonic at i={i}: {prev} -> {s}");
             }
@@ -719,7 +726,7 @@ mod tests {
                 y,
                 gx,
                 gy,
-                slope: 0.0,
+                slope: 0,
             });
         }
         let (reversed, dot) = check_border_direction(&points);
@@ -746,14 +753,14 @@ mod tests {
                 y: 0,
                 gx: 255,
                 gy: 0,
-                slope: 0.0,
+                slope: 0,
             },
             Pt {
                 x: 2,
                 y: 0,
                 gx: 255,
                 gy: 0,
-                slope: 0.0,
+                slope: 0,
             },
         ];
         let mut lfps = Vec::new();
@@ -770,21 +777,21 @@ mod tests {
                 y: 0,
                 gx: 255,
                 gy: 0,
-                slope: 0.0,
+                slope: 0,
             },
             Pt {
                 x: 2,
                 y: 0,
                 gx: 255,
                 gy: 0,
-                slope: 0.0,
+                slope: 0,
             },
             Pt {
                 x: 4,
                 y: 0,
                 gx: 255,
                 gy: 0,
-                slope: 0.0,
+                slope: 0,
             },
         ];
         let mut lfps = Vec::new();
@@ -806,21 +813,21 @@ mod tests {
                 y: 20,
                 gx: 255,
                 gy: 0,
-                slope: 0.0,
+                slope: 0,
             },
             Pt {
                 x: 2,
                 y: 20,
                 gx: 255,
                 gy: 0,
-                slope: 0.0,
+                slope: 0,
             },
             Pt {
                 x: 4,
                 y: 20,
                 gx: 255,
                 gy: 0,
-                slope: 0.0,
+                slope: 0,
             },
         ];
         let mut lfps = Vec::new();
@@ -846,7 +853,7 @@ mod tests {
                 y: y0 as u16,
                 gx: 0,
                 gy: -255,
-                slope: 0.0,
+                slope: 0,
             });
         }
         // Right edge: x=x1, y varies, gradient points right
@@ -856,7 +863,7 @@ mod tests {
                 y: y as u16,
                 gx: 255,
                 gy: 0,
-                slope: 0.0,
+                slope: 0,
             });
         }
         // Bottom edge: y=y1, x varies, gradient points down
@@ -866,7 +873,7 @@ mod tests {
                 y: y1 as u16,
                 gx: 0,
                 gy: 255,
-                slope: 0.0,
+                slope: 0,
             });
         }
         // Left edge: x=x0, y varies, gradient points left
@@ -876,7 +883,7 @@ mod tests {
                 y: y as u16,
                 gx: -255,
                 gy: 0,
-                slope: 0.0,
+                slope: 0,
             });
         }
 
@@ -893,16 +900,18 @@ mod tests {
     }
 
     #[test]
-    fn slope_proxy_zero_displacement_is_nan() {
+    fn slope_key_zero_displacement_is_nan() {
         // When a point coincides with the centroid, dx=dy=0 yields NaN
-        let s = slope_proxy(0.0, 0.0);
-        assert!(s.is_nan(), "slope_proxy(0,0) should be NaN, got {s}");
+        let s = slope_key(0.0, 0.0);
+        let f = f32::from_bits(s);
+        assert!(f.is_nan(), "slope_key(0,0) should be NaN bits, got {f}");
     }
 
     #[test]
     fn sort_by_angle_with_nan_slope_does_not_panic() {
         // If any point's slope is NaN (e.g. from coincident centroid),
-        // the sort must not panic. With partial_cmp().unwrap() it does.
+        // the sort must not panic. With u32 keys, NaN bit patterns sort
+        // consistently as large values (NaN bits > all finite positive f32 bits).
         let mut points: Vec<Pt> = (0..4)
             .map(|i| {
                 let angle = std::f64::consts::FRAC_PI_2 * i as f64;
@@ -911,22 +920,19 @@ mod tests {
                     y: (100.0 + 40.0 * angle.sin()) as u16,
                     gx: 0,
                     gy: 0,
-                    slope: 0.0,
+                    slope: 0,
                 }
             })
             .collect();
 
-        // Manually inject a NaN slope after the sort_by_angle centroid
-        // computation would have run — simulate the bug by setting slope
-        // directly and calling sort_by on the same comparator.
-        points[0].slope = f32::NAN;
-        points[1].slope = 1.0;
-        points[2].slope = 2.0;
-        points[3].slope = 3.0;
+        // Manually inject a NaN slope (as u32 bits)
+        points[0].slope = f32::NAN.to_bits();
+        points[1].slope = 1.0f32.to_bits();
+        points[2].slope = 2.0f32.to_bits();
+        points[3].slope = 3.0f32.to_bits();
 
-        // This is the exact comparator from sort_by_angle.
-        // With partial_cmp().unwrap() this panics; with total_cmp() it doesn't.
-        points.sort_by(|a, b| a.slope.total_cmp(&b.slope));
+        // With u32 keys, sort_unstable_by_key just works — no NaN issues.
+        points.sort_unstable_by_key(|p| p.slope);
     }
 
     #[test]

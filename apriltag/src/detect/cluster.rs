@@ -12,8 +12,8 @@ pub struct Pt {
     pub gx: i16,
     /// Gradient direction y component.
     pub gy: i16,
-    /// Angular sort key for quad fitting.
-    pub slope: f32,
+    /// Angular sort key for quad fitting (bit pattern of non-negative f32).
+    pub slope: u32,
 }
 
 /// A cluster of edge points sharing the same component-pair boundary.
@@ -73,7 +73,7 @@ pub fn gradient_clusters(
                         y: (2 * $y as i32 + $dy) as u16,
                         gx,
                         gy,
-                        slope: 0.0,
+                        slope: 0,
                     };
                     $pairs.push((key, pt));
                     true
