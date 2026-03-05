@@ -22,23 +22,118 @@ pub struct Cluster {
     pub points: Vec<Pt>,
 }
 
+const EMPTY: u32 = u32::MAX;
+
+/// Hash table entry with its own growable point buffer.
+struct Entry {
+    key: u64,
+    next: u32, // index of next entry in chain (EMPTY = end)
+    points: Vec<Pt>,
+}
+
+/// Hash table for grouping boundary points by cluster key during the pixel scan.
+///
+/// Uses separate chaining with a flat bucket array and pool-allocated entries.
+/// Each entry owns a `Vec<Pt>` that grows independently. Recycled Vecs are
+/// retained across frames to avoid per-cluster heap allocation.
+pub struct ClusterMap {
+    buckets: Vec<u32>,
+    entries: Vec<Entry>,
+    /// Pool of cleared `Vec<Pt>` recycled from previous frames.
+    free_vecs: Vec<Vec<Pt>>,
+}
+
+impl Default for ClusterMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ClusterMap {
+    pub fn new() -> Self {
+        Self {
+            buckets: Vec::new(),
+            entries: Vec::new(),
+            free_vecs: Vec::new(),
+        }
+    }
+
+    /// Prepare for a new frame. Recycles inner Vecs and clears the table.
+    fn reset(&mut self, n_buckets: usize) {
+        // Recycle entry Vecs into the free pool
+        for mut entry in self.entries.drain(..) {
+            entry.points.clear();
+            self.free_vecs.push(entry.points);
+        }
+        self.buckets.clear();
+        self.buckets.resize(n_buckets, EMPTY);
+    }
+
+    /// Get a recycled Vec or create a new one.
+    #[inline]
+    fn alloc_vec(&mut self) -> Vec<Pt> {
+        self.free_vecs.pop().unwrap_or_default()
+    }
+
+    /// Insert a point into the cluster identified by `key`.
+    #[inline]
+    fn insert(&mut self, key: u64, pt: Pt) {
+        let bucket = self.bucket_index(key);
+        let mut idx = self.buckets[bucket];
+
+        // Walk chain looking for existing entry with this key
+        while idx != EMPTY {
+            let entry = &self.entries[idx as usize];
+            if entry.key == key {
+                break;
+            }
+            idx = entry.next;
+        }
+
+        if idx != EMPTY {
+            self.entries[idx as usize].points.push(pt);
+        } else {
+            // New entry with recycled Vec
+            let entry_idx = self.entries.len() as u32;
+            let mut points = self.alloc_vec();
+            points.push(pt);
+            self.entries.push(Entry {
+                key,
+                next: self.buckets[bucket],
+                points,
+            });
+            self.buckets[bucket] = entry_idx;
+        }
+    }
+
+    #[inline(always)]
+    fn bucket_index(&self, key: u64) -> usize {
+        // FxHash-style multiply for u64 keys
+        let hash = key.wrapping_mul(0x517cc1b727220a95);
+        (hash as usize) % self.buckets.len()
+    }
+}
+
 /// Extract boundary points between adjacent black/white components and group
 /// them into clusters keyed by the ordered pair of component representatives.
 ///
 /// Each cluster represents a potential quad edge.
+///
+/// Points are inserted directly into a hash table during the scan (O(n) amortized),
+/// avoiding the O(n log n) sort that dominates on noisy images with many boundary points.
 pub fn gradient_clusters(
     threshed: &ImageU8,
     uf: &mut UnionFind,
     min_cluster_size: u32,
-    pairs_buf: &mut Vec<(u64, Pt)>,
-    sort_buf: &mut Vec<(u64, u32)>,
+    cluster_map: &mut ClusterMap,
 ) -> Vec<Cluster> {
     let w = threshed.width;
     let h = threshed.height;
     let min_component_size = 25u32;
 
-    pairs_buf.clear();
-    let pairs = &mut *pairs_buf;
+    // Size the hash table at ~20% of pixel count, matching C reference
+    let n_buckets = ((w as usize * h as usize) / 5).max(16);
+    cluster_map.reset(n_buckets);
 
     let buf = &threshed.buf;
     let stride = threshed.stride as usize;
@@ -49,7 +144,7 @@ pub fn gradient_clusters(
     // `rep0` is pre-computed by the caller to avoid redundant find() calls.
     // Returns true when a boundary point was added.
     macro_rules! do_conn {
-        ($pairs:expr, $uf:expr, $buf:expr, $stride:expr,
+        ($map:expr, $uf:expr, $buf:expr, $stride:expr,
          $x:expr, $y:expr, $rep0:expr, $v0:expr,
          $dx:expr, $dy:expr, $w:expr, $min_component_size:expr) => {{
             let nx = ($x as i32 + $dx) as usize;
@@ -75,7 +170,7 @@ pub fn gradient_clusters(
                         gy,
                         slope: 0,
                     };
-                    $pairs.push((key, pt));
+                    $map.insert(key, pt);
                     true
                 } else {
                     false
@@ -108,7 +203,7 @@ pub fn gradient_clusters(
 
             // 4-connectivity
             do_conn!(
-                pairs,
+                cluster_map,
                 uf,
                 buf,
                 stride,
@@ -122,7 +217,7 @@ pub fn gradient_clusters(
                 min_component_size
             );
             do_conn!(
-                pairs,
+                cluster_map,
                 uf,
                 buf,
                 stride,
@@ -142,7 +237,7 @@ pub fn gradient_clusters(
             // did not connect via (1,1).
             if !connected_last {
                 do_conn!(
-                    pairs,
+                    cluster_map,
                     uf,
                     buf,
                     stride,
@@ -157,7 +252,7 @@ pub fn gradient_clusters(
                 );
             }
             connected_last = do_conn!(
-                pairs,
+                cluster_map,
                 uf,
                 buf,
                 stride,
@@ -173,27 +268,13 @@ pub fn gradient_clusters(
         }
     }
 
-    // Sort lightweight key-index pairs (12 bytes) instead of full (key, Pt) pairs (20 bytes).
-    // This reduces data movement per swap by 40%, then we gather Pt values during grouping.
-    sort_buf.clear();
-    sort_buf.extend(pairs.iter().enumerate().map(|(i, p)| (p.0, i as u32)));
-    sort_buf.sort_unstable_by_key(|p| p.0);
-
+    // Collect clusters that meet the minimum size threshold.
+    // Swap out the Vec<Pt> so the entry retains an empty Vec for recycling.
     let mut clusters: Vec<Cluster> = Vec::new();
-    let mut i = 0;
-    while i < sort_buf.len() {
-        let key = sort_buf[i].0;
-        let start = i;
-        while i < sort_buf.len() && sort_buf[i].0 == key {
-            i += 1;
-        }
-        if i - start >= min_cluster_size as usize {
-            clusters.push(Cluster {
-                points: sort_buf[start..i]
-                    .iter()
-                    .map(|&(_, idx)| pairs[idx as usize].1)
-                    .collect(),
-            });
+    for entry in &mut cluster_map.entries {
+        if entry.points.len() >= min_cluster_size as usize {
+            let points = std::mem::take(&mut entry.points);
+            clusters.push(Cluster { points });
         }
     }
 
@@ -223,7 +304,7 @@ mod tests {
     fn no_clusters_in_uniform_image() {
         let img = make_thresh(8, 8, &vec![0u8; 64]);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 5, &mut Vec::new(), &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 5, &mut ClusterMap::new());
         assert!(clusters.is_empty());
     }
 
@@ -238,7 +319,7 @@ mod tests {
         }
         let img = make_thresh(8, 8, &pixels);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 1, &mut ClusterMap::new());
         assert!(!clusters.is_empty());
     }
 
@@ -253,7 +334,7 @@ mod tests {
         }
         let img = make_thresh(8, 8, &pixels);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 1, &mut ClusterMap::new());
 
         // Find a point on the boundary x=3→4 (dx=1)
         let boundary_pts: Vec<&Pt> = clusters
@@ -276,7 +357,7 @@ mod tests {
         pixels[55] = 255; // one pixel
         let img = make_thresh(10, 10, &pixels);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 1, &mut ClusterMap::new());
         // White component has only 1 pixel, below threshold of 25
         assert!(clusters.is_empty());
     }
@@ -298,7 +379,7 @@ mod tests {
         }
         let img = make_thresh(size, size, &pixels);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 1, &mut ClusterMap::new());
 
         // Collect all midpoints across all clusters
         let mut all_points: Vec<(u16, u16)> = clusters
@@ -334,12 +415,12 @@ mod tests {
         let mut uf = run_cc(&img);
 
         // With min_cluster_size=1, we get clusters
-        let all = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
+        let all = gradient_clusters(&img, &mut uf, 1, &mut ClusterMap::new());
         assert!(!all.is_empty());
 
         // With a very high threshold, all clusters are filtered out
         let mut uf2 = run_cc(&img);
-        let filtered = gradient_clusters(&img, &mut uf2, 100_000, &mut Vec::new(), &mut Vec::new());
+        let filtered = gradient_clusters(&img, &mut uf2, 100_000, &mut ClusterMap::new());
         assert!(filtered.is_empty());
     }
 
@@ -354,7 +435,7 @@ mod tests {
         }
         let img = make_thresh(8, 8, &pixels);
         let mut uf = run_cc(&img);
-        let clusters = gradient_clusters(&img, &mut uf, 1, &mut Vec::new(), &mut Vec::new());
+        let clusters = gradient_clusters(&img, &mut uf, 1, &mut ClusterMap::new());
         // No boundary between black and white (only black and unknown)
         assert!(clusters.is_empty());
     }

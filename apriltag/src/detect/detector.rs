@@ -66,8 +66,7 @@ pub struct DetectorState {
     blur_tmp_buf: Vec<u8>,
     threshed_buf: Vec<u8>,
     uf: UnionFind,
-    pairs_buf: Vec<(u64, super::cluster::Pt)>,
-    sort_buf: Vec<(u64, u32)>,
+    cluster_map: super::cluster::ClusterMap,
 }
 
 impl DetectorState {
@@ -79,8 +78,7 @@ impl DetectorState {
             blur_tmp_buf: Vec::new(),
             threshed_buf: Vec::new(),
             uf: UnionFind::empty(),
-            pairs_buf: Vec::new(),
-            sort_buf: Vec::new(),
+            cluster_map: super::cluster::ClusterMap::new(),
         }
     }
 }
@@ -157,8 +155,7 @@ impl Detector {
             &threshed,
             &mut state.uf,
             self.config.qtp.min_cluster_pixels as u32,
-            &mut state.pairs_buf,
-            &mut state.sort_buf,
+            &mut state.cluster_map,
         );
 
         // Determine border orientations needed
@@ -541,7 +538,7 @@ mod tests {
 
         // Stage 4: Gradient clustering
         let mut clusters =
-            cluster::gradient_clusters(&threshed, &mut uf, 5, &mut Vec::new(), &mut Vec::new());
+            cluster::gradient_clusters(&threshed, &mut uf, 5, &mut cluster::ClusterMap::new());
         assert!(
             !clusters.is_empty(),
             "No clusters found (black={black_count}, white={white_count}, unknown={unknown_count})"

@@ -102,8 +102,80 @@ fn bench_gradient_clusters(c: &mut Criterion) {
                 black_box(&threshed),
                 &mut uf,
                 5,
-                &mut Vec::new(),
-                &mut Vec::new(),
+                &mut apriltag::detect::cluster::ClusterMap::new(),
+            )
+        })
+    });
+}
+
+/// Build a 300x300 noisy image with a centered tag, matching the benchmark
+/// harness noise-sigma20 scenario.
+fn build_noisy_image() -> ImageU8 {
+    let fam = family::tag36h11();
+    let rendered = render::render(&fam.layout, fam.codes[0]);
+
+    let (w, h) = (300u32, 300u32);
+    let mut img = ImageU8::new(w, h);
+    for y in 0..h {
+        for x in 0..w {
+            img.set(x, y, 255);
+        }
+    }
+
+    let scale = 20u32;
+    let tag_px = rendered.grid_size as u32 * scale;
+    let ox = (w - tag_px) / 2;
+    let oy = (h - tag_px) / 2;
+    for ty in 0..rendered.grid_size {
+        for tx in 0..rendered.grid_size {
+            let val = match rendered.pixel(tx, ty) {
+                Pixel::Black => 0u8,
+                Pixel::White | Pixel::Transparent => 255u8,
+            };
+            for dy in 0..scale {
+                for dx in 0..scale {
+                    img.set(
+                        ox + tx as u32 * scale + dx,
+                        oy + ty as u32 * scale + dy,
+                        val,
+                    );
+                }
+            }
+        }
+    }
+
+    // Add strong pseudo-random noise (deterministic LCG, sigma ~40)
+    // to create many small components and boundary crossings
+    let mut rng: u32 = 0xDEAD_BEEF;
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum: i32 = 0;
+            for _ in 0..4 {
+                rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
+                sum += ((rng >> 16) % 256) as i32 - 128;
+            }
+            let noise = sum / 2; // stronger noise
+            let v = img.get(x, y) as i32 + noise;
+            img.set(x, y, v.clamp(0, 255) as u8);
+        }
+    }
+
+    img
+}
+
+fn bench_gradient_clusters_noisy(c: &mut Criterion) {
+    let img = build_noisy_image();
+    let decimated = decimate(&img, 2, Vec::new());
+    let threshed = threshold(&decimated, 5, false, Vec::new());
+    c.bench_function("gradient_clusters_noisy", |b| {
+        b.iter(|| {
+            let mut uf = UnionFind::empty();
+            connected_components(&threshed, &mut uf);
+            gradient_clusters(
+                black_box(&threshed),
+                &mut uf,
+                5,
+                &mut apriltag::detect::cluster::ClusterMap::new(),
             )
         })
     });
@@ -115,7 +187,12 @@ fn bench_fit_quads(c: &mut Criterion) {
     let threshed = threshold(&decimated, 5, false, Vec::new());
     let mut uf = UnionFind::empty();
     connected_components(&threshed, &mut uf);
-    let clusters = gradient_clusters(&threshed, &mut uf, 5, &mut Vec::new(), &mut Vec::new());
+    let clusters = gradient_clusters(
+        &threshed,
+        &mut uf,
+        5,
+        &mut apriltag::detect::cluster::ClusterMap::new(),
+    );
     let qtp = QuadThreshParams::default();
     c.bench_function("fit_quads", |b| {
         b.iter(|| {
@@ -189,7 +266,12 @@ fn bench_decode(c: &mut Criterion) {
     let threshed = threshold(&decimated, 5, false, Vec::new());
     let mut uf = UnionFind::empty();
     connected_components(&threshed, &mut uf);
-    let mut clusters = gradient_clusters(&threshed, &mut uf, 5, &mut Vec::new(), &mut Vec::new());
+    let mut clusters = gradient_clusters(
+        &threshed,
+        &mut uf,
+        5,
+        &mut apriltag::detect::cluster::ClusterMap::new(),
+    );
     let qtp = QuadThreshParams::default();
     let quads = fit_quads(
         &mut clusters,
@@ -330,6 +412,7 @@ criterion_group!(
     bench_threshold,
     bench_connected_components,
     bench_gradient_clusters,
+    bench_gradient_clusters_noisy,
     bench_fit_quads,
     bench_refine_edges,
     bench_decode,
