@@ -97,6 +97,15 @@ impl UnionFind {
         let r = self.find(id);
         unpack_size(self.data[r as usize]) + 1
     }
+
+    /// Get the size of a set given its root representative directly.
+    ///
+    /// The caller must pass a value previously returned by `find()`.
+    /// This avoids a redundant `find()` call when the root is already known.
+    #[inline(always)]
+    pub fn root_size(&self, root: u32) -> u32 {
+        unpack_size(self.data[root as usize]) + 1
+    }
 }
 
 #[cfg(test)]
@@ -204,6 +213,16 @@ mod tests {
         for i in 0..5u32 {
             assert_eq!(uf.find(i), i);
         }
+    }
+
+    #[test]
+    fn root_size_matches_set_size() {
+        let mut uf = UnionFind::new(10);
+        uf.union(0, 1);
+        uf.union(0, 2);
+        let root = uf.find(0);
+        assert_eq!(uf.root_size(root), 3);
+        assert_eq!(uf.root_size(root), uf.set_size(0));
     }
 
     #[test]
