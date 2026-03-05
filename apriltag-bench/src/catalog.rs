@@ -17,6 +17,7 @@ pub enum Category {
     MultiTag,
     Occlusion,
     Decimation,
+    Highres,
 }
 
 impl Category {
@@ -33,6 +34,7 @@ impl Category {
             Category::MultiTag,
             Category::Occlusion,
             Category::Decimation,
+            Category::Highres,
         ]
     }
 
@@ -49,6 +51,7 @@ impl Category {
             Category::MultiTag => "multi-tag",
             Category::Occlusion => "occlusion",
             Category::Decimation => "decimation",
+            Category::Highres => "highres",
         }
     }
 
@@ -92,6 +95,7 @@ pub fn all_scenarios() -> Vec<Scenario> {
     scenarios.extend(multi_tag_scenarios());
     scenarios.extend(occlusion_scenarios());
     scenarios.extend(decimation_scenarios());
+    scenarios.extend(highres_scenarios());
     scenarios
 }
 
@@ -484,6 +488,86 @@ fn multi_tag_scenarios() -> Vec<Scenario> {
             }),
         },
     ]
+}
+
+fn highres_scenarios() -> Vec<Scenario> {
+    // Place ~100 tags in a 4000×3000 grid with varied rotations and tilts
+    let n_cols = 13;
+    let n_rows = 9;
+    let n_tags = n_cols * n_rows; // 117 tags
+    let spacing_x = 4000.0 / (n_cols as f64 + 1.0);
+    let spacing_y = 3000.0 / (n_rows as f64 + 1.0);
+    let tag_size = 140.0; // pixels (full tag width)
+
+    // Deterministic per-tag parameters via simple hash
+    let tag_params: Vec<(f64, f64, f64)> = (0..n_tags)
+        .map(|i| {
+            let seed = (i as u32).wrapping_mul(2654435761);
+            let roll = ((seed % 360) as f64 - 180.0) * 30.0 / 180.0; // ±30° in radians
+            let roll_rad = roll.to_radians();
+            let tilt_x = (((seed >> 8) % 200) as f64 - 100.0) / 100.0 * 0.3; // ±0.3 rad (~17°)
+            let tilt_y = (((seed >> 16) % 200) as f64 - 100.0) / 100.0 * 0.2; // ±0.2 rad (~11°)
+            (roll_rad, tilt_x, tilt_y)
+        })
+        .collect();
+
+    let expect_ids: Vec<(String, u32)> = (0..n_tags)
+        .map(|i| ("tag36h11".to_string(), i as u32))
+        .collect();
+
+    vec![Scenario {
+        name: "highres-4000x3000".to_string(),
+        description: format!(
+            "{n_tags} tags at 4000×3000 with rotation, perspective, noise, and lighting"
+        ),
+        category: Category::Highres,
+        expect_ids,
+        max_corner_rmse: 5.0,
+        quad_decimate: None,
+        build_fn: Box::new(move || {
+            let mut builder = SceneBuilder::new(4000, 3000).background(Background::Solid(128));
+
+            for row in 0..n_rows {
+                for col in 0..n_cols {
+                    let i = row * n_cols + col;
+                    let cx = spacing_x * (col as f64 + 1.0);
+                    let cy = spacing_y * (row as f64 + 1.0);
+                    let (roll, tilt_x, tilt_y) = tag_params[i];
+
+                    builder = builder.add_tag(
+                        "tag36h11",
+                        i as u32,
+                        Transform::FromPose {
+                            center: [cx, cy],
+                            size: tag_size,
+                            roll,
+                            tilt_x,
+                            tilt_y,
+                        },
+                    );
+                }
+            }
+
+            let mut scene = builder.build();
+            crate::distortion::apply(
+                &mut scene.image,
+                &[
+                    Distortion::ContrastScale { factor: 0.7 },
+                    Distortion::GradientLighting {
+                        direction: 0.3,
+                        min_factor: 0.7,
+                        max_factor: 1.3,
+                    },
+                    Distortion::GaussianNoise {
+                        sigma: 15.0,
+                        seed: 42,
+                    },
+                    Distortion::GaussianBlur { sigma: 0.8 },
+                ],
+            );
+            scene
+        }),
+    }]
 }
 
 fn occlusion_scenarios() -> Vec<Scenario> {
