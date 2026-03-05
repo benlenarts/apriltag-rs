@@ -81,6 +81,18 @@ cargo asm -p apriltag --search gradient
 cargo clippy -- -D warnings
 ```
 
+## Release
+
+See [docs/release-process.md](release-process.md) for the full release workflow.
+
+```bash
+# Tag a release
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+
+# Push with tags
+git push origin main --follow-tags
+```
+
 ## Reference Setup
 
 ```bash
