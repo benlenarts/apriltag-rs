@@ -189,7 +189,7 @@ fn sort_by_angle(points: &mut [Pt]) {
         p.slope = slope_proxy(dx, dy);
     }
 
-    points.sort_by(|a, b| a.slope.total_cmp(&b.slope));
+    points.sort_unstable_by(|a, b| a.slope.total_cmp(&b.slope));
 }
 
 /// Fast slope proxy that maps an angle to a monotonic value in [0, 4).
