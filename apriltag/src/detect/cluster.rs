@@ -40,57 +40,68 @@ pub fn gradient_clusters(
     pairs_buf.clear();
     let pairs = &mut *pairs_buf;
 
+    let buf = &threshed.buf;
+    let stride = threshed.stride as usize;
+
     // Check a neighbor offset and add a boundary point if valid.
+    // All accesses are guaranteed in-bounds because x ∈ [1, w-2] and y ∈ [1, h-2]
+    // with dx, dy ∈ {-1, 0, 1}.
+    // `rep0` is pre-computed by the caller to avoid redundant find() calls.
     // Returns true when a boundary point was added.
     macro_rules! do_conn {
-        ($cluster_map:expr, $uf:expr, $threshed:expr, $x:expr, $y:expr,
-         $v0:expr, $dx:expr, $dy:expr, $w:expr, $h:expr,
-         $min_component_size:expr) => {{
-            let mut added = false;
-            let nx = $x as i32 + $dx;
-            let ny = $y as i32 + $dy;
-            if nx >= 0 && nx < $w as i32 && ny >= 0 && ny < $h as i32 {
-                let nx = nx as u32;
-                let ny = ny as u32;
-                let v1 = $threshed.get(nx, ny);
-                if $v0 as i32 + v1 as i32 == 255 {
-                    let id1 = ny * $w + nx;
-                    if $uf.set_size(id1) >= $min_component_size {
-                        let rep0 = $uf.find($y * $w + $x) as u64;
-                        let rep1 = $uf.find(id1) as u64;
-                        let key = if rep0 < rep1 {
-                            (rep0 << 32) | rep1
-                        } else {
-                            (rep1 << 32) | rep0
-                        };
-                        let gx = $dx as i16 * (v1 as i16 - $v0 as i16);
-                        let gy = $dy as i16 * (v1 as i16 - $v0 as i16);
-                        let pt = Pt {
-                            x: (2 * $x as i32 + $dx) as u16,
-                            y: (2 * $y as i32 + $dy) as u16,
-                            gx,
-                            gy,
-                            slope: 0.0,
-                        };
-                        $cluster_map.push((key, pt));
-                        added = true;
-                    }
+        ($pairs:expr, $uf:expr, $buf:expr, $stride:expr,
+         $x:expr, $y:expr, $rep0:expr, $v0:expr,
+         $dx:expr, $dy:expr, $w:expr, $min_component_size:expr) => {{
+            let nx = ($x as i32 + $dx) as usize;
+            let ny = ($y as i32 + $dy) as usize;
+            let v1 = $buf[ny * $stride + nx];
+            if $v0 as i32 + v1 as i32 == 255 {
+                let id1 = ny as u32 * $w + nx as u32;
+                let rep1_root = $uf.find(id1);
+                if $uf.root_size(rep1_root) >= $min_component_size {
+                    let rep0 = $rep0 as u64;
+                    let rep1 = rep1_root as u64;
+                    let key = if rep0 < rep1 {
+                        (rep0 << 32) | rep1
+                    } else {
+                        (rep1 << 32) | rep0
+                    };
+                    let gx = $dx as i16 * (v1 as i16 - $v0 as i16);
+                    let gy = $dy as i16 * (v1 as i16 - $v0 as i16);
+                    let pt = Pt {
+                        x: (2 * $x as i32 + $dx) as u16,
+                        y: (2 * $y as i32 + $dy) as u16,
+                        gx,
+                        gy,
+                        slope: 0.0,
+                    };
+                    $pairs.push((key, pt));
+                    true
+                } else {
+                    false
                 }
+            } else {
+                false
             }
-            added
         }};
     }
 
-    for y in 0..h {
+    // Loop over interior pixels only (skip border). All neighbor offsets
+    // (dx,dy) ∈ {-1,0,1} are guaranteed in-bounds, eliminating bounds checks.
+    // The C reference uses the same range restriction.
+    for y in 1..h.saturating_sub(1) {
+        let row_off = y as usize * stride;
         let mut connected_last = false;
-        for x in 0..w {
-            let v0 = threshed.get(x, y);
+        for x in 1..w.saturating_sub(1) {
+            let v0 = buf[row_off + x as usize];
             if v0 == 127 {
                 connected_last = false;
                 continue;
             }
 
-            if uf.set_size(y * w + x) < min_component_size {
+            // Compute rep0 once for this pixel, reuse across all do_conn! calls
+            let rep0 = uf.find(y * w + x);
+            if uf.root_size(rep0) < min_component_size {
                 connected_last = false;
                 continue;
             }
@@ -99,27 +110,29 @@ pub fn gradient_clusters(
             do_conn!(
                 pairs,
                 uf,
-                threshed,
+                buf,
+                stride,
                 x,
                 y,
+                rep0,
                 v0,
                 1,
                 0,
                 w,
-                h,
                 min_component_size
             );
             do_conn!(
                 pairs,
                 uf,
-                threshed,
+                buf,
+                stride,
                 x,
                 y,
+                rep0,
                 v0,
                 0,
                 1,
                 w,
-                h,
                 min_component_size
             );
 
@@ -131,28 +144,30 @@ pub fn gradient_clusters(
                 do_conn!(
                     pairs,
                     uf,
-                    threshed,
+                    buf,
+                    stride,
                     x,
                     y,
+                    rep0,
                     v0,
                     -1,
                     1,
                     w,
-                    h,
                     min_component_size
                 );
             }
             connected_last = do_conn!(
                 pairs,
                 uf,
-                threshed,
+                buf,
+                stride,
                 x,
                 y,
+                rep0,
                 v0,
                 1,
                 1,
                 w,
-                h,
                 min_component_size
             );
         }
