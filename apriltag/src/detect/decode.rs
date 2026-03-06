@@ -2,7 +2,7 @@ use crate::family::{FamilyId, TagFamily};
 use crate::hamming;
 
 use super::homography::Homography;
-use super::image::ImageU8;
+use super::image::GrayImage;
 
 /// Result of decoding a tag from a quad.
 #[derive(Debug, Clone)]
@@ -201,7 +201,7 @@ impl QuickDecode {
 
 /// Attempt to decode a tag from a quad using the given tag family.
 pub fn decode_quad(
-    img: &ImageU8,
+    img: &impl GrayImage,
     family: &TagFamily,
     qd: &QuickDecode,
     h: &Homography,
@@ -238,7 +238,10 @@ pub fn decode_quad(
 
             let (px, py) = h.project(tagx, tagy);
 
-            if px < 0.0 || py < 0.0 || px >= img.width as f64 - 1.0 || py >= img.height as f64 - 1.0
+            if px < 0.0
+                || py < 0.0
+                || px >= img.width() as f64 - 1.0
+                || py >= img.height() as f64 - 1.0
             {
                 continue;
             }
@@ -356,6 +359,7 @@ pub fn decode_quad(
 
 #[cfg(test)]
 mod tests {
+    use super::super::image::ImageU8;
     use super::*;
 
     #[test]
