@@ -813,12 +813,8 @@ mod tests {
         let recon = mat_mul(&us, &vt);
         for i in 0..3 {
             for j in 0..3 {
-                assert!(
-                    (recon[i][j] - m[i][j]).abs() < 1e-6,
-                    "recon[{i}][{j}]={} vs m={}",
-                    recon[i][j],
-                    m[i][j],
-                );
+                // recon[i][j] should match m[i][j] within tolerance
+                assert!((recon[i][j] - m[i][j]).abs() < 1e-6);
             }
         }
     }
