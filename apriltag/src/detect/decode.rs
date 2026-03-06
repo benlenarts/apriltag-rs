@@ -347,6 +347,192 @@ mod tests {
     use super::*;
 
     #[test]
+    fn gray_model_solve_singular() {
+        // With only a single observation, the system is rank-deficient;
+        // solve() should bail out and leave coefficients at zero.
+        let mut gm = GrayModel::default();
+        gm.add(1.0, 1.0, 42.0);
+        gm.solve();
+        assert_eq!(gm.c, [0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    #[cfg(feature = "family-tag16h5")]
+    fn decode_quad_reversed_border_wrong_polarity() {
+        // Render a normal-polarity tag, then call decode_quad with reversed_border=true.
+        // The polarity check should reject it.
+        let family = crate::family::tag16h5();
+        let rendered = crate::render::render(&family.layout, family.codes[0]);
+        let qd = QuickDecode::new(&family, 2);
+
+        let w = family.layout.border_width as f64;
+        let scale = 10.0;
+        let ox = 60.0;
+        let oy = 60.0;
+        let gs = rendered.grid_size as f64;
+
+        // Build synthetic image with the tag
+        let mut img = ImageU8::new(200, 200);
+        for y in 0..200u32 {
+            for x in 0..200u32 {
+                img.set(x, y, 255);
+            }
+        }
+        for ty in 0..rendered.grid_size {
+            for tx in 0..rendered.grid_size {
+                let pixel = rendered.pixel(tx, ty);
+                let val = match pixel {
+                    crate::types::Pixel::Black => 0u8,
+                    _ => 255u8,
+                };
+                for dy in 0..10u32 {
+                    for dx in 0..10u32 {
+                        img.set(
+                            ox as u32 + tx as u32 * 10 + dx,
+                            oy as u32 + ty as u32 * 10 + dy,
+                            val,
+                        );
+                    }
+                }
+            }
+        }
+
+        // Compute quad corners that map tag-space [-1,1] to the rendered tag location
+        let tag_start_x = ox + (family.layout.border_start as f64) * scale;
+        let tag_start_y = oy + (family.layout.border_start as f64) * scale;
+        let tag_end_x = ox + (gs - family.layout.border_start as f64) * scale;
+        let tag_end_y = oy + (gs - family.layout.border_start as f64) * scale;
+        let corners = [
+            [tag_start_x, tag_start_y],
+            [tag_end_x, tag_start_y],
+            [tag_end_x, tag_end_y],
+            [tag_start_x, tag_end_y],
+        ];
+        let h = Homography::from_quad_corners(&corners).unwrap();
+
+        // reversed_border=true on a normal-polarity tag should fail polarity check
+        let result = decode_quad(&img, &family, &qd, &h, true, 0.0);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "family-tag16h5")]
+    fn decode_quad_with_sharpening() {
+        // Call decode_quad with decode_sharpening > 0 to exercise the sharpening path
+        let family = crate::family::tag16h5();
+        let rendered = crate::render::render(&family.layout, family.codes[0]);
+        let qd = QuickDecode::new(&family, 2);
+
+        let scale = 10.0;
+        let ox = 60.0;
+        let oy = 60.0;
+        let gs = rendered.grid_size as f64;
+
+        let mut img = ImageU8::new(200, 200);
+        for y in 0..200u32 {
+            for x in 0..200u32 {
+                img.set(x, y, 255);
+            }
+        }
+        for ty in 0..rendered.grid_size {
+            for tx in 0..rendered.grid_size {
+                let pixel = rendered.pixel(tx, ty);
+                let val = match pixel {
+                    crate::types::Pixel::Black => 0u8,
+                    _ => 255u8,
+                };
+                for dy in 0..10u32 {
+                    for dx in 0..10u32 {
+                        img.set(
+                            ox as u32 + tx as u32 * 10 + dx,
+                            oy as u32 + ty as u32 * 10 + dy,
+                            val,
+                        );
+                    }
+                }
+            }
+        }
+
+        let tag_start_x = ox + (family.layout.border_start as f64) * scale;
+        let tag_start_y = oy + (family.layout.border_start as f64) * scale;
+        let tag_end_x = ox + (gs - family.layout.border_start as f64) * scale;
+        let tag_end_y = oy + (gs - family.layout.border_start as f64) * scale;
+        let corners = [
+            [tag_start_x, tag_start_y],
+            [tag_end_x, tag_start_y],
+            [tag_end_x, tag_end_y],
+            [tag_start_x, tag_end_y],
+        ];
+        let h = Homography::from_quad_corners(&corners).unwrap();
+
+        // decode_sharpening = 1.0 exercises the sharpening branch
+        let result = decode_quad(&img, &family, &qd, &h, false, 1.0);
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert_eq!(r.id, 0);
+    }
+
+    #[test]
+    #[cfg(feature = "family-tag16h5")]
+    fn decode_quad_bit_outside_grid() {
+        // Clone a family and modify a bit_location to be out-of-bounds,
+        // exercising the gx >= total_width fallback (line 316).
+        let mut family = crate::family::tag16h5();
+        let qd = QuickDecode::new(&family, 2);
+        let rendered = crate::render::render(&family.layout, family.codes[0]);
+
+        let scale = 10.0;
+        let ox = 60.0;
+        let oy = 60.0;
+        let gs = rendered.grid_size as f64;
+
+        let mut img = ImageU8::new(200, 200);
+        for y in 0..200u32 {
+            for x in 0..200u32 {
+                img.set(x, y, 255);
+            }
+        }
+        for ty in 0..rendered.grid_size {
+            for tx in 0..rendered.grid_size {
+                let pixel = rendered.pixel(tx, ty);
+                let val = match pixel {
+                    crate::types::Pixel::Black => 0u8,
+                    _ => 255u8,
+                };
+                for dy in 0..10u32 {
+                    for dx in 0..10u32 {
+                        img.set(
+                            ox as u32 + tx as u32 * 10 + dx,
+                            oy as u32 + ty as u32 * 10 + dy,
+                            val,
+                        );
+                    }
+                }
+            }
+        }
+
+        let tag_start_x = ox + (family.layout.border_start as f64) * scale;
+        let tag_start_y = oy + (family.layout.border_start as f64) * scale;
+        let tag_end_x = ox + (gs - family.layout.border_start as f64) * scale;
+        let tag_end_y = oy + (gs - family.layout.border_start as f64) * scale;
+        let corners = [
+            [tag_start_x, tag_start_y],
+            [tag_end_x, tag_start_y],
+            [tag_end_x, tag_end_y],
+            [tag_start_x, tag_end_y],
+        ];
+        let h = Homography::from_quad_corners(&corners).unwrap();
+
+        // Push one bit_location way out of bounds
+        family.bit_locations[0].x = 9999;
+
+        // Should still return a result (the out-of-bounds bit gets value 0.0)
+        // but the code will differ, so decode may or may not find a match
+        let _result = decode_quad(&img, &family, &qd, &h, false, 0.0);
+        // We just care that it doesn't panic
+    }
+
+    #[test]
     fn gray_model_constant_field() {
         let mut gm = GrayModel::default();
         for i in 0..10 {

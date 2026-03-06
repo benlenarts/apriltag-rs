@@ -726,7 +726,7 @@ mod tests {
                 slope: 0,
             });
         }
-        let (reversed, dot) = check_border_direction(&points);
+        let (reversed, _dot) = check_border_direction(&points);
         // dot should be positive (gradients point outward)
         assert!(!reversed);
     }
