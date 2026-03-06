@@ -33,7 +33,7 @@ fn detect_single_centered_tag() {
 
     assert_eq!(detections.len(), 1, "should detect exactly one tag");
     assert_eq!(detections[0].id, 0);
-    assert_eq!(detections[0].family_name, "tag36h11");
+    assert_eq!(detections[0].family_id, "tag36h11");
 
     let result = metrics::evaluate(&scene.ground_truth, &detections, 0);
     assert_eq!(result.detection_rate, 1.0);

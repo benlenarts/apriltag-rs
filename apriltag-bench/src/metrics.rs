@@ -48,7 +48,7 @@ pub struct DetectionSummary {
 impl From<&Detection> for DetectionSummary {
     fn from(det: &Detection) -> Self {
         DetectionSummary {
-            family_name: det.family_name.clone(),
+            family_name: det.family_id.to_string(),
             id: det.id,
             hamming: det.hamming,
             decision_margin: det.decision_margin,
@@ -74,7 +74,7 @@ pub fn evaluate(
     for gt in ground_truth {
         // Find matching detection: same family name and tag ID
         let matched = detections.iter().enumerate().find(|(i, det)| {
-            !used[*i] && det.family_name == gt.family_name && det.id == gt.tag_id as i32
+            !used[*i] && det.family_id == gt.family_name.as_str() && det.id == gt.tag_id as i32
         });
 
         if let Some((idx, det)) = matched {
@@ -184,7 +184,7 @@ mod tests {
         let cx = corners.iter().map(|c| c[0]).sum::<f64>() / 4.0;
         let cy = corners.iter().map(|c| c[1]).sum::<f64>() / 4.0;
         Detection {
-            family_name: family.to_string(),
+            family_id: apriltag::family::FamilyId::from(family),
             id,
             hamming: 0,
             decision_margin: 100.0,

@@ -1,4 +1,4 @@
-use crate::family::TagFamily;
+use crate::family::{FamilyId, TagFamily};
 use crate::hamming;
 
 use super::homography::Homography;
@@ -7,7 +7,7 @@ use super::image::ImageU8;
 /// Result of decoding a tag from a quad.
 #[derive(Debug, Clone)]
 pub struct DecodeResult {
-    pub family_name: String,
+    pub family_id: FamilyId,
     pub id: i32,
     pub hamming: i32,
     pub decision_margin: f32,
@@ -334,7 +334,7 @@ pub fn decode_quad(
     let (id, hamming_dist, rotation) = qd.decode(family, rcode)?;
 
     Some(DecodeResult {
-        family_name: family.config.name.clone(),
+        family_id: family.config.name.clone(),
         id,
         hamming: hamming_dist,
         decision_margin,

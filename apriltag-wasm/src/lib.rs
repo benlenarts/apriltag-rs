@@ -201,7 +201,7 @@ impl Detector {
         cy: f64,
     ) -> Result<JsValue, JsError> {
         let core_det = CoreDetection {
-            family_name: detection.family,
+            family_id: detection.family.as_str().into(),
             id: detection.id,
             hamming: detection.hamming,
             decision_margin: detection.decision_margin,
@@ -235,7 +235,7 @@ impl Detector {
 
 fn detection_to_wasm(det: &CoreDetection) -> WasmDetection {
     WasmDetection {
-        family: det.family_name.clone(),
+        family: det.family_id.to_string(),
         id: det.id,
         hamming: det.hamming,
         decision_margin: det.decision_margin,
