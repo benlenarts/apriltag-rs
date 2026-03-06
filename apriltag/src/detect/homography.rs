@@ -185,4 +185,13 @@ mod tests {
         let corners = [[5.0, 5.0], [5.0, 5.0], [5.0, 5.0], [5.0, 5.0]];
         assert!(Homography::from_quad_corners(&corners).is_none());
     }
+
+    #[test]
+    fn inverse_singular_matrix() {
+        // Construct a Homography with det=0 matrix → inverse returns None
+        let h = Homography {
+            data: [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        };
+        assert!(h.inverse().is_none());
+    }
 }
