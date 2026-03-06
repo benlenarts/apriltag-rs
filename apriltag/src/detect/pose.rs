@@ -362,13 +362,10 @@ pub fn estimate_tag_pose(det: &Detection, params: &PoseParams) -> (Pose, f64, Op
     // Try to find a second local minimum
     let (pose2, err2) = find_second_minimum(&v, &tag_pts, &pose1);
 
-    // Return the better estimate first. Usually err1 <= err2, but extreme
-    // viewing angles can produce cases where the second minimum is better.
-    if err2 < err1 {
-        // pose2 is always Some when err2 < MAX (find_second_minimum succeeded)
-        (pose2.unwrap(), err2, Some(pose1), err1)
-    } else {
-        (pose1, err1, pose2, err2)
+    match pose2 {
+        Some(p2) if err2 < err1 => (p2, err2, Some(pose1), err1),
+        Some(p2) => (pose1, err1, Some(p2), err2),
+        None => (pose1, err1, None, f64::MAX),
     }
 }
 

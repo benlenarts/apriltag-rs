@@ -140,10 +140,8 @@ fn parse_bin_codes(data: &[u8]) -> Result<Vec<u64>, FamilyError> {
             data.len()
         )));
     }
-    Ok(data
-        .chunks_exact(8)
-        .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap()))
-        .collect())
+    let (chunks, _) = data.as_chunks::<8>();
+    Ok(chunks.iter().map(|c| u64::from_le_bytes(*c)).collect())
 }
 
 #[derive(Debug, thiserror::Error)]
