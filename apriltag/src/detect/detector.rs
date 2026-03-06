@@ -1,4 +1,4 @@
-use crate::family::TagFamily;
+use crate::family::{FamilyId, TagFamily};
 
 #[cfg(feature = "parallel")]
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -18,7 +18,7 @@ use super::unionfind::UnionFind;
 /// A detected AprilTag in an image.
 #[derive(Debug, Clone)]
 pub struct Detection {
-    pub family_name: String,
+    pub family_id: FamilyId,
     pub id: i32,
     pub hamming: i32,
     pub decision_margin: f32,
@@ -226,7 +226,7 @@ impl Detector {
                     let (center, corners) = compute_detection_geometry(&h, result.rotation, family);
 
                     dets.push(Detection {
-                        family_name: result.family_name,
+                        family_id: result.family_id,
                         id: result.id,
                         hamming: result.hamming,
                         decision_margin: result.decision_margin,
@@ -587,7 +587,7 @@ mod tests {
         // reversed_border mismatch continue.
         assert!(!dets.is_empty());
         assert_eq!(dets[0].id, 0);
-        assert_eq!(dets[0].family_name, "tag16h5");
+        assert_eq!(dets[0].family_id, "tag16h5");
     }
 
     #[test]

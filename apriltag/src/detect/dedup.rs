@@ -9,7 +9,7 @@ pub fn deduplicate(detections: &mut Vec<Detection>) {
     while i < detections.len() {
         let mut j = i + 1;
         while j < detections.len() {
-            if detections[i].family_name == detections[j].family_name
+            if detections[i].family_id == detections[j].family_id
                 && detections[i].id == detections[j].id
                 && polygons_overlap(&detections[i].corners, &detections[j].corners)
             {
@@ -91,7 +91,7 @@ mod tests {
 
     fn make_detection(id: i32, hamming: i32, margin: f32, corners: [[f64; 2]; 4]) -> Detection {
         Detection {
-            family_name: "test".to_string(),
+            family_id: crate::family::FamilyId::from("test"),
             id,
             hamming,
             decision_margin: margin,

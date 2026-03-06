@@ -199,7 +199,7 @@ fn main() -> Result<()> {
                 });
 
                 OutputDetection {
-                    family: det.family_name.clone(),
+                    family: det.family_id.to_string(),
                     id: det.id,
                     hamming: det.hamming,
                     decision_margin: det.decision_margin,

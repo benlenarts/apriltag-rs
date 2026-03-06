@@ -1,13 +1,75 @@
-use serde::Deserialize;
+use std::fmt;
+use std::ops::Deref;
+use std::sync::Arc;
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::bits::{self, BitLocation};
 use crate::error::LayoutError;
 use crate::layout::Layout;
 
+/// A shared, immutable identifier for a tag family.
+///
+/// Wraps `Arc<str>` so that cloning into each `Detection` is a cheap refcount
+/// bump instead of an allocation.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FamilyId(Arc<str>);
+
+impl FamilyId {
+    /// Create a new `FamilyId` from any string-like value.
+    pub fn new(name: impl Into<Arc<str>>) -> Self {
+        Self(name.into())
+    }
+}
+
+impl fmt::Display for FamilyId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl Deref for FamilyId {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for FamilyId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq<&str> for FamilyId {
+    fn eq(&self, other: &&str) -> bool {
+        &*self.0 == *other
+    }
+}
+
+impl From<&str> for FamilyId {
+    fn from(s: &str) -> Self {
+        Self(Arc::from(s))
+    }
+}
+
+impl Serialize for FamilyId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FamilyId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Ok(Self(Arc::from(s)))
+    }
+}
+
 /// Serde-driven family configuration matching the TOML format.
 #[derive(Debug, Clone, Deserialize)]
 pub struct FamilyConfig {
-    pub name: String,
+    pub name: FamilyId,
     pub min_hamming: u32,
     /// Per-family complexity parameter used in the LCG seed computation.
     /// Required for Era 2 code generation; optional for classic families.

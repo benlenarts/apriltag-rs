@@ -711,7 +711,7 @@ mod tests {
         }
 
         let det = Detection {
-            family_name: "test".to_string(),
+            family_id: crate::family::FamilyId::from("test"),
             id: 0,
             hamming: 0,
             decision_margin: 100.0,
@@ -768,7 +768,7 @@ mod tests {
         }
 
         let det = Detection {
-            family_name: "test".to_string(),
+            family_id: crate::family::FamilyId::from("test"),
             id: 0,
             hamming: 0,
             decision_margin: 100.0,
@@ -847,7 +847,7 @@ mod tests {
             cy: 240.0,
         };
         let det = Detection {
-            family_name: "test".to_string(),
+            family_id: crate::family::FamilyId::from("test"),
             id: 0,
             hamming: 0,
             decision_margin: 100.0,
@@ -893,7 +893,7 @@ mod tests {
         }
 
         let det = Detection {
-            family_name: "test".to_string(),
+            family_id: crate::family::FamilyId::from("test"),
             id: 0,
             hamming: 0,
             decision_margin: 100.0,
@@ -1016,7 +1016,7 @@ mod tests {
                         }
 
                         let det = Detection {
-                            family_name: "test".to_string(),
+                            family_id: crate::family::FamilyId::from("test"),
                             id: 0,
                             hamming: 0,
                             decision_margin: 100.0,
