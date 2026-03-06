@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `Detection.family_name` and `DecodeResult.family_name` replaced with `family_id: FamilyId` (an `Arc<str>` newtype), eliminating per-detection string allocation
 - Pool threshold tile arrays, deglitch morph buffers, unsharp mask buffer, and refine_edges vals in `DetectorBuffers`, eliminating ~250 allocs/frame on reuse
 - Hoist per-row `Vec<&[u8]>` allocation above blur vertical pass loop (~240 allocs → 1)
 - Quad fitting: use unstable sort for angular sorting, eliminate allocation in `smooth_errors`, reuse buffers across clusters
