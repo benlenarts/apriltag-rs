@@ -1,4 +1,4 @@
-use super::image::ImageU8;
+use super::image::GrayImage;
 use super::quad::Quad;
 
 /// Refine quad edges by snapping to strong gradients in the original image.
@@ -6,7 +6,12 @@ use super::quad::Quad;
 /// For each quad edge, samples along the edge and searches perpendicular to it
 /// to find the strongest gradient, then re-fits the edge line and recomputes
 /// corner intersections.
-pub fn refine_edges(quad: &mut Quad, img: &ImageU8, quad_decimate: f32, vals: &mut Vec<f64>) {
+pub fn refine_edges(
+    quad: &mut Quad,
+    img: &impl GrayImage,
+    quad_decimate: f32,
+    vals: &mut Vec<f64>,
+) {
     let range = quad_decimate as f64 + 1.0;
 
     let mut lines = [[0.0f64; 4]; 4]; // [px, py, nx, ny]
@@ -165,6 +170,7 @@ fn intersect_lines_raw(l0: &[f64; 4], l1: &[f64; 4]) -> Option<(f64, f64)> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::image::ImageU8;
     use super::*;
 
     #[test]

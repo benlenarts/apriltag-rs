@@ -8,6 +8,7 @@ pub mod detector;
 pub mod homography;
 #[allow(clippy::needless_range_loop)]
 pub mod image;
+pub use image::{GrayImage, ImageRef};
 #[allow(clippy::needless_range_loop)]
 pub mod pose;
 #[allow(clippy::needless_range_loop)]

@@ -1,4 +1,4 @@
-use super::image::ImageU8;
+use super::image::{GrayImage, ImageU8};
 use wide::{i32x8, u32x8};
 
 /// Decimate an image by factor `f`, subsampling every f-th pixel.
@@ -8,13 +8,13 @@ use wide::{i32x8, u32x8};
 ///
 /// Pass a pre-allocated `buf` to reuse memory across calls. Use `Vec::new()`
 /// for one-shot usage.
-pub fn decimate(img: &ImageU8, f: u32, buf: Vec<u8>) -> ImageU8 {
+pub fn decimate(img: &impl GrayImage, f: u32, buf: Vec<u8>) -> ImageU8 {
     if f <= 1 {
-        return img.clone();
+        return img.to_image_u8();
     }
 
-    let out_w = img.width / f;
-    let out_h = img.height / f;
+    let out_w = img.width() / f;
+    let out_h = img.height() / f;
     let mut out = ImageU8::new_reuse(out_w, out_h, buf);
 
     for oy in 0..out_h {

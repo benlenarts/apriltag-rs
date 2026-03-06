@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 use apriltag::detect::detector::{
     Detection as CoreDetection, Detector as CoreDetector, DetectorBuffers, DetectorConfig,
 };
-use apriltag::detect::image::ImageU8;
+use apriltag::detect::image::ImageRef;
 use apriltag::detect::pose::{estimate_tag_pose, PoseParams};
 use apriltag::family;
 
@@ -163,7 +163,7 @@ impl Detector {
             )));
         }
 
-        let img = ImageU8::from_buf(width, height, width, data.to_vec());
+        let img = ImageRef::new(width, height, width, data);
         let detections = self.inner.detect(&img, &mut self.buffers);
 
         let wasm_dets: Vec<WasmDetection> = detections.iter().map(detection_to_wasm).collect();
@@ -194,7 +194,7 @@ impl Detector {
             ((77u32 * px[0] as u32 + 150u32 * px[1] as u32 + 29u32 * px[2] as u32) >> 8) as u8
         }));
 
-        let img = ImageU8::from_buf(width, height, width, self.gray_buf.clone());
+        let img = ImageRef::new(width, height, width, &self.gray_buf);
         let detections = self.inner.detect(&img, &mut self.buffers);
 
         let wasm_dets: Vec<WasmDetection> = detections.iter().map(detection_to_wasm).collect();

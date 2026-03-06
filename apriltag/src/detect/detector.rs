@@ -8,7 +8,7 @@ use super::connected::connected_components;
 use super::decode::{decode_quad, QuickDecode};
 use super::dedup::deduplicate;
 use super::homography::Homography;
-use super::image::ImageU8;
+use super::image::GrayImage;
 use super::preprocess::{apply_sigma, decimate};
 use super::quad::{fit_quads, QuadThreshParams};
 use super::refine::refine_edges;
@@ -120,7 +120,14 @@ impl Detector {
     ///
     /// On the first call, buffers are allocated as needed. On subsequent calls
     /// with the same (or smaller) image dimensions, no allocation occurs.
-    pub fn detect(&self, img: &ImageU8, buffers: &mut DetectorBuffers) -> Vec<Detection> {
+    ///
+    /// Accepts any type implementing [`GrayImage`], including borrowed [`ImageRef`](super::ImageRef)
+    /// for zero-copy detection from a `&[u8]` slice.
+    pub fn detect(
+        &self,
+        img: &(impl GrayImage + Sync),
+        buffers: &mut DetectorBuffers,
+    ) -> Vec<Detection> {
         let f = self.config.quad_decimate as u32;
 
         // Stage 1: Preprocess
@@ -275,7 +282,7 @@ fn compute_detection_geometry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::detect::image::ImageU8;
+    use crate::detect::image::{ImageRef, ImageU8};
     use crate::family;
     use crate::render;
 
@@ -710,6 +717,34 @@ mod tests {
         assert_eq!(dets_fresh.len(), dets_reuse.len());
         for (a, b) in dets_fresh.iter().zip(dets_reuse.iter()) {
             assert_eq!(a.id, b.id);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "family-tag16h5")]
+    fn detect_image_ref_matches_image_u8() {
+        let (img, family) = build_synthetic_tag_image();
+
+        let mut config = DetectorConfig::default();
+        config.quad_decimate = 1.0;
+        config.quad_sigma = 0.0;
+        let mut det = Detector::new(config);
+        det.add_family(family, 2);
+
+        let dets_owned = det.detect(&img, &mut DetectorBuffers::new());
+
+        let img_ref = ImageRef::new(img.width, img.height, img.stride, &img.buf);
+        let dets_borrowed = det.detect(&img_ref, &mut DetectorBuffers::new());
+
+        assert_eq!(dets_owned.len(), dets_borrowed.len());
+        for (a, b) in dets_owned.iter().zip(dets_borrowed.iter()) {
+            assert_eq!(a.id, b.id);
+            assert_eq!(a.hamming, b.hamming);
+            assert!((a.decision_margin - b.decision_margin).abs() < 1e-6);
+            for i in 0..4 {
+                assert!((a.corners[i][0] - b.corners[i][0]).abs() < 1e-6);
+                assert!((a.corners[i][1] - b.corners[i][1]).abs() < 1e-6);
+            }
         }
     }
 }
