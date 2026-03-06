@@ -392,13 +392,8 @@ mod tests {
         all_points.dedup();
         let unique = all_points.len();
 
-        assert_eq!(
-            total,
-            unique,
-            "found {} duplicate midpoints out of {} total",
-            total - unique,
-            total
-        );
+        // no duplicate midpoints
+        assert_eq!(total, unique);
     }
 
     #[test]
@@ -422,6 +417,49 @@ mod tests {
         let mut uf2 = run_cc(&img);
         let filtered = gradient_clusters(&img, &mut uf2, 100_000, &mut ClusterMap::new());
         assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn hash_collision_chain_walk() {
+        // Exercise the chain-walk path (lines 88-90) in ClusterMap::insert by
+        // inserting two distinct keys that hash to the same bucket.
+        let mut map = ClusterMap::new();
+        let n_buckets = 16usize;
+        map.reset(n_buckets);
+
+        // Find two keys that collide: both hash to bucket 0.
+        // hash(key) = key.wrapping_mul(0x517cc1b727220a95) % n_buckets
+        let key_a = 0u64;
+        let mut key_b = 1u64;
+        let target = (key_a.wrapping_mul(0x517cc1b727220a95) as usize) % n_buckets;
+        loop {
+            let h = (key_b.wrapping_mul(0x517cc1b727220a95) as usize) % n_buckets;
+            if h == target {
+                break;
+            }
+            key_b += 1;
+        }
+
+        let pt = Pt {
+            x: 10,
+            y: 20,
+            gx: 1,
+            gy: 0,
+            slope: 0,
+        };
+        map.insert(key_a, pt);
+        // Second insert with a different key in the same bucket forces the
+        // chain walk (while loop iterates past key_a's entry before creating
+        // a new entry for key_b).
+        map.insert(key_b, pt);
+        // Also insert into key_a again to walk past key_b in the chain.
+        map.insert(key_a, pt);
+
+        // key_a should have 2 points, key_b should have 1
+        let a_entry = map.entries.iter().find(|e| e.key == key_a).unwrap();
+        let b_entry = map.entries.iter().find(|e| e.key == key_b).unwrap();
+        assert_eq!(a_entry.points.len(), 2);
+        assert_eq!(b_entry.points.len(), 1);
     }
 
     #[test]

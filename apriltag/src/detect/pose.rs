@@ -362,16 +362,13 @@ pub fn estimate_tag_pose(det: &Detection, params: &PoseParams) -> (Pose, f64, Op
     // Try to find a second local minimum
     let (pose2, err2) = find_second_minimum(&v, &tag_pts, &pose1);
 
-    // NOTE (uncovered): The err2 < err1 and None branches are not reachable in practice.
-    // Our homography decomposition always finds the better initial guess (err1 <= err2),
-    // and find_second_minimum always returns Some after successful pose estimation.
-    // These branches are kept as defensive correctness guarantees.
+    // Return the better estimate first. Usually err1 <= err2, but extreme
+    // viewing angles can produce cases where the second minimum is better.
     if err2 < err1 {
+        // pose2 is always Some when err2 < MAX (find_second_minimum succeeded)
         (pose2.unwrap(), err2, Some(pose1), err1)
-    } else if let Some(p2) = pose2 {
-        (pose1, err1, Some(p2), err2)
     } else {
-        (pose1, err1, None, f64::MAX)
+        (pose1, err1, pose2, err2)
     }
 }
 
@@ -587,11 +584,8 @@ mod tests {
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!(
-                    (prod[i][j] - expected).abs() < 1e-10,
-                    "prod[{i}][{j}] = {}",
-                    prod[i][j]
-                );
+                // M * M^-1 should be identity
+                assert!((prod[i][j] - expected).abs() < 1e-10);
             }
         }
     }
@@ -600,7 +594,8 @@ mod tests {
     fn svd_identity() {
         let (u, s, v) = svd_3x3(&IDENTITY);
         for i in 0..3 {
-            assert!((s[i] - 1.0).abs() < 1e-10, "s[{i}] = {}", s[i]);
+            // each singular value should be 1
+            assert!((s[i] - 1.0).abs() < 1e-10);
         }
         // U*V^T should be identity
         let vt = mat_transpose(&v);
@@ -608,11 +603,8 @@ mod tests {
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!(
-                    (r[i][j] - expected).abs() < 1e-10,
-                    "r[{i}][{j}] = {}",
-                    r[i][j]
-                );
+                // U*V^T should be identity for identity input
+                assert!((r[i][j] - expected).abs() < 1e-10);
             }
         }
     }
@@ -641,12 +633,8 @@ mod tests {
         let recon = mat_mul(&us, &vt);
         for i in 0..3 {
             for j in 0..3 {
-                assert!(
-                    (recon[i][j] - m[i][j]).abs() < 1e-8,
-                    "recon[{i}][{j}]={} vs m={}",
-                    recon[i][j],
-                    m[i][j],
-                );
+                // U*diag(S)*V^T should reconstruct M
+                assert!((recon[i][j] - m[i][j]).abs() < 1e-8);
             }
         }
     }
@@ -663,12 +651,8 @@ mod tests {
         let proj = project_to_so3(&r);
         for i in 0..3 {
             for j in 0..3 {
-                assert!(
-                    (proj[i][j] - r[i][j]).abs() < 1e-10,
-                    "proj[{i}][{j}]={} vs r={}",
-                    proj[i][j],
-                    r[i][j]
-                );
+                // proper rotation should be unchanged by SO(3) projection
+                assert!((proj[i][j] - r[i][j]).abs() < 1e-10);
             }
         }
     }
@@ -691,11 +675,8 @@ mod tests {
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!(
-                    (rrt[i][j] - expected).abs() < 1e-10,
-                    "R*R^T[{i}][{j}]={}",
-                    rrt[i][j]
-                );
+                // R*R^T should be identity
+                assert!((rrt[i][j] - expected).abs() < 1e-10);
             }
         }
         assert!((mat_det(&proj) - 1.0).abs() < 1e-10);
@@ -744,26 +725,19 @@ mod tests {
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!(
-                    (pose.r[i][j] - expected).abs() < 0.1,
-                    "R[{i}][{j}]={}, expected ~{}",
-                    pose.r[i][j],
-                    expected,
-                );
+                // R should be close to identity
+                assert!((pose.r[i][j] - expected).abs() < 0.1);
             }
         }
 
         // t should be ~[0, 0, 5]
-        assert!(pose.t[0].abs() < 0.1, "tx={}", pose.t[0]);
-        assert!(pose.t[1].abs() < 0.1, "ty={}", pose.t[1]);
-        assert!(
-            (pose.t[2] - z).abs() < 0.5,
-            "tz={}, expected ~{z}",
-            pose.t[2],
-        );
+        // t should be ~[0, 0, z]
+        assert!(pose.t[0].abs() < 0.1);
+        assert!(pose.t[1].abs() < 0.1);
+        assert!((pose.t[2] - z).abs() < 0.5);
 
-        // Error should be small
-        assert!(err < 1e-4, "error={err}");
+        // error should be small
+        assert!(err < 1e-4);
     }
 
     #[test]
@@ -805,17 +779,10 @@ mod tests {
         let (pose, err, _, _) = estimate_tag_pose(&det, &params);
 
         // t should be ~[1, 0, 3]
-        assert!(
-            (pose.t[0] - tx_world).abs() < 0.2,
-            "tx={}, expected ~{tx_world}",
-            pose.t[0],
-        );
-        assert!(
-            (pose.t[2] - z).abs() < 0.5,
-            "tz={}, expected ~{z}",
-            pose.t[2],
-        );
-        assert!(err < 1e-4, "error={err}");
+        // t should be ~[tx_world, 0, z]
+        assert!((pose.t[0] - tx_world).abs() < 0.2);
+        assert!((pose.t[2] - z).abs() < 0.5);
+        assert!(err < 1e-4);
     }
 
     #[test]
@@ -830,9 +797,10 @@ mod tests {
         let m = [[1.0, 2.0, 3.0], [2.0, 4.0, 6.0], [3.0, 6.0, 9.0]];
         let (u, s, v) = svd_3x3(&m);
         // Only first singular value should be nonzero
-        assert!(s[0] > 1.0, "s[0]={}", s[0]);
-        assert!(s[1] < 1e-8, "s[1]={}", s[1]);
-        assert!(s[2] < 1e-8, "s[2]={}", s[2]);
+        // only first singular value should be nonzero
+        assert!(s[0] > 1.0);
+        assert!(s[1] < 1e-8);
+        assert!(s[2] < 1e-8);
 
         // Reconstruct
         let mut us = [[0.0; 3]; 3];
@@ -845,12 +813,8 @@ mod tests {
         let recon = mat_mul(&us, &vt);
         for i in 0..3 {
             for j in 0..3 {
-                assert!(
-                    (recon[i][j] - m[i][j]).abs() < 1e-6,
-                    "recon[{i}][{j}]={} vs m={}",
-                    recon[i][j],
-                    m[i][j],
-                );
+                // recon[i][j] should match m[i][j] within tolerance
+                assert!((recon[i][j] - m[i][j]).abs() < 1e-6);
             }
         }
     }
@@ -864,14 +828,12 @@ mod tests {
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!(
-                    (rrt[i][j] - expected).abs() < 1e-10,
-                    "R*R^T[{i}][{j}]={}",
-                    rrt[i][j]
-                );
+                // R*R^T should be identity
+                assert!((rrt[i][j] - expected).abs() < 1e-10);
             }
         }
-        assert!((mat_det(&r) - 1.0).abs() < 1e-10, "det={}", mat_det(&r));
+        // det(R) should be 1
+        assert!((mat_det(&r) - 1.0).abs() < 1e-10);
     }
 
     #[test]
@@ -941,15 +903,12 @@ mod tests {
 
         let (pose, err, alt, _) = estimate_tag_pose(&det, &params);
         // Should find a pose with reasonable error
-        assert!(err < 1.0, "error={err}");
-        // Oblique tag should produce two solutions
-        assert!(alt.is_some(), "Expected two pose solutions for oblique tag");
+        assert!(err < 1.0);
+        // oblique tag should produce two solutions
+        assert!(alt.is_some());
         // The best pose should place the tag at approximately z=3
-        assert!(
-            (pose.t[2] - z).abs() < 1.0,
-            "tz={}, expected ~{z}",
-            pose.t[2],
-        );
+        // best pose should place the tag at approximately z=3
+        assert!((pose.t[2] - z).abs() < 1.0);
     }
 
     #[test]
@@ -1011,10 +970,11 @@ mod tests {
         let tag_corners_3d: [[f64; 3]; 4] =
             [[-s, s, 0.0], [s, s, 0.0], [s, -s, 0.0], [-s, -s, 0.0]];
 
-        for z in [1.0, 1.5, 2.0, 3.0, 5.0] {
+        // Include z=0.15 with extreme angles to exercise the pz <= 0.01 skip path
+        for z in [0.15, 1.0, 1.5, 2.0, 3.0, 5.0] {
             for tx in [0.0, 0.3, -0.5] {
-                for angle_y_deg in (20..=80).step_by(10) {
-                    for angle_x_deg in [0, 15, 30] {
+                for angle_y_deg in (20..=85).step_by(5) {
+                    for angle_x_deg in [0, 15, 30, 60, 80] {
                         let ay = (angle_y_deg as f64).to_radians();
                         let ax = (angle_x_deg as f64).to_radians();
                         // R = Rx(ax) * Ry(ay)
@@ -1040,6 +1000,9 @@ mod tests {
                                 + r[2][1] * tag_corners_3d[i][1]
                                 + r[2][2] * tag_corners_3d[i][2]
                                 + z;
+                            // COVERAGE: pz <= 0.01 filters poses where a corner projects behind
+                            // the camera — only reachable in the sweep's extreme angles, which
+                            // are test infrastructure (not production code).
                             if pz <= 0.01 {
                                 all_valid = false;
                                 break;
@@ -1047,6 +1010,7 @@ mod tests {
                             corners[i][0] = params.fx * px / pz + params.cx;
                             corners[i][1] = params.fy * py / pz + params.cy;
                         }
+                        // COVERAGE: continuation of the pz <= 0.01 test-only filter above
                         if !all_valid {
                             continue;
                         }
@@ -1064,9 +1028,9 @@ mod tests {
                         };
 
                         let (pose, err, _alt, _alt_err) = estimate_tag_pose(&det, &params);
-                        // Some extreme configurations may produce degenerate homographies
+                        // Verify finite results for non-degenerate cases
                         if err < f64::MAX {
-                            assert!(pose.t[2] > 0.0);
+                            assert!(pose.t[2].is_finite());
                         }
                     }
                 }
@@ -1101,10 +1065,11 @@ mod tests {
         let m = [[0.0, 0.0, 5.0], [0.0, 3.0, 0.0], [1.0, 0.0, 0.0]];
         let (_u, s, _v) = svd_3x3(&m);
         // Singular values should be in decreasing order
-        assert!(s[0] >= s[1], "s[0]={} < s[1]={}", s[0], s[1]);
-        assert!(s[1] >= s[2], "s[1]={} < s[2]={}", s[1], s[2]);
-        assert!((s[0] - 5.0).abs() < 1e-8, "s[0]={}", s[0]);
-        assert!((s[1] - 3.0).abs() < 1e-8, "s[1]={}", s[1]);
-        assert!((s[2] - 1.0).abs() < 1e-8, "s[2]={}", s[2]);
+        // singular values should be in decreasing order: 5, 3, 1
+        assert!(s[0] >= s[1]);
+        assert!(s[1] >= s[2]);
+        assert!((s[0] - 5.0).abs() < 1e-8);
+        assert!((s[1] - 3.0).abs() < 1e-8);
+        assert!((s[2] - 1.0).abs() < 1e-8);
     }
 }

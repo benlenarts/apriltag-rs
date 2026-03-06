@@ -161,12 +161,8 @@ mod tests {
         let tag_pts = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
         for i in 0..4 {
             let (px, py) = h.project(tag_pts[i][0], tag_pts[i][1]);
-            assert!(
-                (px - corners[i][0]).abs() < 1e-4 && (py - corners[i][1]).abs() < 1e-4,
-                "corner {i}: expected ({}, {}), got ({px}, {py})",
-                corners[i][0],
-                corners[i][1],
-            );
+            // projected tag corner should match pixel corner
+            assert!((px - corners[i][0]).abs() < 1e-4 && (py - corners[i][1]).abs() < 1e-4);
         }
     }
 
@@ -188,5 +184,14 @@ mod tests {
         // All corners at the same point → degenerate
         let corners = [[5.0, 5.0], [5.0, 5.0], [5.0, 5.0], [5.0, 5.0]];
         assert!(Homography::from_quad_corners(&corners).is_none());
+    }
+
+    #[test]
+    fn inverse_singular_matrix() {
+        // Construct a Homography with det=0 matrix → inverse returns None
+        let h = Homography {
+            data: [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        };
+        assert!(h.inverse().is_none());
     }
 }

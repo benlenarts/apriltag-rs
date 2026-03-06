@@ -274,14 +274,8 @@ mod tests {
             let wrong_dist = ((quad.corners[i][0] - expected[shifted][0]).powi(2)
                 + (quad.corners[i][1] - expected[shifted][1]).powi(2))
             .sqrt();
-            assert!(
-                correct_dist < wrong_dist,
-                "Corner {i}: correct_dist={correct_dist:.2} should be < wrong_dist={wrong_dist:.2} \
-                 (refined={:?}, expected={:?}, shifted_expected={:?})",
-                quad.corners[i],
-                expected[i],
-                expected[shifted],
-            );
+            // refined corner should be closer to expected than to shifted position
+            assert!(correct_dist < wrong_dist);
         }
     }
 
@@ -356,7 +350,6 @@ mod tests {
                 [110000, 150178],
                 [90000, 149789]
             ],
-            "Corners changed — update golden values if intentional"
         );
     }
 

@@ -85,6 +85,7 @@ pub fn fit_quads(
     // See apriltag_quad_thresh.c:1090.
     let max_perimeter = 4 * (image_width + image_height) as usize;
 
+    // COVERAGE: parallel feature block — only compiled with --features parallel
     #[cfg(feature = "parallel")]
     {
         clusters
@@ -293,19 +294,16 @@ fn range_moments(lfps: &[LineFitPt], i0: usize, i1: usize) -> LineFitPt {
             }
         }
     } else {
-        // Wrapping: [i0, sz) + [0, i1]
-        let tail = if i0 == 0 {
-            *last
-        } else {
-            let start = &lfps[i0 - 1];
-            LineFitPt {
-                mx: last.mx - start.mx,
-                my: last.my - start.my,
-                mxx: last.mxx - start.mxx,
-                mxy: last.mxy - start.mxy,
-                myy: last.myy - start.myy,
-                w: last.w - start.w,
-            }
+        // Wrapping: [i0, sz) + [0, i1] — i0 > i1 implies i0 >= 1
+        debug_assert!(i0 >= 1);
+        let start = &lfps[i0 - 1];
+        let tail = LineFitPt {
+            mx: last.mx - start.mx,
+            my: last.my - start.my,
+            mxx: last.mxx - start.mxx,
+            mxy: last.mxy - start.mxy,
+            myy: last.myy - start.myy,
+            w: last.w - start.w,
         };
         let head = &lfps[i1];
         LineFitPt {
@@ -347,7 +345,8 @@ fn fit_line(moments: &LineFitPt) -> Option<(FittedLine, f64)> {
         if len0 > 1e-10 {
             (nx0, ny0)
         } else {
-            // Degenerate case (cxy ≈ 0): eigenvectors are axis-aligned
+            // COVERAGE: degenerate case requires exact FP conditions (cxy ≈ 0 with
+            // cxx ≈ cyy) that don't arise from realistic cluster geometry.
             if cxx > cyy {
                 (0.0, 1.0) // line is horizontal, normal is vertical
             } else {
@@ -703,6 +702,56 @@ mod tests {
     }
 
     #[test]
+    fn fit_quad_exceeds_max_perimeter() {
+        // 50 points exceeds max_perimeter = 4*(5+5) = 40 for a 5x5 image
+        let points: Vec<Pt> = (0..50)
+            .map(|i| {
+                let angle = 2.0 * std::f64::consts::PI * i as f64 / 50.0;
+                Pt {
+                    x: (100.0 + 50.0 * angle.cos()) as u16,
+                    y: (100.0 + 50.0 * angle.sin()) as u16,
+                    gx: (255.0 * angle.cos()) as i16,
+                    gy: (255.0 * angle.sin()) as i16,
+                    slope: 0,
+                }
+            })
+            .collect();
+        let cluster = Cluster { points };
+        let params = QuadThreshParams::default();
+        // tiny image makes max_perimeter = 4*(5+5) = 40, less than 50 points
+        let quads = fit_quads(&mut [cluster], 5, 5, &params, true, true);
+        assert!(quads.is_empty());
+    }
+
+    #[test]
+    fn find_corners_collinear_returns_none() {
+        // Collinear cluster (all points on a line) produces < 4 maxima
+        let points: Vec<Pt> = (0..30)
+            .map(|i| Pt {
+                x: 100 + i * 2,
+                y: 100,
+                gx: 0,
+                gy: 255,
+                slope: 0,
+            })
+            .collect();
+        let mut lfps = Vec::new();
+        build_line_fit_pts(&points, &mut lfps);
+        let mut errors = Vec::new();
+        let params = QuadThreshParams::default();
+        // collinear points have uniform error → fewer than 4 maxima
+        assert!(find_corners(&lfps, &mut errors, &params).is_none());
+    }
+
+    #[test]
+    fn validate_quad_non_convex_fails() {
+        // CCW winding (positive area) but non-convex (one corner dented inward)
+        let corners = [[0.0, 0.0], [10.0, 0.0], [5.0, 2.0], [0.0, 10.0]];
+        let params = QuadThreshParams::default();
+        assert!(validate_quad(&corners, &params).is_none());
+    }
+
+    #[test]
     fn smooth_errors_reduces_spike() {
         let mut errors = vec![0.0, 0.0, 100.0, 0.0, 0.0];
         smooth_errors(&mut errors);
@@ -729,11 +778,9 @@ mod tests {
                 slope: 0,
             });
         }
-        let (reversed, dot) = check_border_direction(&points);
-        assert!(
-            !reversed,
-            "dot={dot}, should be positive (gradients point out)"
-        );
+        let (reversed, _dot) = check_border_direction(&points);
+        // dot should be positive (gradients point outward)
+        assert!(!reversed);
     }
 
     #[test]
@@ -834,10 +881,8 @@ mod tests {
         build_line_fit_pts(&points, &mut lfps);
         let total = &lfps[2];
         let py = total.my / total.w;
-        assert!(
-            (py - 10.5).abs() < 1e-10,
-            "Expected centroid py=10.5 (with pixel-center delta), got {py}"
-        );
+        // centroid py=10.5 (with pixel-center delta)
+        assert!((py - 10.5).abs() < 1e-10);
     }
 
     #[test]
@@ -893,10 +938,8 @@ mod tests {
         let quads = fit_quads(&mut [cluster], 400, 400, &params, true, true);
 
         eprintln!("Synthetic rectangle: found {} quads", quads.len());
-        assert!(
-            !quads.is_empty(),
-            "Should find a quad from a perfect rectangle"
-        );
+        // should find a quad from a perfect rectangle
+        assert!(!quads.is_empty());
     }
 
     #[test]
@@ -947,16 +990,164 @@ mod tests {
     }
 
     #[test]
+    fn fit_quad_too_few_points() {
+        // Cluster with only 10 points (< 24 hard minimum)
+        let points: Vec<Pt> = (0..10)
+            .map(|i| Pt {
+                x: i * 10,
+                y: i * 10,
+                gx: 255,
+                gy: 0,
+                slope: 0,
+            })
+            .collect();
+        let cluster = Cluster { points };
+        let params = QuadThreshParams::default();
+        let quads = fit_quads(&mut [cluster], 400, 400, &params, true, true);
+        assert!(quads.is_empty());
+    }
+
+    #[test]
+    fn fit_quad_zero_gradient() {
+        // Cluster with 30+ points, all gradients (0,0) → dot=0 → rejected
+        let points: Vec<Pt> = (0..30)
+            .map(|i| {
+                let angle = 2.0 * std::f64::consts::PI * i as f64 / 30.0;
+                let r = 100.0;
+                Pt {
+                    x: (r * angle.cos() + 200.0) as u16,
+                    y: (r * angle.sin() + 200.0) as u16,
+                    gx: 0,
+                    gy: 0,
+                    slope: 0,
+                }
+            })
+            .collect();
+        let cluster = Cluster { points };
+        let params = QuadThreshParams::default();
+        let quads = fit_quads(&mut [cluster], 400, 400, &params, true, true);
+        assert!(quads.is_empty());
+    }
+
+    #[test]
+    fn fit_quad_normal_border_rejected_reversed_only() {
+        // Create a valid normal-border cluster, but only allow reversed_border
+        let mut points = Vec::new();
+        let (x0, y0, x1, y1) = (140, 140, 260, 260);
+        for i in 0..30 {
+            let t = i as f64 / 30.0;
+            points.push(Pt {
+                x: (x0 as f64 + (x1 - x0) as f64 * t) as u16,
+                y: y0,
+                gx: 0,
+                gy: -255, // gradient pointing outward (normal border)
+                slope: 0,
+            });
+        }
+        for i in 0..30 {
+            let t = i as f64 / 30.0;
+            points.push(Pt {
+                x: x1,
+                y: (y0 as f64 + (y1 - y0) as f64 * t) as u16,
+                gx: 255,
+                gy: 0,
+                slope: 0,
+            });
+        }
+        for i in 0..30 {
+            let t = i as f64 / 30.0;
+            points.push(Pt {
+                x: (x1 as f64 - (x1 - x0) as f64 * t) as u16,
+                y: y1,
+                gx: 0,
+                gy: 255,
+                slope: 0,
+            });
+        }
+        for i in 0..30 {
+            let t = i as f64 / 30.0;
+            points.push(Pt {
+                x: x0,
+                y: (y1 as f64 - (y1 - y0) as f64 * t) as u16,
+                gx: -255,
+                gy: 0,
+                slope: 0,
+            });
+        }
+        let cluster = Cluster { points };
+        let params = QuadThreshParams::default();
+        // normal_border=false, reversed_border=true → reject normal-border clusters
+        let quads = fit_quads(&mut [cluster], 400, 400, &params, false, true);
+        assert!(quads.is_empty());
+    }
+
+    #[test]
+    fn fit_line_zero_weight() {
+        // LineFitPt with w=0 → fit_line returns None
+        let moments = LineFitPt::default();
+        assert!(fit_line(&moments).is_none());
+    }
+
+    #[test]
+    fn fit_line_coincident_points() {
+        // All points at same location → eigenvalues both zero → None
+        let moments = LineFitPt {
+            mx: 10.0,
+            my: 20.0,
+            mxx: 100.0,
+            mxy: 200.0,
+            myy: 400.0,
+            w: 1.0,
+        };
+        // mx/w = 10, my/w = 20, cxx = 100 - 100 = 0, cyy = 400 - 400 = 0
+        assert!(fit_line(&moments).is_none());
+    }
+
+    #[test]
+    fn fit_line_axis_aligned() {
+        // Points along a horizontal line (cxy=0) → normal should be vertical
+        let mut cum = LineFitPt::default();
+        for i in 0..10 {
+            let x = i as f64;
+            let y = 5.0;
+            cum.mx += x;
+            cum.my += y;
+            cum.mxx += x * x;
+            cum.mxy += x * y;
+            cum.myy += y * y;
+            cum.w += 1.0;
+        }
+        let (line, _mse) = fit_line(&cum).unwrap();
+        // Normal should be close to (0, ±1) since line is horizontal
+        assert!(line.nx.abs() < 0.01);
+        assert!(line.ny.abs() > 0.99);
+    }
+
+    #[test]
+    fn smooth_errors_short_array() {
+        // Array with < 3 elements should be unchanged
+        let mut e1 = vec![5.0];
+        smooth_errors(&mut e1);
+        assert_eq!(e1, vec![5.0]);
+
+        let mut e2 = vec![3.0, 7.0];
+        smooth_errors(&mut e2);
+        assert_eq!(e2, vec![3.0, 7.0]);
+
+        let mut e0: Vec<f64> = vec![];
+        smooth_errors(&mut e0);
+        assert!(e0.is_empty());
+    }
+
+    #[test]
     fn grad_weight_matches_sqrt_for_all_valid_inputs() {
         // gx and gy are always in {-255, 0, 255}
         for &gx in &[-255i16, 0, 255] {
             for &gy in &[-255i16, 0, 255] {
                 let expected = ((gx as f64).powi(2) + (gy as f64).powi(2)).sqrt() + 1.0;
                 let actual = grad_weight(gx, gy);
-                assert!(
-                    (actual - expected).abs() < 1e-10,
-                    "grad_weight({gx}, {gy}) = {actual}, expected {expected}"
-                );
+                // grad_weight should match sqrt(gx^2 + gy^2) + 1
+                assert!((actual - expected).abs() < 1e-10);
             }
         }
     }
