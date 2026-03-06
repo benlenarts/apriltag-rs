@@ -519,7 +519,8 @@ mod tests {
         }
 
         // Test several sigma values covering practical range
-        for sigma in [0.8f32, 1.0, 1.5, 2.0] {
+        // sigma=0.1 produces ksz=0 which triggers the skip path
+        for sigma in [0.1f32, 0.8, 1.0, 1.5, 2.0] {
             let mut ksz = (4.0 * sigma) as usize;
             if ksz % 2 == 0 {
                 ksz += 1;
