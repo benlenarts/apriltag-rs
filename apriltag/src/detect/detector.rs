@@ -68,6 +68,7 @@ pub struct DetectorBuffers {
     threshed_buf: Vec<u8>,
     threshold_bufs: ThresholdBuffers,
     uf: UnionFind,
+    refine_vals: Vec<f64>,
     cluster_map: super::cluster::ClusterMap,
 }
 
@@ -81,6 +82,7 @@ impl DetectorBuffers {
             unsharp_buf: Vec::new(),
             threshed_buf: Vec::new(),
             threshold_bufs: ThresholdBuffers::new(),
+            refine_vals: Vec::new(),
             uf: UnionFind::empty(),
             cluster_map: super::cluster::ClusterMap::new(),
         }
@@ -189,7 +191,12 @@ impl Detector {
         // Stage 6: Edge refinement
         if self.config.refine_edges {
             for quad in &mut quads {
-                refine_edges(quad, img, self.config.quad_decimate);
+                refine_edges(
+                    quad,
+                    img,
+                    self.config.quad_decimate,
+                    &mut buffers.refine_vals,
+                );
             }
         }
 

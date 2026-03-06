@@ -261,19 +261,21 @@ fn bench_refine_edges(c: &mut Criterion) {
     let mut group = c.benchmark_group("refine_edges");
 
     group.bench_function("many_quads", |b| {
+        let mut vals = Vec::new();
         b.iter(|| {
             let mut qs = quads.clone();
             for q in &mut qs {
-                refine_edges(black_box(q), black_box(&img), 2.0);
+                refine_edges(black_box(q), black_box(&img), 2.0, &mut vals);
             }
         })
     });
 
     group.bench_function("high_decimate", |b| {
+        let mut vals = Vec::new();
         b.iter(|| {
             let mut qs = quads.clone();
             for q in &mut qs {
-                refine_edges(black_box(q), black_box(&img), 4.0);
+                refine_edges(black_box(q), black_box(&img), 4.0, &mut vals);
             }
         })
     });
