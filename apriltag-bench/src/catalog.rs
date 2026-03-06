@@ -738,7 +738,7 @@ fn scaling_scenarios() -> Vec<Scenario> {
             build_fn: Box::new(move || {
                 let (w, h) = (2000, 1500);
                 let cols = (n_tags as f64).sqrt().ceil() as u32;
-                let rows = (n_tags + cols - 1) / cols;
+                let rows = n_tags.div_ceil(cols);
                 let spacing_x = w as f64 / (cols as f64 + 1.0);
                 let spacing_y = h as f64 / (rows as f64 + 1.0);
                 let tag_scale = (spacing_x.min(spacing_y) * 0.35).min(80.0);
