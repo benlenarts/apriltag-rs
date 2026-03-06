@@ -1,3 +1,8 @@
+# Install dev tools (cargo-llvm-cov, wasm-pack, cargo-asm, wasm32 target)
+setup:
+    cargo install cargo-llvm-cov wasm-pack cargo-asm
+    rustup target add wasm32-unknown-unknown
+
 # Run all tests
 test:
     cargo test
