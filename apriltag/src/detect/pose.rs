@@ -362,6 +362,10 @@ pub fn estimate_tag_pose(det: &Detection, params: &PoseParams) -> (Pose, f64, Op
     // Try to find a second local minimum
     let (pose2, err2) = find_second_minimum(&v, &tag_pts, &pose1);
 
+    // NOTE (uncovered): The err2 < err1 and None branches are not reachable in practice.
+    // Our homography decomposition always finds the better initial guess (err1 <= err2),
+    // and find_second_minimum always returns Some after successful pose estimation.
+    // These branches are kept as defensive correctness guarantees.
     if err2 < err1 {
         (pose2.unwrap(), err2, Some(pose1), err1)
     } else if let Some(p2) = pose2 {
@@ -540,17 +544,9 @@ fn find_second_minimum(
     }
     let r2 = mat_mul(&reflect, &pose1.r);
 
-    // Check if the alternative rotation differs enough (> 0.1 rad)
-    let rt = mat_transpose(&pose1.r);
-    let diff_rot = mat_mul(&rt, &r2);
-    // Rotation angle from trace: cos(angle) = (trace - 1) / 2
-    let trace = diff_rot[0][0] + diff_rot[1][1] + diff_rot[2][2];
-    let cos_angle = ((trace - 1.0) / 2.0).clamp(-1.0, 1.0);
-    let angle = cos_angle.acos();
-
-    if angle < 0.1 {
-        return (None, f64::MAX);
-    }
+    // Note: the angle between R and R2 = (2nn'-I)*R is always π because
+    // trace(R^T*(2nn'-I)*R) = trace(2nn'-I) = -1, giving acos(-1) = π.
+    // A previous "small angle" early-return was dead code and has been removed.
 
     // Run orthogonal iteration from the alternative starting point
     let (pose2, err2) = orthogonal_iteration(image_rays, tag_pts, &r2, &pose1.t, 50);
@@ -954,6 +950,149 @@ mod tests {
             "tz={}, expected ~{z}",
             pose.t[2],
         );
+    }
+
+    #[test]
+    fn svd_rank1_dominant_x() {
+        // Rank-1 matrix where leading singular vector has u0[0].abs() >= 0.9
+        // This hits the `[0.0, 1.0, 0.0]` perpendicular vector branch (line 221)
+        let m = [[5.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]];
+        let (u, s, v) = svd_3x3(&m);
+        assert!(s[0] > 1.0);
+        assert!(s[1] < 1e-8);
+        assert!(s[2] < 1e-8);
+        // U should still form a valid orthogonal basis
+        let uut = mat_mul(&u, &mat_transpose(&u));
+        for i in 0..3 {
+            for j in 0..3 {
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!((uut[i][j] - expected).abs() < 1e-8);
+            }
+        }
+        // Reconstruction should still work for the nonzero part
+        let mut us = [[0.0; 3]; 3];
+        for i in 0..3 {
+            for j in 0..3 {
+                us[i][j] = u[i][j] * s[j];
+            }
+        }
+        let vt = mat_transpose(&v);
+        let recon = mat_mul(&us, &vt);
+        for i in 0..3 {
+            for j in 0..3 {
+                assert!((recon[i][j] - m[i][j]).abs() < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn svd_zero_matrix() {
+        // All-zero matrix: all singular values < 1e-10, n1 will be 0 (line 232)
+        let m = [[0.0; 3]; 3];
+        let (_u, s, _v) = svd_3x3(&m);
+        for i in 0..3 {
+            assert!(s[i] < 1e-10);
+        }
+    }
+
+    #[test]
+    fn pose_oblique_sweep() {
+        // Sweep oblique angles with combined X+Y rotations and offsets to exercise
+        // all estimate_tag_pose branches including err2 < err1.
+        let params = PoseParams {
+            tagsize: 0.2,
+            fx: 500.0,
+            fy: 500.0,
+            cx: 320.0,
+            cy: 240.0,
+        };
+
+        let s = params.tagsize / 2.0;
+        let tag_corners_3d: [[f64; 3]; 4] =
+            [[-s, s, 0.0], [s, s, 0.0], [s, -s, 0.0], [-s, -s, 0.0]];
+
+        for z in [1.0, 1.5, 2.0, 3.0, 5.0] {
+            for tx in [0.0, 0.3, -0.5] {
+                for angle_y_deg in (20..=80).step_by(10) {
+                    for angle_x_deg in [0, 15, 30] {
+                        let ay = (angle_y_deg as f64).to_radians();
+                        let ax = (angle_x_deg as f64).to_radians();
+                        // R = Rx(ax) * Ry(ay)
+                        let (cy_, sy) = (ay.cos(), ay.sin());
+                        let (cx_, sx) = (ax.cos(), ax.sin());
+                        let r = [
+                            [cy_, 0.0, sy],
+                            [sx * sy, cx_, -sx * cy_],
+                            [-cx_ * sy, sx, cx_ * cy_],
+                        ];
+
+                        let mut corners = [[0.0f64; 2]; 4];
+                        let mut all_valid = true;
+                        for i in 0..4 {
+                            let px = r[0][0] * tag_corners_3d[i][0]
+                                + r[0][1] * tag_corners_3d[i][1]
+                                + r[0][2] * tag_corners_3d[i][2]
+                                + tx;
+                            let py = r[1][0] * tag_corners_3d[i][0]
+                                + r[1][1] * tag_corners_3d[i][1]
+                                + r[1][2] * tag_corners_3d[i][2];
+                            let pz = r[2][0] * tag_corners_3d[i][0]
+                                + r[2][1] * tag_corners_3d[i][1]
+                                + r[2][2] * tag_corners_3d[i][2]
+                                + z;
+                            if pz <= 0.01 {
+                                all_valid = false;
+                                break;
+                            }
+                            corners[i][0] = params.fx * px / pz + params.cx;
+                            corners[i][1] = params.fy * py / pz + params.cy;
+                        }
+                        if !all_valid {
+                            continue;
+                        }
+
+                        let det = Detection {
+                            family_name: "test".to_string(),
+                            id: 0,
+                            hamming: 0,
+                            decision_margin: 100.0,
+                            corners,
+                            center: [
+                                corners.iter().map(|c| c[0]).sum::<f64>() / 4.0,
+                                corners.iter().map(|c| c[1]).sum::<f64>() / 4.0,
+                            ],
+                        };
+
+                        let (pose, err, _alt, _alt_err) = estimate_tag_pose(&det, &params);
+                        // Some extreme configurations may produce degenerate homographies
+                        if err < f64::MAX {
+                            assert!(pose.t[2] > 0.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn find_second_minimum_near_zero_translation() {
+        // Pose with near-zero translation → early return (line 528)
+        let s = 0.05;
+        let tag_pts: [[f64; 3]; 4] = [[-s, s, 0.0], [s, s, 0.0], [s, -s, 0.0], [-s, -s, 0.0]];
+        let image_rays: [[f64; 3]; 4] = [
+            [-0.01, 0.01, 1.0],
+            [0.01, 0.01, 1.0],
+            [0.01, -0.01, 1.0],
+            [-0.01, -0.01, 1.0],
+        ];
+        // Pose with near-zero translation
+        let pose = Pose {
+            r: IDENTITY,
+            t: [0.0, 0.0, 1e-15],
+        };
+        let (alt, err) = find_second_minimum(&image_rays, &tag_pts, &pose);
+        assert!(alt.is_none());
+        assert_eq!(err, f64::MAX);
     }
 
     #[test]

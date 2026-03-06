@@ -654,9 +654,8 @@ mod tests {
 
     #[test]
     fn scenario_builds_produce_valid_scenes() {
-        // Spot-check a few scenarios
         let scenarios = all_scenarios();
-        for scenario in scenarios.iter().take(5) {
+        for scenario in scenarios.iter() {
             let scene = scenario.build();
             assert!(scene.image.width > 0);
             assert!(scene.image.height > 0);
