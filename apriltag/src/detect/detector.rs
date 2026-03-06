@@ -548,6 +548,30 @@ mod tests {
         assert!(!quads.is_empty());
     }
 
+    /// Detect a normal-border tag with both a normal and reversed-border family
+    /// registered. The reversed family should hit the `reversed_border` mismatch
+    /// continue (line 205), exercising that filter path.
+    #[test]
+    #[cfg(all(feature = "family-tag16h5", feature = "family-circle21h7"))]
+    fn detect_skips_mismatched_border_family() {
+        let (img, tag16h5) = build_synthetic_tag_image();
+        let circle21h7 = family::tag_circle21h7();
+
+        let mut config = DetectorConfig::default();
+        config.quad_decimate = 1.0;
+        config.quad_sigma = 0.0;
+        let mut det = Detector::new(config);
+        det.add_family(tag16h5, 2);
+        det.add_family(circle21h7, 2);
+
+        let dets = det.detect(&img);
+        // Should still detect tag16h5 tag ID 0; circle21h7 is skipped via the
+        // reversed_border mismatch continue.
+        assert!(!dets.is_empty());
+        assert_eq!(dets[0].id, 0);
+        assert_eq!(dets[0].family_name, "tag16h5");
+    }
+
     #[test]
     fn detector_state_default() {
         let state = DetectorState::new();
