@@ -91,6 +91,14 @@ impl GrayModel {
     }
 }
 
+/// Result of a quick decode lookup: tag ID, Hamming distance, and rotation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct QuickDecodeMatch {
+    pub id: i32,
+    pub hamming: i32,
+    pub rotation: i32,
+}
+
 /// Quick decode lookup table for fast code matching.
 #[derive(Debug, Clone)]
 pub struct QuickDecode {
@@ -160,8 +168,8 @@ impl QuickDecode {
 
     /// Look up a code in the quick decode table.
     ///
-    /// Returns (id, hamming, rotation) or None if no match within maxhamming.
-    pub fn decode(&self, family: &TagFamily, rcode: u64) -> Option<(i32, i32, i32)> {
+    /// Returns a [`QuickDecodeMatch`] or `None` if no match within `maxhamming`.
+    pub(crate) fn decode(&self, family: &TagFamily, rcode: u64) -> Option<QuickDecodeMatch> {
         let mut rcode = rcode;
         let nbits = self.nbits;
 
@@ -175,7 +183,11 @@ impl QuickDecode {
                     let id = self.chunk_ids[j][k] as usize;
                     let h = (family.codes[id] ^ rcode).count_ones();
                     if h <= self.maxhamming {
-                        return Some((id as i32, h as i32, rotation));
+                        return Some(QuickDecodeMatch {
+                            id: id as i32,
+                            hamming: h as i32,
+                            rotation,
+                        });
                     }
                 }
             }
@@ -331,14 +343,14 @@ pub fn decode_quad(
     debug_assert!(decision_margin >= 0.0);
 
     // Quick decode
-    let (id, hamming_dist, rotation) = qd.decode(family, rcode)?;
+    let m = qd.decode(family, rcode)?;
 
     Some(DecodeResult {
         family_id: family.config.name.clone(),
-        id,
-        hamming: hamming_dist,
+        id: m.id,
+        hamming: m.hamming,
         decision_margin,
-        rotation,
+        rotation: m.rotation,
     })
 }
 
@@ -653,12 +665,10 @@ mod tests {
         let qd = QuickDecode::new(&family, 2);
 
         // Code 0 should match
-        let result = qd.decode(&family, family.codes[0]);
-        assert!(result.is_some());
-        let (id, h, r) = result.unwrap();
-        assert_eq!(id, 0);
-        assert_eq!(h, 0);
-        assert_eq!(r, 0);
+        let m = qd.decode(&family, family.codes[0]).unwrap();
+        assert_eq!(m.id, 0);
+        assert_eq!(m.hamming, 0);
+        assert_eq!(m.rotation, 0);
     }
 
     #[test]
@@ -669,11 +679,9 @@ mod tests {
 
         // Flip one bit
         let corrupted = family.codes[0] ^ 1;
-        let result = qd.decode(&family, corrupted);
-        assert!(result.is_some());
-        let (id, h, _) = result.unwrap();
-        assert_eq!(id, 0);
-        assert_eq!(h, 1);
+        let m = qd.decode(&family, corrupted).unwrap();
+        assert_eq!(m.id, 0);
+        assert_eq!(m.hamming, 1);
     }
 
     #[test]
@@ -697,11 +705,9 @@ mod tests {
 
         // Rotate code 0 once
         let rotated = hamming::rotate90(family.codes[0], 16);
-        let result = qd.decode(&family, rotated);
-        assert!(result.is_some());
-        let (id, h, _r) = result.unwrap();
-        assert_eq!(id, 0);
-        assert_eq!(h, 0);
+        let m = qd.decode(&family, rotated).unwrap();
+        assert_eq!(m.id, 0);
+        assert_eq!(m.hamming, 0);
     }
 
     #[test]
@@ -711,13 +717,13 @@ mod tests {
         let qd = QuickDecode::new(&family, 2);
 
         // Check first and last codes
-        let result = qd.decode(&family, family.codes[0]).unwrap();
-        assert_eq!(result.0, 0);
-        assert_eq!(result.1, 0);
+        let m = qd.decode(&family, family.codes[0]).unwrap();
+        assert_eq!(m.id, 0);
+        assert_eq!(m.hamming, 0);
 
         let last = family.codes.len() - 1;
-        let result = qd.decode(&family, family.codes[last]).unwrap();
-        assert_eq!(result.0, last as i32);
-        assert_eq!(result.1, 0);
+        let m = qd.decode(&family, family.codes[last]).unwrap();
+        assert_eq!(m.id, last as i32);
+        assert_eq!(m.hamming, 0);
     }
 }
