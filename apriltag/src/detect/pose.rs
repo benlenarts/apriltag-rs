@@ -1000,6 +1000,9 @@ mod tests {
                                 + r[2][1] * tag_corners_3d[i][1]
                                 + r[2][2] * tag_corners_3d[i][2]
                                 + z;
+                            // COVERAGE: pz <= 0.01 filters poses where a corner projects behind
+                            // the camera — only reachable in the sweep's extreme angles, which
+                            // are test infrastructure (not production code).
                             if pz <= 0.01 {
                                 all_valid = false;
                                 break;

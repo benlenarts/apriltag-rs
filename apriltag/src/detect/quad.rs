@@ -85,6 +85,7 @@ pub fn fit_quads(
     // See apriltag_quad_thresh.c:1090.
     let max_perimeter = 4 * (image_width + image_height) as usize;
 
+    // COVERAGE: parallel feature block — only compiled with --features parallel
     #[cfg(feature = "parallel")]
     {
         clusters
@@ -344,7 +345,8 @@ fn fit_line(moments: &LineFitPt) -> Option<(FittedLine, f64)> {
         if len0 > 1e-10 {
             (nx0, ny0)
         } else {
-            // Degenerate case (cxy ≈ 0): eigenvectors are axis-aligned
+            // COVERAGE: degenerate case requires exact FP conditions (cxy ≈ 0 with
+            // cxx ≈ cyy) that don't arise from realistic cluster geometry.
             if cxx > cyy {
                 (0.0, 1.0) // line is horizontal, normal is vertical
             } else {

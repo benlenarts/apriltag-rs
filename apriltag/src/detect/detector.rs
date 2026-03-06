@@ -194,6 +194,8 @@ impl Detector {
 
         // Stages 7-8: Homography + Decode
         let decode_one = |quad: &super::quad::Quad| -> Vec<Detection> {
+            // COVERAGE: None branch requires a degenerate quad (all corners collinear)
+            // surviving all prior pipeline stages — not reachable in practice.
             let h = match Homography::from_quad_corners(&quad.corners) {
                 Some(h) => h,
                 None => return Vec::new(),
@@ -228,6 +230,7 @@ impl Detector {
             dets
         };
 
+        // COVERAGE: parallel feature block — only compiled with --features parallel
         #[cfg(feature = "parallel")]
         let mut detections: Vec<Detection> = quads.par_iter().flat_map(decode_one).collect();
 
@@ -477,6 +480,7 @@ mod tests {
                 let val = match pixel {
                     crate::types::Pixel::Black => 0u8,
                     crate::types::Pixel::White => 255u8,
+                    // COVERAGE: only fires with custom families that have transparent cells
                     crate::types::Pixel::Transparent => 128u8, // blend with gray bg
                 };
                 for dy in 0..scale {
