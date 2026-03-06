@@ -8,7 +8,7 @@ use super::connected::connected_components;
 use super::decode::{decode_quad, QuickDecode};
 use super::dedup::deduplicate;
 use super::homography::Homography;
-use super::image::{GrayImage, ImageU8};
+use super::image::GrayImage;
 use super::preprocess::{apply_sigma, decimate};
 use super::quad::{fit_quads, QuadThreshParams};
 use super::refine::refine_edges;
