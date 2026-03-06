@@ -64,6 +64,7 @@ pub struct DetectorBuffers {
     decimated_buf: Vec<u8>,
     filtered_buf: Vec<u8>,
     blur_tmp_buf: Vec<u8>,
+    unsharp_buf: Vec<u8>,
     threshed_buf: Vec<u8>,
     threshold_bufs: ThresholdBuffers,
     uf: UnionFind,
@@ -77,6 +78,7 @@ impl DetectorBuffers {
             decimated_buf: Vec::new(),
             filtered_buf: Vec::new(),
             blur_tmp_buf: Vec::new(),
+            unsharp_buf: Vec::new(),
             threshed_buf: Vec::new(),
             threshold_bufs: ThresholdBuffers::new(),
             uf: UnionFind::empty(),
@@ -121,14 +123,16 @@ impl Detector {
 
         // Stage 1: Preprocess
         let decimated = decimate(img, f, std::mem::take(&mut buffers.decimated_buf));
-        let (filtered, blur_tmp) = apply_sigma(
+        let (filtered, blur_tmp, unsharp) = apply_sigma(
             &decimated,
             self.config.quad_sigma,
             std::mem::take(&mut buffers.filtered_buf),
             std::mem::take(&mut buffers.blur_tmp_buf),
+            std::mem::take(&mut buffers.unsharp_buf),
         );
         buffers.decimated_buf = decimated.into_buf();
         buffers.blur_tmp_buf = blur_tmp;
+        buffers.unsharp_buf = unsharp;
 
         // Save filtered dimensions before consuming the image
         let filtered_w = filtered.width;

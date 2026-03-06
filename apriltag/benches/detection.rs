@@ -66,7 +66,7 @@ fn bench_decimate(c: &mut Criterion) {
 fn bench_sigma(c: &mut Criterion) {
     let img = build_bench_image();
     c.bench_function("preprocess/sigma", |b| {
-        b.iter(|| apply_sigma(black_box(&img), 0.8, Vec::new(), Vec::new()))
+        b.iter(|| apply_sigma(black_box(&img), 0.8, Vec::new(), Vec::new(), Vec::new()))
     });
 }
 

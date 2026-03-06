@@ -186,18 +186,19 @@ fn gaussian_blur(
 /// - `quad_sigma < 0` → Unsharp mask (sharpening)
 /// - `quad_sigma == 0` → No filtering
 ///
-/// Pass pre-allocated `out_buf` and `tmp_buf` to reuse memory across calls.
-/// Use `Vec::new()` for one-shot usage.
+/// Pass pre-allocated `out_buf`, `tmp_buf`, and `unsharp_buf` to reuse memory
+/// across calls. Use `Vec::new()` for one-shot usage.
 ///
-/// Returns `(output_image, reclaimed_tmp_buf)`.
+/// Returns `(output_image, reclaimed_tmp_buf, reclaimed_unsharp_buf)`.
 pub fn apply_sigma(
     img: &ImageU8,
     quad_sigma: f32,
     out_buf: Vec<u8>,
     tmp_buf: Vec<u8>,
-) -> (ImageU8, Vec<u8>) {
+    unsharp_buf: Vec<u8>,
+) -> (ImageU8, Vec<u8>, Vec<u8>) {
     if quad_sigma == 0.0 {
-        return (img.clone(), tmp_buf);
+        return (img.clone(), tmp_buf, unsharp_buf);
     }
 
     let sigma = quad_sigma.abs();
@@ -206,17 +207,17 @@ pub fn apply_sigma(
         ksz += 1;
     }
     if ksz <= 1 {
-        return (img.clone(), tmp_buf);
+        return (img.clone(), tmp_buf, unsharp_buf);
     }
 
     let (blurred, reclaimed_tmp) = gaussian_blur(img, sigma, ksz, tmp_buf, out_buf);
 
     if quad_sigma > 0.0 {
-        (blurred, reclaimed_tmp)
+        (blurred, reclaimed_tmp, unsharp_buf)
     } else {
         // Unsharp mask: 2*original - blurred, clamped to [0, 255]
         let blur_buf = blurred.buf;
-        let mut out = ImageU8::new_reuse(img.width, img.height, Vec::new());
+        let mut out = ImageU8::new_reuse(img.width, img.height, unsharp_buf);
         let wu = img.width as usize;
         for y in 0..img.height {
             let orig_row = img.row(y);
@@ -261,7 +262,9 @@ pub fn apply_sigma(
                 x += 1;
             }
         }
-        (out, reclaimed_tmp)
+        // Reclaim the blur buffer (was consumed into blur_buf local) as the
+        // "out_buf" slot — it held the gaussian_blur output, same size as the image.
+        (out, reclaimed_tmp, blur_buf)
     }
 }
 
@@ -333,7 +336,7 @@ mod tests {
     fn apply_sigma_zero_returns_clone() {
         let mut img = ImageU8::new(4, 4);
         img.set(2, 2, 128);
-        let (out, _) = apply_sigma(&img, 0.0, Vec::new(), Vec::new());
+        let (out, _, _) = apply_sigma(&img, 0.0, Vec::new(), Vec::new(), Vec::new());
         assert_eq!(out.get(2, 2), 128);
     }
 
@@ -341,7 +344,7 @@ mod tests {
     fn apply_sigma_positive_blurs() {
         let mut img = ImageU8::new(10, 10);
         img.set(5, 5, 255);
-        let (out, _) = apply_sigma(&img, 1.0, Vec::new(), Vec::new());
+        let (out, _, _) = apply_sigma(&img, 1.0, Vec::new(), Vec::new(), Vec::new());
         // After blur, the peak should be reduced
         assert!(out.get(5, 5) < 255);
         // Neighbors should get some value
@@ -358,7 +361,7 @@ mod tests {
             }
         }
         img.set(5, 5, 100); // a dip
-        let (out, _) = apply_sigma(&img, -1.0, Vec::new(), Vec::new());
+        let (out, _, _) = apply_sigma(&img, -1.0, Vec::new(), Vec::new(), Vec::new());
         // The dip should be enhanced (lower than original)
         assert!(out.get(5, 5) < 100);
     }
@@ -368,7 +371,7 @@ mod tests {
         // sigma so small that ksz <= 1
         let mut img = ImageU8::new(4, 4);
         img.set(0, 0, 42);
-        let (out, _) = apply_sigma(&img, 0.1, Vec::new(), Vec::new());
+        let (out, _, _) = apply_sigma(&img, 0.1, Vec::new(), Vec::new(), Vec::new());
         assert_eq!(out.get(0, 0), 42);
     }
 
@@ -488,7 +491,7 @@ mod tests {
             let reference = unsharp_scalar(&img, &blurred.buf);
 
             // Compute actual via apply_sigma (which will use SIMD when available)
-            let (result, _) = apply_sigma(&img, -1.0, Vec::new(), Vec::new());
+            let (result, _, _) = apply_sigma(&img, -1.0, Vec::new(), Vec::new(), Vec::new());
 
             for y in 0..height {
                 for x in 0..width {
