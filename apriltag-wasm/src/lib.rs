@@ -90,6 +90,8 @@ pub struct WasmPose {
 #[wasm_bindgen]
 pub struct Detector {
     inner: CoreDetector,
+    buffers: DetectorBuffers,
+    gray_buf: Vec<u8>,
 }
 
 #[wasm_bindgen]
@@ -141,11 +143,15 @@ impl Detector {
             inner.add_family(fam, max_hamming);
         }
 
-        Ok(Detector { inner })
+        Ok(Detector {
+            inner,
+            buffers: DetectorBuffers::new(),
+            gray_buf: Vec::new(),
+        })
     }
 
     /// Detect tags in a grayscale image (one byte per pixel).
-    pub fn detect(&self, data: &[u8], width: u32, height: u32) -> Result<JsValue, JsError> {
+    pub fn detect(&mut self, data: &[u8], width: u32, height: u32) -> Result<JsValue, JsError> {
         let expected = (width * height) as usize;
         if data.len() != expected {
             return Err(JsError::new(&format!(
@@ -158,7 +164,7 @@ impl Detector {
         }
 
         let img = ImageU8::from_buf(width, height, width, data.to_vec());
-        let detections = self.inner.detect(&img, &mut DetectorBuffers::new());
+        let detections = self.inner.detect(&img, &mut self.buffers);
 
         let wasm_dets: Vec<WasmDetection> = detections.iter().map(detection_to_wasm).collect();
 
@@ -166,7 +172,12 @@ impl Detector {
     }
 
     /// Detect tags in an RGBA image (4 bytes per pixel).
-    pub fn detect_rgba(&self, data: &[u8], width: u32, height: u32) -> Result<JsValue, JsError> {
+    pub fn detect_rgba(
+        &mut self,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<JsValue, JsError> {
         let expected = (width * height * 4) as usize;
         if data.len() != expected {
             return Err(JsError::new(&format!(
@@ -178,14 +189,17 @@ impl Detector {
             )));
         }
 
-        let gray: Vec<u8> = data
-            .chunks_exact(4)
-            .map(|px| {
-                ((77u32 * px[0] as u32 + 150u32 * px[1] as u32 + 29u32 * px[2] as u32) >> 8) as u8
-            })
-            .collect();
+        self.gray_buf.clear();
+        self.gray_buf.extend(data.chunks_exact(4).map(|px| {
+            ((77u32 * px[0] as u32 + 150u32 * px[1] as u32 + 29u32 * px[2] as u32) >> 8) as u8
+        }));
 
-        self.detect(&gray, width, height)
+        let img = ImageU8::from_buf(width, height, width, self.gray_buf.clone());
+        let detections = self.inner.detect(&img, &mut self.buffers);
+
+        let wasm_dets: Vec<WasmDetection> = detections.iter().map(detection_to_wasm).collect();
+
+        serde_wasm_bindgen::to_value(&wasm_dets).map_err(|e| JsError::new(&e.to_string()))
     }
 
     /// Estimate the pose of a detected tag.
