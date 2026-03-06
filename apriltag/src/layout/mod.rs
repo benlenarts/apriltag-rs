@@ -7,6 +7,20 @@ use crate::error::LayoutError;
 use crate::types::CellType;
 
 /// A parsed tag layout defining the spatial arrangement of cells.
+///
+/// ```
+/// use apriltag::layout::Layout;
+///
+/// // Classic 10x10 layout (used by tag36h11)
+/// let layout = Layout::classic(10).unwrap();
+/// assert_eq!(layout.grid_size, 10);
+/// assert_eq!(layout.nbits, 36);
+/// assert!(!layout.reversed_border);
+///
+/// // Standard layout with reversed border order
+/// let std_layout = Layout::standard(9).unwrap();
+/// assert!(std_layout.reversed_border);
+/// ```
 #[derive(Debug, Clone)]
 pub struct Layout {
     /// Grid dimension (the layout is grid_size x grid_size).
@@ -28,6 +42,19 @@ impl Layout {
     ///
     /// The string length must be a perfect square. The layout must be
     /// rotationally symmetric and contain a valid border.
+    ///
+    /// ```
+    /// use apriltag::layout::Layout;
+    /// use apriltag::types::CellType;
+    ///
+    /// // Parse the circle21h7 layout (9x9 with transparent corners)
+    /// let data = "xxxdddxxxxbbbbbbbxxbwwwwwbxdbwdddwbddbwdddwbddbwdddwbdxbwwwwwbxxbbbbbbbxxxxdddxxx";
+    /// let layout = Layout::from_data_string(data).unwrap();
+    /// assert_eq!(layout.grid_size, 9);
+    /// assert_eq!(layout.nbits, 21);
+    /// assert_eq!(layout.cell(0, 0), CellType::Ignored);
+    /// assert_eq!(layout.cell(4, 4), CellType::Data);
+    /// ```
     pub fn from_data_string(data: &str) -> Result<Layout, LayoutError> {
         let len = data.len();
         let grid_size = (len as f64).sqrt() as usize;
@@ -86,6 +113,15 @@ impl Layout {
     }
 
     /// Get the raw data string for this layout.
+    ///
+    /// ```
+    /// use apriltag::layout::Layout;
+    ///
+    /// let layout = Layout::classic(8).unwrap();
+    /// let s = layout.data_string();
+    /// assert_eq!(s.len(), 64); // 8x8
+    /// assert!(s.starts_with("wwwwwwww")); // top border row is white
+    /// ```
     pub fn data_string(&self) -> String {
         self.cells
             .iter()
