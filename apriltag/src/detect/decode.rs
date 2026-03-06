@@ -533,6 +533,91 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "family-tag16h5")]
+    fn decode_quad_border_sample_out_of_bounds() {
+        // Place quad corners at the very edge of a small image so that border
+        // sample projections (which extend beyond the tag corners into the
+        // white surround) fall outside the image, exercising the OOB `continue`.
+        let family = crate::family::tag16h5();
+        let qd = QuickDecode::new(&family, 2);
+
+        // Tiny 20x20 image — corners right at the image edges so the white
+        // border samples project to negative or beyond-image coordinates.
+        let mut img = ImageU8::new(20, 20);
+        for y in 0..20u32 {
+            for x in 0..20u32 {
+                img.set(x, y, 128);
+            }
+        }
+
+        // Quad corners at the very image boundary
+        let corners = [[0.0, 0.0], [19.0, 0.0], [19.0, 19.0], [0.0, 19.0]];
+        let h = Homography::from_quad_corners(&corners).unwrap();
+
+        // Border samples extend beyond [-1,1] tag-space. With corners at
+        // pixel edges, these project outside the 20x20 image → OOB continue.
+        let _result = decode_quad(&img, &family, &qd, &h, false, 0.0);
+    }
+
+    #[test]
+    #[cfg(feature = "family-tag16h5")]
+    fn decode_quad_normal_border_wrong_polarity() {
+        // Mirror of decode_quad_reversed_border_wrong_polarity: render a
+        // reversed-polarity image (swap black/white) and decode with
+        // reversed_border=false. The polarity check at line 251 should reject.
+        let family = crate::family::tag16h5();
+        let rendered = crate::render::render(&family.layout, family.codes[0]);
+        let qd = QuickDecode::new(&family, 2);
+
+        let scale = 10.0;
+        let ox = 60.0;
+        let oy = 60.0;
+        let gs = rendered.grid_size as f64;
+
+        // Build image with *inverted* polarity (white→black, black→white)
+        let mut img = ImageU8::new(200, 200);
+        for y in 0..200u32 {
+            for x in 0..200u32 {
+                img.set(x, y, 0); // black background instead of white
+            }
+        }
+        for ty in 0..rendered.grid_size {
+            for tx in 0..rendered.grid_size {
+                let pixel = rendered.pixel(tx, ty);
+                let val = match pixel {
+                    crate::types::Pixel::Black => 255u8, // inverted
+                    _ => 0u8,                            // inverted
+                };
+                for dy in 0..10u32 {
+                    for dx in 0..10u32 {
+                        img.set(
+                            ox as u32 + tx as u32 * 10 + dx,
+                            oy as u32 + ty as u32 * 10 + dy,
+                            val,
+                        );
+                    }
+                }
+            }
+        }
+
+        let tag_start_x = ox + (family.layout.border_start as f64) * scale;
+        let tag_start_y = oy + (family.layout.border_start as f64) * scale;
+        let tag_end_x = ox + (gs - family.layout.border_start as f64) * scale;
+        let tag_end_y = oy + (gs - family.layout.border_start as f64) * scale;
+        let corners = [
+            [tag_start_x, tag_start_y],
+            [tag_end_x, tag_start_y],
+            [tag_end_x, tag_end_y],
+            [tag_start_x, tag_end_y],
+        ];
+        let h = Homography::from_quad_corners(&corners).unwrap();
+
+        // reversed_border=false on an inverted-polarity tag → white <= black → None
+        let result = decode_quad(&img, &family, &qd, &h, false, 0.0);
+        assert!(result.is_none());
+    }
+
+    #[test]
     fn gray_model_constant_field() {
         let mut gm = GrayModel::default();
         for i in 0..10 {
