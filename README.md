@@ -100,7 +100,7 @@ Run the benchmarks yourself:
 cargo bench -p apriltag
 
 # Rust vs C reference comparison (requires scripts/fetch-references.sh first)
-cargo run -p apriltag-bench --features reference --release -- benchmark
+just bench-ref benchmark
 ```
 
 ## References

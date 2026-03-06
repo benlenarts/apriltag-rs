@@ -41,7 +41,7 @@ cargo test --workspace --all-features
 cargo clippy --workspace --all-features -- -D warnings
 cargo fmt --all -- --check
 cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen
-cargo run -p apriltag-bench -- regression
+just regression
 ```
 
 ### 4. Commit the version bump

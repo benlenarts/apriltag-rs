@@ -62,7 +62,7 @@ Scene generation is shared between CLI and web UI (identical Rust, WASM-compatib
 - `docs/reference-detection/` — reference C implementation (apriltag3) for detection
 - `docs/reference-generation/` — reference Java implementation for tag family generation
 
-Run `scripts/fetch-references.sh` to download papers and clone reference repos. This is required before building with the `reference` feature flag (`cargo check -p apriltag-bench --features reference`).
+Run `just fetch-references` to download papers and clone reference repos. This is required before building with the `reference` feature flag (`cargo check -p apriltag-bench --features reference`).
 
 ## Coverage Policy
 
@@ -91,14 +91,14 @@ After completing any feature or fix, run `cargo llvm-cov --text` and inspect for
 - **Detection-affecting changes** — image processing, gradient computation, segmentation, quad detection, homography, or decoding must run the full suite.
 - **Refactors and "safe" changes** — even seemingly neutral refactors can affect performance. Benchmark them.
 
-Run `cargo run -p apriltag-bench -- regression` before and after your change. If any scenario regresses, fix it before committing. For large changes, generate a full HTML report (`--format html`) and review manually.
+Run `just regression` before and after your change. If any scenario regresses, fix it before committing. For large changes, generate a full HTML report (`just compare --format html`) and review manually.
 
 ### Regression criteria
 
 - **Detection quality** — detection rate, false positive rate, and decode accuracy must not decrease.
 - **Performance (time)** — no measurable latency regression without justification and approval.
 - **Performance (space)** — no unexpected memory growth. WASM targets are memory-constrained.
-- **CI gate** — `cargo run -p apriltag-bench -- regression` must pass before any PR is merged.
+- **CI gate** — `just regression` must pass before any PR is merged.
 
 ### Assembly inspection
 
@@ -108,12 +108,12 @@ When optimizing hot paths, inspect generated assembly — benchmarks tell you *w
 
 ## Commands
 
-See `docs/commands.md` for the full reference (testing, coverage, WASM, bench harness, assembly inspection, linting, reference setup). Key commands:
+Run `just --list` for available recipes. Key commands:
 
 ```bash
 cargo test                                           # run all tests
 cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/'  # coverage
-cargo run -p apriltag-bench -- regression            # bench regression gate
+just regression                                      # bench regression gate
 cargo clippy -- -D warnings                          # lint
 cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen  # WASM check
 ```
