@@ -938,6 +938,156 @@ mod tests {
     }
 
     #[test]
+    fn fit_quad_too_few_points() {
+        // Cluster with only 10 points (< 24 hard minimum)
+        let points: Vec<Pt> = (0..10)
+            .map(|i| Pt {
+                x: i * 10,
+                y: i * 10,
+                gx: 255,
+                gy: 0,
+                slope: 0,
+            })
+            .collect();
+        let cluster = Cluster { points };
+        let params = QuadThreshParams::default();
+        let quads = fit_quads(&mut [cluster], 400, 400, &params, true, true);
+        assert!(quads.is_empty());
+    }
+
+    #[test]
+    fn fit_quad_zero_gradient() {
+        // Cluster with 30+ points, all gradients (0,0) → dot=0 → rejected
+        let points: Vec<Pt> = (0..30)
+            .map(|i| {
+                let angle = 2.0 * std::f64::consts::PI * i as f64 / 30.0;
+                let r = 100.0;
+                Pt {
+                    x: (r * angle.cos() + 200.0) as u16,
+                    y: (r * angle.sin() + 200.0) as u16,
+                    gx: 0,
+                    gy: 0,
+                    slope: 0,
+                }
+            })
+            .collect();
+        let cluster = Cluster { points };
+        let params = QuadThreshParams::default();
+        let quads = fit_quads(&mut [cluster], 400, 400, &params, true, true);
+        assert!(quads.is_empty());
+    }
+
+    #[test]
+    fn fit_quad_normal_border_rejected_reversed_only() {
+        // Create a valid normal-border cluster, but only allow reversed_border
+        let mut points = Vec::new();
+        let (x0, y0, x1, y1) = (140, 140, 260, 260);
+        for i in 0..30 {
+            let t = i as f64 / 30.0;
+            points.push(Pt {
+                x: (x0 as f64 + (x1 - x0) as f64 * t) as u16,
+                y: y0,
+                gx: 0,
+                gy: -255, // gradient pointing outward (normal border)
+                slope: 0,
+            });
+        }
+        for i in 0..30 {
+            let t = i as f64 / 30.0;
+            points.push(Pt {
+                x: x1,
+                y: (y0 as f64 + (y1 - y0) as f64 * t) as u16,
+                gx: 255,
+                gy: 0,
+                slope: 0,
+            });
+        }
+        for i in 0..30 {
+            let t = i as f64 / 30.0;
+            points.push(Pt {
+                x: (x1 as f64 - (x1 - x0) as f64 * t) as u16,
+                y: y1,
+                gx: 0,
+                gy: 255,
+                slope: 0,
+            });
+        }
+        for i in 0..30 {
+            let t = i as f64 / 30.0;
+            points.push(Pt {
+                x: x0,
+                y: (y1 as f64 - (y1 - y0) as f64 * t) as u16,
+                gx: -255,
+                gy: 0,
+                slope: 0,
+            });
+        }
+        let cluster = Cluster { points };
+        let params = QuadThreshParams::default();
+        // normal_border=false, reversed_border=true → reject normal-border clusters
+        let quads = fit_quads(&mut [cluster], 400, 400, &params, false, true);
+        assert!(quads.is_empty());
+    }
+
+    #[test]
+    fn fit_line_zero_weight() {
+        // LineFitPt with w=0 → fit_line returns None
+        let moments = LineFitPt::default();
+        assert!(fit_line(&moments).is_none());
+    }
+
+    #[test]
+    fn fit_line_coincident_points() {
+        // All points at same location → eigenvalues both zero → None
+        let moments = LineFitPt {
+            mx: 10.0,
+            my: 20.0,
+            mxx: 100.0,
+            mxy: 200.0,
+            myy: 400.0,
+            w: 1.0,
+        };
+        // mx/w = 10, my/w = 20, cxx = 100 - 100 = 0, cyy = 400 - 400 = 0
+        assert!(fit_line(&moments).is_none());
+    }
+
+    #[test]
+    fn fit_line_axis_aligned() {
+        // Points along a horizontal line (cxy=0) → normal should be vertical
+        let mut cum = LineFitPt::default();
+        for i in 0..10 {
+            let x = i as f64;
+            let y = 5.0;
+            cum.mx += x;
+            cum.my += y;
+            cum.mxx += x * x;
+            cum.mxy += x * y;
+            cum.myy += y * y;
+            cum.w += 1.0;
+        }
+        let (line, _mse) = fit_line(&cum).unwrap();
+        // Normal should be close to (0, ±1) since line is horizontal
+        assert!(line.nx.abs() < 0.01);
+        assert!(line.ny.abs() > 0.99);
+    }
+
+    #[test]
+    fn smooth_errors_short_array() {
+        // Array with < 3 elements should be unchanged
+        let mut e1 = vec![5.0];
+        smooth_errors(&mut e1);
+        assert_eq!(e1, vec![5.0]);
+
+        let mut e2 = vec![3.0, 7.0];
+        smooth_errors(&mut e2);
+        assert_eq!(e2, vec![3.0, 7.0]);
+
+        let mut e0: Vec<f64> = vec![];
+        smooth_errors(&mut e0);
+        assert!(e0.is_empty());
+    }
+
+    #[test]
     fn grad_weight_matches_sqrt_for_all_valid_inputs() {
         // gx and gy are always in {-255, 0, 255}
         for &gx in &[-255i16, 0, 255] {
