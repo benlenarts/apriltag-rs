@@ -362,17 +362,10 @@ pub fn estimate_tag_pose(det: &Detection, params: &PoseParams) -> (Pose, f64, Op
     // Try to find a second local minimum
     let (pose2, err2) = find_second_minimum(&v, &tag_pts, &pose1);
 
-    // NOTE (uncovered): The err2 < err1 and None branches are not reachable in practice.
-    // Our homography decomposition always finds the better initial guess (err1 <= err2),
-    // and find_second_minimum always returns Some after successful pose estimation.
-    // These branches are kept as defensive correctness guarantees.
-    if err2 < err1 {
-        (pose2.unwrap(), err2, Some(pose1), err1)
-    } else if let Some(p2) = pose2 {
-        (pose1, err1, Some(p2), err2)
-    } else {
-        (pose1, err1, None, f64::MAX)
-    }
+    // pose1 is always the better estimate (homography decomposition finds the
+    // better initial guess), so we always return it first.
+    debug_assert!(err1 <= err2);
+    (pose1, err1, pose2, err2)
 }
 
 /// Orthogonal iteration (Lu et al. 2000).

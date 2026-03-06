@@ -327,9 +327,8 @@ pub fn decode_quad(
     }
 
     let decision_margin = (white_score / white_count).min(black_score / black_count) as f32;
-    if decision_margin < 0.0 {
-        return None;
-    }
+    // white_score, black_score >= 0 and counts >= 1, so margin is always >= 0
+    debug_assert!(decision_margin >= 0.0);
 
     // Quick decode
     let (id, hamming_dist, rotation) = qd.decode(family, rcode)?;

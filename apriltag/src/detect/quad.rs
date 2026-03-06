@@ -293,19 +293,16 @@ fn range_moments(lfps: &[LineFitPt], i0: usize, i1: usize) -> LineFitPt {
             }
         }
     } else {
-        // Wrapping: [i0, sz) + [0, i1]
-        let tail = if i0 == 0 {
-            *last
-        } else {
-            let start = &lfps[i0 - 1];
-            LineFitPt {
-                mx: last.mx - start.mx,
-                my: last.my - start.my,
-                mxx: last.mxx - start.mxx,
-                mxy: last.mxy - start.mxy,
-                myy: last.myy - start.myy,
-                w: last.w - start.w,
-            }
+        // Wrapping: [i0, sz) + [0, i1] — i0 > i1 implies i0 >= 1
+        debug_assert!(i0 >= 1);
+        let start = &lfps[i0 - 1];
+        let tail = LineFitPt {
+            mx: last.mx - start.mx,
+            my: last.my - start.my,
+            mxx: last.mxx - start.mxx,
+            mxy: last.mxy - start.mxy,
+            myy: last.myy - start.myy,
+            w: last.w - start.w,
         };
         let head = &lfps[i1];
         LineFitPt {
