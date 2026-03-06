@@ -404,4 +404,10 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn threshold_buffers_default() {
+        let bufs = ThresholdBuffers::default();
+        assert!(bufs.tile_min.is_empty());
+    }
 }
