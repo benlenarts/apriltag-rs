@@ -1,3 +1,151 @@
+/// Read-only access to a grayscale image.
+///
+/// Implemented by both [`ImageU8`] (owned) and [`ImageRef`] (borrowed).
+/// The detection pipeline accepts `&impl GrayImage` so callers can pass
+/// either type without copying pixel data.
+pub trait GrayImage {
+    fn width(&self) -> u32;
+    fn height(&self) -> u32;
+    fn stride(&self) -> u32;
+    fn buf(&self) -> &[u8];
+
+    /// Get the pixel value at (x, y).
+    #[inline]
+    fn get(&self, x: u32, y: u32) -> u8 {
+        self.buf()[(y * self.stride() + x) as usize]
+    }
+
+    /// Get a slice of the pixel data for row `y` (width pixels, ignoring stride padding).
+    #[inline]
+    fn row(&self, y: u32) -> &[u8] {
+        let offset = (y * self.stride()) as usize;
+        &self.buf()[offset..offset + self.width() as usize]
+    }
+
+    /// Returns true if bilinear interpolation at `(px, py)` and one pixel in
+    /// any direction stays within bounds.
+    #[inline]
+    fn interpolation_safe(&self, px: f64, py: f64) -> bool {
+        px >= 1.5
+            && py >= 1.5
+            && px <= self.width() as f64 - 1.5
+            && py <= self.height() as f64 - 1.5
+    }
+
+    /// Bilinear interpolation without coordinate clamping.
+    ///
+    /// The caller must ensure that `(px, py)` is far enough from the image
+    /// boundary that all four sample pixels are in bounds.
+    #[inline]
+    fn interpolate_unclamped(&self, px: f64, py: f64) -> f64 {
+        let buf = self.buf();
+        let stride = self.stride() as usize;
+        let x = px - 0.5;
+        let y = py - 0.5;
+        let x0 = x.floor() as usize;
+        let y0 = y.floor() as usize;
+        debug_assert!(x0 < self.width() as usize - 1);
+        debug_assert!(y0 < self.height() as usize - 1);
+        let fx = x - x0 as f64;
+        let fy = y - y0 as f64;
+        let row0 = y0 * stride;
+        let row1 = row0 + stride;
+        let v00 = buf[row0 + x0] as f64;
+        let v10 = buf[row0 + x0 + 1] as f64;
+        let v01 = buf[row1 + x0] as f64;
+        let v11 = buf[row1 + x0 + 1] as f64;
+        v00 * (1.0 - fx) * (1.0 - fy)
+            + v10 * fx * (1.0 - fy)
+            + v01 * (1.0 - fx) * fy
+            + v11 * fx * fy
+    }
+
+    /// Bilinear interpolation at sub-pixel coordinates with clamping.
+    fn interpolate(&self, px: f64, py: f64) -> f64 {
+        let x = px - 0.5;
+        let y = py - 0.5;
+        let x0 = x.floor() as i64;
+        let y0 = y.floor() as i64;
+        let x1 = x0 + 1;
+        let y1 = y0 + 1;
+
+        let fx = x - x0 as f64;
+        let fy = y - y0 as f64;
+
+        let w = self.width() as i64;
+        let h = self.height() as i64;
+
+        let clamp_x = |v: i64| v.clamp(0, w - 1) as u32;
+        let clamp_y = |v: i64| v.clamp(0, h - 1) as u32;
+
+        let v00 = self.get(clamp_x(x0), clamp_y(y0)) as f64;
+        let v10 = self.get(clamp_x(x1), clamp_y(y0)) as f64;
+        let v01 = self.get(clamp_x(x0), clamp_y(y1)) as f64;
+        let v11 = self.get(clamp_x(x1), clamp_y(y1)) as f64;
+
+        v00 * (1.0 - fx) * (1.0 - fy)
+            + v10 * fx * (1.0 - fy)
+            + v01 * (1.0 - fx) * fy
+            + v11 * fx * fy
+    }
+
+    /// Copy the image data into an owned [`ImageU8`].
+    fn to_image_u8(&self) -> ImageU8 {
+        ImageU8::from_buf(
+            self.width(),
+            self.height(),
+            self.stride(),
+            self.buf().to_vec(),
+        )
+    }
+}
+
+/// A borrowed, read-only view of grayscale image data.
+///
+/// Use this to pass `&[u8]` pixel data into the detection pipeline without copying.
+#[derive(Debug, Clone, Copy)]
+pub struct ImageRef<'a> {
+    width: u32,
+    height: u32,
+    stride: u32,
+    buf: &'a [u8],
+}
+
+impl<'a> ImageRef<'a> {
+    /// Create a borrowed image view.
+    ///
+    /// `stride` must be >= `width`, and `buf` must contain at least `stride * height` bytes.
+    pub fn new(width: u32, height: u32, stride: u32, buf: &'a [u8]) -> Self {
+        assert!(stride >= width);
+        assert!(buf.len() >= (stride * height) as usize);
+        Self {
+            width,
+            height,
+            stride,
+            buf,
+        }
+    }
+}
+
+impl GrayImage for ImageRef<'_> {
+    #[inline]
+    fn width(&self) -> u32 {
+        self.width
+    }
+    #[inline]
+    fn height(&self) -> u32 {
+        self.height
+    }
+    #[inline]
+    fn stride(&self) -> u32 {
+        self.stride
+    }
+    #[inline]
+    fn buf(&self) -> &[u8] {
+        self.buf
+    }
+}
+
 /// Grayscale image with row-major pixel data.
 #[derive(Debug, Clone)]
 pub struct ImageU8 {
@@ -5,6 +153,25 @@ pub struct ImageU8 {
     pub height: u32,
     pub stride: u32,
     pub buf: Vec<u8>,
+}
+
+impl GrayImage for ImageU8 {
+    #[inline]
+    fn width(&self) -> u32 {
+        self.width
+    }
+    #[inline]
+    fn height(&self) -> u32 {
+        self.height
+    }
+    #[inline]
+    fn stride(&self) -> u32 {
+        self.stride
+    }
+    #[inline]
+    fn buf(&self) -> &[u8] {
+        &self.buf
+    }
 }
 
 impl ImageU8 {
@@ -75,75 +242,138 @@ impl ImageU8 {
     }
 
     /// Returns true if bilinear interpolation at `(px, py)` and one pixel in
-    /// any direction stays within bounds — i.e. all of `(px±1, py±1)` are safe
-    /// for [`interpolate_unclamped`](Self::interpolate_unclamped).
+    /// any direction stays within bounds.
     #[inline]
     pub fn interpolation_safe(&self, px: f64, py: f64) -> bool {
-        px >= 1.5 && py >= 1.5 && px <= self.width as f64 - 1.5 && py <= self.height as f64 - 1.5
+        GrayImage::interpolation_safe(self, px, py)
     }
 
     /// Bilinear interpolation without coordinate clamping.
-    ///
-    /// The caller must ensure that `(px, py)` is far enough from the image
-    /// boundary that all four sample pixels are in bounds. Use
-    /// [`interpolation_safe`](Self::interpolation_safe) to check.
     #[inline]
     pub fn interpolate_unclamped(&self, px: f64, py: f64) -> f64 {
-        let x = px - 0.5;
-        let y = py - 0.5;
-        let x0 = x.floor() as usize;
-        let y0 = y.floor() as usize;
-        debug_assert!(x0 < self.width as usize - 1);
-        debug_assert!(y0 < self.height as usize - 1);
-        let fx = x - x0 as f64;
-        let fy = y - y0 as f64;
-        let row0 = y0 * self.stride as usize;
-        let row1 = row0 + self.stride as usize;
-        let v00 = self.buf[row0 + x0] as f64;
-        let v10 = self.buf[row0 + x0 + 1] as f64;
-        let v01 = self.buf[row1 + x0] as f64;
-        let v11 = self.buf[row1 + x0 + 1] as f64;
-        v00 * (1.0 - fx) * (1.0 - fy)
-            + v10 * fx * (1.0 - fy)
-            + v01 * (1.0 - fx) * fy
-            + v11 * fx * fy
+        GrayImage::interpolate_unclamped(self, px, py)
     }
 
-    /// Bilinear interpolation at sub-pixel coordinates.
-    ///
-    /// Uses the convention from the spec: floor(px - 0.5) for the base pixel.
+    /// Bilinear interpolation at sub-pixel coordinates with clamping.
     pub fn interpolate(&self, px: f64, py: f64) -> f64 {
-        let x = px - 0.5;
-        let y = py - 0.5;
-        let x0 = x.floor() as i64;
-        let y0 = y.floor() as i64;
-        let x1 = x0 + 1;
-        let y1 = y0 + 1;
-
-        let fx = x - x0 as f64;
-        let fy = y - y0 as f64;
-
-        let w = self.width as i64;
-        let h = self.height as i64;
-
-        let clamp_x = |v: i64| v.clamp(0, w - 1) as u32;
-        let clamp_y = |v: i64| v.clamp(0, h - 1) as u32;
-
-        let v00 = self.get(clamp_x(x0), clamp_y(y0)) as f64;
-        let v10 = self.get(clamp_x(x1), clamp_y(y0)) as f64;
-        let v01 = self.get(clamp_x(x0), clamp_y(y1)) as f64;
-        let v11 = self.get(clamp_x(x1), clamp_y(y1)) as f64;
-
-        v00 * (1.0 - fx) * (1.0 - fy)
-            + v10 * fx * (1.0 - fy)
-            + v01 * (1.0 - fx) * fy
-            + v11 * fx * fy
+        GrayImage::interpolate(self, px, py)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_ref_new() {
+        let data = vec![1, 2, 3, 0, 4, 5, 6, 0];
+        let img = ImageRef::new(3, 2, 4, &data);
+        assert_eq!(img.width(), 3);
+        assert_eq!(img.height(), 2);
+        assert_eq!(img.stride(), 4);
+        assert_eq!(img.buf().len(), 8);
+    }
+
+    #[test]
+    fn image_ref_trait_methods() {
+        let data = vec![1, 2, 3, 0, 4, 5, 6, 0];
+        let img = ImageRef::new(3, 2, 4, &data);
+        assert_eq!(img.get(0, 0), 1);
+        assert_eq!(img.get(2, 0), 3);
+        assert_eq!(img.get(0, 1), 4);
+        assert_eq!(img.row(0), &[1, 2, 3]);
+        assert_eq!(img.row(1), &[4, 5, 6]);
+    }
+
+    #[test]
+    fn image_ref_to_image_u8() {
+        let data = vec![10, 20, 30, 40];
+        let img = ImageRef::new(2, 2, 2, &data);
+        let owned = img.to_image_u8();
+        assert_eq!(owned.width, 2);
+        assert_eq!(owned.height, 2);
+        assert_eq!(owned.buf, vec![10, 20, 30, 40]);
+    }
+
+    #[test]
+    fn image_ref_interpolation() {
+        let mut data = vec![0u8; 100];
+        // 10x10 image, set pixel (1,1) = 100
+        data[1 * 10 + 1] = 100;
+        let img = ImageRef::new(10, 10, 10, &data);
+        // At exact pixel center (1.5, 1.5)
+        let val = img.interpolate(1.5, 1.5);
+        assert!((val - 100.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn image_ref_interpolate_unclamped() {
+        let mut data = vec![0u8; 100];
+        for y in 0..10u32 {
+            for x in 0..10u32 {
+                data[(y * 10 + x) as usize] = (x * 25 + y * 10) as u8;
+            }
+        }
+        let img = ImageRef::new(10, 10, 10, &data);
+        let owned = ImageU8::from_buf(10, 10, 10, data.clone());
+        // Interior points should match
+        let mut px = 2.0;
+        while px <= 8.0 {
+            let mut py = 2.0;
+            while py <= 8.0 {
+                let ref_val = img.interpolate_unclamped(px, py);
+                let owned_val = owned.interpolate_unclamped(px, py);
+                assert!((ref_val - owned_val).abs() < 1e-10);
+                py += 0.37;
+            }
+            px += 0.37;
+        }
+    }
+
+    #[test]
+    fn image_ref_interpolation_safe() {
+        let data = vec![0u8; 100];
+        let img = ImageRef::new(10, 10, 10, &data);
+        assert!(img.interpolation_safe(5.0, 5.0));
+        assert!(!img.interpolation_safe(1.0, 5.0));
+        assert!(!img.interpolation_safe(9.0, 5.0));
+    }
+
+    #[test]
+    #[should_panic]
+    fn image_ref_new_stride_too_small() {
+        let data = vec![0u8; 4];
+        ImageRef::new(3, 2, 2, &data); // stride < width
+    }
+
+    #[test]
+    #[should_panic]
+    fn image_ref_new_buf_too_small() {
+        let data = vec![0u8; 3];
+        ImageRef::new(2, 2, 2, &data); // buf too small
+    }
+
+    #[test]
+    fn imageu8_trait_methods_match_inherent() {
+        let mut img = ImageU8::new(10, 8);
+        img.set(3, 4, 42);
+        // Trait methods should match inherent methods
+        assert_eq!(GrayImage::get(&img, 3, 4), img.get(3, 4));
+        assert_eq!(GrayImage::row(&img, 4), img.row(4));
+        assert_eq!(GrayImage::width(&img), img.width);
+        assert_eq!(GrayImage::height(&img), img.height);
+        assert_eq!(GrayImage::stride(&img), img.stride);
+        assert_eq!(GrayImage::buf(&img), img.buf.as_slice());
+    }
+
+    #[test]
+    fn imageu8_to_image_u8_is_copy() {
+        let mut img = ImageU8::new(4, 4);
+        img.set(1, 1, 99);
+        let copy = img.to_image_u8();
+        assert_eq!(copy.get(1, 1), 99);
+        assert_eq!(copy.width, img.width);
+    }
 
     #[test]
     fn new_creates_zeroed_image() {
