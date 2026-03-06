@@ -12,7 +12,7 @@ use super::image::ImageU8;
 use super::preprocess::{apply_sigma, decimate};
 use super::quad::{fit_quads, QuadThreshParams};
 use super::refine::refine_edges;
-use super::threshold::threshold;
+use super::threshold::{threshold, ThresholdBuffers};
 use super::unionfind::UnionFind;
 
 /// A detected AprilTag in an image.
@@ -65,6 +65,7 @@ pub struct DetectorBuffers {
     filtered_buf: Vec<u8>,
     blur_tmp_buf: Vec<u8>,
     threshed_buf: Vec<u8>,
+    threshold_bufs: ThresholdBuffers,
     uf: UnionFind,
     cluster_map: super::cluster::ClusterMap,
 }
@@ -77,6 +78,7 @@ impl DetectorBuffers {
             filtered_buf: Vec::new(),
             blur_tmp_buf: Vec::new(),
             threshed_buf: Vec::new(),
+            threshold_bufs: ThresholdBuffers::new(),
             uf: UnionFind::empty(),
             cluster_map: super::cluster::ClusterMap::new(),
         }
@@ -138,6 +140,7 @@ impl Detector {
             self.config.qtp.min_white_black_diff,
             self.config.qtp.deglitch,
             std::mem::take(&mut buffers.threshed_buf),
+            &mut buffers.threshold_bufs,
         );
         buffers.filtered_buf = filtered.into_buf();
 
@@ -507,7 +510,13 @@ mod tests {
         let (img, _family) = build_synthetic_tag_image();
 
         // Stage 2: Threshold
-        let threshed = threshold::threshold(&img, 5, false, Vec::new());
+        let threshed = threshold::threshold(
+            &img,
+            5,
+            false,
+            Vec::new(),
+            &mut threshold::ThresholdBuffers::new(),
+        );
         let mut black_count = 0;
         let mut white_count = 0;
         let mut unknown_count = 0;
