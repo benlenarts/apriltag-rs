@@ -91,6 +91,7 @@ pub fn connected_components(threshed: &ImageU8, uf: &mut UnionFind) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

@@ -158,6 +158,7 @@ pub enum FamilyError {
 
 macro_rules! builtin_family {
     ($name:ident, $toml:expr, $bin:expr) => {
+        #[allow(clippy::expect_used)] // compile-time-embedded data; infallible in practice
         pub fn $name() -> TagFamily {
             TagFamily::from_toml_and_bin(
                 include_str!(concat!("../families/", $toml)),
@@ -237,6 +238,7 @@ pub fn builtin_family(name: &str) -> Option<TagFamily> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

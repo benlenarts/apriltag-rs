@@ -86,6 +86,7 @@ fn project_polygon(poly: &[[f64; 2]; 4], nx: f64, ny: f64) -> (f64, f64) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

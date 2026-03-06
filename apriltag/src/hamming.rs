@@ -37,6 +37,7 @@ pub fn hamming_distance_at_least(a: u64, b: u64, min_val: u32) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
