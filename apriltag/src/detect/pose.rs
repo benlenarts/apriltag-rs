@@ -584,11 +584,8 @@ mod tests {
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!(
-                    (prod[i][j] - expected).abs() < 1e-10,
-                    "prod[{i}][{j}] = {}",
-                    prod[i][j]
-                );
+                // M * M^-1 should be identity
+                assert!((prod[i][j] - expected).abs() < 1e-10);
             }
         }
     }
@@ -606,11 +603,8 @@ mod tests {
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!(
-                    (r[i][j] - expected).abs() < 1e-10,
-                    "r[{i}][{j}] = {}",
-                    r[i][j]
-                );
+                // U*V^T should be identity for identity input
+                assert!((r[i][j] - expected).abs() < 1e-10);
             }
         }
     }
@@ -639,12 +633,8 @@ mod tests {
         let recon = mat_mul(&us, &vt);
         for i in 0..3 {
             for j in 0..3 {
-                assert!(
-                    (recon[i][j] - m[i][j]).abs() < 1e-8,
-                    "recon[{i}][{j}]={} vs m={}",
-                    recon[i][j],
-                    m[i][j],
-                );
+                // U*diag(S)*V^T should reconstruct M
+                assert!((recon[i][j] - m[i][j]).abs() < 1e-8);
             }
         }
     }
@@ -661,12 +651,8 @@ mod tests {
         let proj = project_to_so3(&r);
         for i in 0..3 {
             for j in 0..3 {
-                assert!(
-                    (proj[i][j] - r[i][j]).abs() < 1e-10,
-                    "proj[{i}][{j}]={} vs r={}",
-                    proj[i][j],
-                    r[i][j]
-                );
+                // proper rotation should be unchanged by SO(3) projection
+                assert!((proj[i][j] - r[i][j]).abs() < 1e-10);
             }
         }
     }

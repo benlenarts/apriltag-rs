@@ -700,6 +700,56 @@ mod tests {
     }
 
     #[test]
+    fn fit_quad_exceeds_max_perimeter() {
+        // 50 points exceeds max_perimeter = 4*(5+5) = 40 for a 5x5 image
+        let points: Vec<Pt> = (0..50)
+            .map(|i| {
+                let angle = 2.0 * std::f64::consts::PI * i as f64 / 50.0;
+                Pt {
+                    x: (100.0 + 50.0 * angle.cos()) as u16,
+                    y: (100.0 + 50.0 * angle.sin()) as u16,
+                    gx: (255.0 * angle.cos()) as i16,
+                    gy: (255.0 * angle.sin()) as i16,
+                    slope: 0,
+                }
+            })
+            .collect();
+        let cluster = Cluster { points };
+        let params = QuadThreshParams::default();
+        // tiny image makes max_perimeter = 4*(5+5) = 40, less than 50 points
+        let quads = fit_quads(&mut [cluster], 5, 5, &params, true, true);
+        assert!(quads.is_empty());
+    }
+
+    #[test]
+    fn find_corners_collinear_returns_none() {
+        // Collinear cluster (all points on a line) produces < 4 maxima
+        let points: Vec<Pt> = (0..30)
+            .map(|i| Pt {
+                x: 100 + i * 2,
+                y: 100,
+                gx: 0,
+                gy: 255,
+                slope: 0,
+            })
+            .collect();
+        let mut lfps = Vec::new();
+        build_line_fit_pts(&points, &mut lfps);
+        let mut errors = Vec::new();
+        let params = QuadThreshParams::default();
+        // collinear points have uniform error → fewer than 4 maxima
+        assert!(find_corners(&lfps, &mut errors, &params).is_none());
+    }
+
+    #[test]
+    fn validate_quad_non_convex_fails() {
+        // CCW winding (positive area) but non-convex (one corner dented inward)
+        let corners = [[0.0, 0.0], [10.0, 0.0], [5.0, 2.0], [0.0, 10.0]];
+        let params = QuadThreshParams::default();
+        assert!(validate_quad(&corners, &params).is_none());
+    }
+
+    #[test]
     fn smooth_errors_reduces_spike() {
         let mut errors = vec![0.0, 0.0, 100.0, 0.0, 0.0];
         smooth_errors(&mut errors);

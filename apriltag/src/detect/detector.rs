@@ -443,10 +443,8 @@ mod tests {
         det.add_family(family, 2);
 
         let dets = det.detect(&img);
-        assert!(
-            !dets.is_empty(),
-            "Should detect large tag with decimation=2.0"
-        );
+        // should detect large tag with decimation=2.0
+        assert!(!dets.is_empty());
         assert_eq!(dets[0].id, 0);
     }
 
@@ -498,10 +496,8 @@ mod tests {
         det.add_family(family, 2);
 
         let dets = det.detect(&img);
-        assert!(
-            !dets.is_empty(),
-            "Should detect large tag on gray-128 background"
-        );
+        // should detect large tag on gray-128 background
+        assert!(!dets.is_empty());
         assert_eq!(dets[0].id, 0);
     }
 
@@ -536,10 +532,8 @@ mod tests {
         // Stage 4: Gradient clustering
         let mut clusters =
             cluster::gradient_clusters(&threshed, &mut uf, 5, &mut cluster::ClusterMap::new());
-        assert!(
-            !clusters.is_empty(),
-            "No clusters found (black={black_count}, white={white_count}, unknown={unknown_count})"
-        );
+        // should find clusters
+        assert!(!clusters.is_empty());
 
         // Stage 5: Quad fitting
         let quads = quad::fit_quads(
@@ -550,12 +544,8 @@ mod tests {
             true,
             true,
         );
-        assert!(
-            !quads.is_empty(),
-            "No quads found from {} clusters (largest: {} pts)",
-            clusters.len(),
-            clusters.iter().map(|c| c.points.len()).max().unwrap_or(0),
-        );
+        // should find quads from clusters
+        assert!(!quads.is_empty());
     }
 
     #[test]
