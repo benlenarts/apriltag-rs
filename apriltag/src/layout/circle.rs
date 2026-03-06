@@ -41,6 +41,7 @@ fn l2_dist_to_center(x: usize, y: usize, size: usize) -> f64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

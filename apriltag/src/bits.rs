@@ -60,6 +60,7 @@ pub fn bit_locations(layout: &Layout) -> Vec<BitLocation> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::layout::Layout;

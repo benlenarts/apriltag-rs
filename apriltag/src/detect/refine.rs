@@ -169,6 +169,7 @@ fn intersect_lines_raw(l0: &[f64; 4], l1: &[f64; 4]) -> Option<(f64, f64)> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::super::image::ImageU8;
     use super::*;

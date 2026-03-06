@@ -24,6 +24,7 @@ fn l_inf_dist_to_edge(x: usize, y: usize, size: usize) -> usize {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

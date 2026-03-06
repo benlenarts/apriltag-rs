@@ -113,6 +113,7 @@ fn rotate90_image(im: &[Vec<Pixel>]) -> Vec<Vec<Pixel>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::layout::Layout;
