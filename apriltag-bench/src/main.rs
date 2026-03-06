@@ -223,7 +223,14 @@ fn run_scenario(scenario: &Scenario) -> (metrics::SceneResult, std::time::Durati
     }
 
     let mut detector = Detector::new(config);
-    for (fam_name, _) in &scenario.expect_ids {
+    let unique_families: Vec<&str> = scenario
+        .expect_ids
+        .iter()
+        .map(|(f, _)| f.as_str())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    for fam_name in &unique_families {
         if let Some(fam) = family::builtin_family(fam_name) {
             detector.add_family(fam, 2);
         }

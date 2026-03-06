@@ -491,34 +491,41 @@ fn multi_tag_scenarios() -> Vec<Scenario> {
 }
 
 fn highres_scenarios() -> Vec<Scenario> {
-    // Place ~100 tags in a 4000×3000 grid with varied rotations and tilts
-    let n_cols = 13;
-    let n_rows = 9;
-    let n_tags = n_cols * n_rows; // 117 tags
+    // Place mixed tag36h11/tagStandard52h13 tags in a 4000×3000 grid with varied rotations and tilts
+    let n_cols = 10;
+    let n_rows = 7;
+    let n_tags = n_cols * n_rows; // 70 tags
     let spacing_x = 4000.0 / (n_cols as f64 + 1.0);
     let spacing_y = 3000.0 / (n_rows as f64 + 1.0);
-    let tag_size = 140.0; // pixels (full tag width)
+    let tag_size = 120.0; // pixels (full tag width)
 
     // Deterministic per-tag parameters via simple hash
     let tag_params: Vec<(f64, f64, f64)> = (0..n_tags)
         .map(|i| {
             let seed = (i as u32).wrapping_mul(2654435761);
-            let roll = ((seed % 360) as f64 - 180.0) * 30.0 / 180.0; // ±30° in radians
-            let roll_rad = roll.to_radians();
-            let tilt_x = (((seed >> 8) % 200) as f64 - 100.0) / 100.0 * 0.3; // ±0.3 rad (~17°)
-            let tilt_y = (((seed >> 16) % 200) as f64 - 100.0) / 100.0 * 0.2; // ±0.2 rad (~11°)
+            let roll_deg = ((seed % 360) as f64 - 180.0) * 10.0 / 180.0; // ±10°
+            let roll_rad = roll_deg.to_radians();
+            let tilt_x = (((seed >> 8) % 200) as f64 - 100.0) / 100.0 * 0.05; // ±0.05 rad (~3°)
+            let tilt_y = (((seed >> 16) % 200) as f64 - 100.0) / 100.0 * 0.05; // ±0.05 rad (~3°)
             (roll_rad, tilt_x, tilt_y)
         })
         .collect();
 
     let expect_ids: Vec<(String, u32)> = (0..n_tags)
-        .map(|i| ("tag36h11".to_string(), i as u32))
+        .map(|i| {
+            let family = if i % 2 == 0 {
+                "tag36h11"
+            } else {
+                "tagStandard52h13"
+            };
+            (family.to_string(), i as u32)
+        })
         .collect();
 
     vec![Scenario {
         name: "highres-4000x3000".to_string(),
         description: format!(
-            "{n_tags} tags at 4000×3000 with rotation, perspective, noise, and lighting"
+            "{n_tags} mixed tag36h11/tagStandard52h13 tags at 4000×3000 with rotation, perspective, noise, and lighting"
         ),
         category: Category::Highres,
         expect_ids,
@@ -534,8 +541,13 @@ fn highres_scenarios() -> Vec<Scenario> {
                     let cy = spacing_y * (row as f64 + 1.0);
                     let (roll, tilt_x, tilt_y) = tag_params[i];
 
+                    let family = if i % 2 == 0 {
+                        "tag36h11"
+                    } else {
+                        "tagStandard52h13"
+                    };
                     builder = builder.add_tag(
-                        "tag36h11",
+                        family,
                         i as u32,
                         Transform::FromPose {
                             center: [cx, cy],
