@@ -17,15 +17,15 @@ fmt-check:
 
 # Coverage summary (excludes CLI crate)
 coverage:
-    cargo llvm-cov --ignore-filename-regex 'apriltag-gen-cli/'
+    cargo llvm-cov --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|bin/))'
 
 # Coverage with per-line detail
 coverage-text:
-    cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/'
+    cargo llvm-cov --text --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|bin/))'
 
 # Coverage as HTML report (opens in browser)
 coverage-html:
-    cargo llvm-cov --html --ignore-filename-regex 'apriltag-gen-cli/' && open target/llvm-cov/html/index.html
+    cargo llvm-cov --html --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|bin/))' && open target/llvm-cov/html/index.html
 
 # Verify WASM compatibility (core crates only)
 wasm-check:
