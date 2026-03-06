@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Root `README.md` with project description, usage examples, and build instructions
 - `LICENSE` file with BSD 2-Clause license (matching upstream AprilTag)
 - `UnionFind::root_size()` method to read set size without redundant `find()` call
+- Scaling benchmark category with targeted scenarios isolating image size, noise, tag count, and decimation
+- `PersistentReferenceDetector::with_families()` for multi-family C reference benchmarks
+
+### Fixed
+
+- C reference benchmark now loads all families for multi-family scenarios (was only loading the first)
+- Benchmark reuses `DetectorBuffers` across iterations for fair Rust vs C comparison
 
 ### Changed
 

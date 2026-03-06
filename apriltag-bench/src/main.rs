@@ -461,19 +461,25 @@ fn cmd_benchmark(
                 quad_decimate: s.quad_decimate.unwrap_or(2.0),
                 ..Default::default()
             };
-            // Use first family for persistent detector (most scenarios use one family)
-            let ref_detector = PersistentReferenceDetector::new(families[0], &ref_config);
+            let ref_detector = if families.len() == 1 {
+                PersistentReferenceDetector::new(families[0], &ref_config)
+            } else {
+                PersistentReferenceDetector::with_families(&families, &ref_config)
+            };
+
+            // Reuse a single buffer across all iterations (matches C which reuses internal allocs)
+            let mut buffers = DetectorBuffers::new();
 
             // Warmup runs (3 iterations to stabilize caches and allocator)
             for _ in 0..3 {
-                let _ = rust_detector.detect(&scene.image, &mut DetectorBuffers::new());
+                let _ = rust_detector.detect(&scene.image, &mut buffers);
                 let _ = ref_detector.detect(&scene.image);
             }
 
             // Adaptive iteration count: calibrate from a single timed run,
             // then target at least 200ms total measurement time per detector.
             let calib_start = Instant::now();
-            let _ = rust_detector.detect(&scene.image, &mut DetectorBuffers::new());
+            let _ = rust_detector.detect(&scene.image, &mut buffers);
             let calib_dur = calib_start.elapsed();
             let min_total = std::time::Duration::from_millis(200);
             let adaptive_iters = if calib_dur.is_zero() {
@@ -487,7 +493,7 @@ fn cmd_benchmark(
             let mut rust_times = Vec::with_capacity(adaptive_iters);
             for _ in 0..adaptive_iters {
                 let start = Instant::now();
-                let _ = rust_detector.detect(&scene.image, &mut DetectorBuffers::new());
+                let _ = rust_detector.detect(&scene.image, &mut buffers);
                 rust_times.push(start.elapsed());
             }
 
@@ -752,19 +758,21 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
             println!("{}", "-".repeat(87));
         }
 
+        let mut buffers = DetectorBuffers::new();
+
         for ss in &sweep_scenes {
             let img = &ss.scene.image;
             let size = [img.width, img.height];
 
             // Warmup runs (3 iterations to stabilize caches and allocator)
             for _ in 0..3 {
-                let _ = rust_detector.detect(img, &mut DetectorBuffers::new());
+                let _ = rust_detector.detect(img, &mut buffers);
                 let _ = ref_detector.detect(img);
             }
 
             // Adaptive iteration count
             let calib_start = Instant::now();
-            let _ = rust_detector.detect(img, &mut DetectorBuffers::new());
+            let _ = rust_detector.detect(img, &mut buffers);
             let calib_dur = calib_start.elapsed();
             let min_total = std::time::Duration::from_millis(200);
             let adaptive_iters = if calib_dur.is_zero() {
@@ -778,7 +786,7 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
             let mut rust_times = Vec::with_capacity(adaptive_iters);
             for _ in 0..adaptive_iters {
                 let start = Instant::now();
-                let _ = rust_detector.detect(img, &mut DetectorBuffers::new());
+                let _ = rust_detector.detect(img, &mut buffers);
                 rust_times.push(start.elapsed());
             }
 
