@@ -161,12 +161,8 @@ mod tests {
         let tag_pts = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
         for i in 0..4 {
             let (px, py) = h.project(tag_pts[i][0], tag_pts[i][1]);
-            assert!(
-                (px - corners[i][0]).abs() < 1e-4 && (py - corners[i][1]).abs() < 1e-4,
-                "corner {i}: expected ({}, {}), got ({px}, {py})",
-                corners[i][0],
-                corners[i][1],
-            );
+            // projected tag corner should match pixel corner
+            assert!((px - corners[i][0]).abs() < 1e-4 && (py - corners[i][1]).abs() < 1e-4);
         }
     }
 

@@ -730,10 +730,8 @@ mod tests {
             });
         }
         let (reversed, dot) = check_border_direction(&points);
-        assert!(
-            !reversed,
-            "dot={dot}, should be positive (gradients point out)"
-        );
+        // dot should be positive (gradients point outward)
+        assert!(!reversed);
     }
 
     #[test]
@@ -834,10 +832,8 @@ mod tests {
         build_line_fit_pts(&points, &mut lfps);
         let total = &lfps[2];
         let py = total.my / total.w;
-        assert!(
-            (py - 10.5).abs() < 1e-10,
-            "Expected centroid py=10.5 (with pixel-center delta), got {py}"
-        );
+        // centroid py=10.5 (with pixel-center delta)
+        assert!((py - 10.5).abs() < 1e-10);
     }
 
     #[test]
@@ -893,10 +889,8 @@ mod tests {
         let quads = fit_quads(&mut [cluster], 400, 400, &params, true, true);
 
         eprintln!("Synthetic rectangle: found {} quads", quads.len());
-        assert!(
-            !quads.is_empty(),
-            "Should find a quad from a perfect rectangle"
-        );
+        // should find a quad from a perfect rectangle
+        assert!(!quads.is_empty());
     }
 
     #[test]
@@ -953,10 +947,8 @@ mod tests {
             for &gy in &[-255i16, 0, 255] {
                 let expected = ((gx as f64).powi(2) + (gy as f64).powi(2)).sqrt() + 1.0;
                 let actual = grad_weight(gx, gy);
-                assert!(
-                    (actual - expected).abs() < 1e-10,
-                    "grad_weight({gx}, {gy}) = {actual}, expected {expected}"
-                );
+                // grad_weight should match sqrt(gx^2 + gy^2) + 1
+                assert!((actual - expected).abs() < 1e-10);
             }
         }
     }

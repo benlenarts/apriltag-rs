@@ -392,13 +392,8 @@ mod tests {
         all_points.dedup();
         let unique = all_points.len();
 
-        assert_eq!(
-            total,
-            unique,
-            "found {} duplicate midpoints out of {} total",
-            total - unique,
-            total
-        );
+        // no duplicate midpoints
+        assert_eq!(total, unique);
     }
 
     #[test]

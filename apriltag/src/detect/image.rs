@@ -259,10 +259,8 @@ mod tests {
             while py <= 8.0 {
                 let clamped = img.interpolate(px, py);
                 let unclamped = img.interpolate_unclamped(px, py);
-                assert!(
-                    (clamped - unclamped).abs() < 1e-10,
-                    "mismatch at ({px}, {py}): clamped={clamped}, unclamped={unclamped}"
-                );
+                // clamped and unclamped should agree for interior points
+                assert!((clamped - unclamped).abs() < 1e-10);
                 py += 0.37;
             }
             px += 0.37;

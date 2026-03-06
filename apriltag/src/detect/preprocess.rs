@@ -318,10 +318,8 @@ mod tests {
         assert_eq!(k.len(), 5);
         let sum: u32 = k.iter().map(|&v| v as u32).sum();
         // Fixed-point sum should be close to 1 << 15 = 32768 (within ±1 rounding)
-        assert!(
-            (sum as i32 - 32768).unsigned_abs() <= 1,
-            "kernel sum {sum} not close to 32768"
-        );
+        // fixed-point sum should be close to 1 << 15 = 32768
+        assert!((sum as i32 - 32768).unsigned_abs() <= 1);
     }
 
     #[test]
@@ -451,10 +449,8 @@ mod tests {
                     max_diff = max_diff.max(diff);
                 }
             }
-            assert!(
-                max_diff <= 1,
-                "width={width}: max pixel diff {max_diff} exceeds tolerance 1"
-            );
+            // max pixel diff between float and fixed-point should be <= 1
+            assert!(max_diff <= 1);
         }
     }
 
@@ -496,11 +492,8 @@ mod tests {
 
             for y in 0..height {
                 for x in 0..width {
-                    assert_eq!(
-                        result.get(x, y),
-                        reference.get(x, y),
-                        "width={width}: mismatch at ({x}, {y})"
-                    );
+                    // SIMD and scalar unsharp mask should produce identical results
+                    assert_eq!(result.get(x, y), reference.get(x, y));
                 }
             }
         }
@@ -546,10 +539,8 @@ mod tests {
                     max_diff = max_diff.max(diff);
                 }
             }
-            assert!(
-                max_diff <= 1,
-                "sigma={sigma}: max pixel diff {max_diff} exceeds tolerance 1"
-            );
+            // max pixel diff between float and fixed-point blur should be <= 1
+            assert!(max_diff <= 1);
         }
     }
 }

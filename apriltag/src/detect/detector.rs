@@ -319,8 +319,7 @@ mod tests {
                 let pixel = rendered.pixel(tx, ty);
                 let val = match pixel {
                     crate::types::Pixel::Black => 0u8,
-                    crate::types::Pixel::White => 255u8,
-                    crate::types::Pixel::Transparent => 255u8,
+                    _ => 255u8,
                 };
                 for dy in 0..scale {
                     for dx in 0..scale {
@@ -383,8 +382,7 @@ mod tests {
                 let pixel = rendered.pixel(tx, ty);
                 let val = match pixel {
                     crate::types::Pixel::Black => 0u8,
-                    crate::types::Pixel::White => 255u8,
-                    crate::types::Pixel::Transparent => 255u8,
+                    _ => 255u8,
                 };
                 for dy in 0..scale {
                     for dx in 0..scale {
@@ -426,8 +424,7 @@ mod tests {
                 let pixel = rendered.pixel(tx, ty);
                 let val = match pixel {
                     crate::types::Pixel::Black => 0u8,
-                    crate::types::Pixel::White => 255u8,
-                    crate::types::Pixel::Transparent => 255u8,
+                    _ => 255u8,
                 };
                 for dy in 0..scale {
                     for dx in 0..scale {
@@ -653,8 +650,7 @@ mod tests {
                 let pixel = rendered.pixel(tx, ty);
                 let val = match pixel {
                     crate::types::Pixel::Black => 0u8,
-                    crate::types::Pixel::White => 255u8,
-                    crate::types::Pixel::Transparent => 255u8,
+                    _ => 255u8,
                 };
                 for dy in 0..scale {
                     for dx in 0..scale {
