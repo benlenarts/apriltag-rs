@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pool threshold tile arrays, deglitch morph buffers, unsharp mask buffer, and refine_edges vals in `DetectorBuffers`, eliminating ~250 allocs/frame on reuse
+- Hoist per-row `Vec<&[u8]>` allocation above blur vertical pass loop (~240 allocs → 1)
 - Quad fitting: use unstable sort for angular sorting, eliminate allocation in `smooth_errors`, reuse buffers across clusters
 - `gradient_clusters` sort uses index indirection (12-byte pairs instead of 20-byte), reducing data movement by 40%
 - `gradient_clusters` inner loop restricted to interior pixels, uses direct buffer indexing and single `find()` per pixel
