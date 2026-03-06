@@ -196,10 +196,15 @@ fn check_border_direction(points: &[Pt]) -> (bool, f64) {
 
 /// Sort points by angle around the cluster centroid using a fast slope proxy.
 fn sort_by_angle(points: &mut [Pt]) {
-    let xmin = points.iter().map(|p| p.x).min().unwrap() as f64;
-    let xmax = points.iter().map(|p| p.x).max().unwrap() as f64;
-    let ymin = points.iter().map(|p| p.y).min().unwrap() as f64;
-    let ymax = points.iter().map(|p| p.y).max().unwrap() as f64;
+    let (Some(xmin), Some(xmax), Some(ymin), Some(ymax)) = (
+        points.iter().map(|p| p.x).min(),
+        points.iter().map(|p| p.x).max(),
+        points.iter().map(|p| p.y).min(),
+        points.iter().map(|p| p.y).max(),
+    ) else {
+        return;
+    };
+    let (xmin, xmax, ymin, ymax) = (xmin as f64, xmax as f64, ymin as f64, ymax as f64);
 
     let cx = (xmin + xmax) / 2.0 + 0.05118;
     let cy = (ymin + ymax) / 2.0 - 0.028581;
@@ -470,7 +475,9 @@ fn evaluate_quad_combination(
     // Check angle between last and first line
     let first_moments = range_moments(lfps, indices[0], indices[1]);
     let (first_line, _) = fit_line(&first_moments)?;
-    let last_line = prev_line.unwrap();
+    // prev_line is always Some here: the loop runs 4 iterations, each setting prev_line.
+    // Early returns (via `?`) would have exited the function before reaching this point.
+    let last_line = prev_line?;
     let dot = (last_line.nx * first_line.nx + last_line.ny * first_line.ny).abs();
     if dot > params.cos_critical_rad as f64 {
         return None;
