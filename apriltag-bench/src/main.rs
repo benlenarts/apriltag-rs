@@ -461,8 +461,11 @@ fn cmd_benchmark(
                 quad_decimate: s.quad_decimate.unwrap_or(2.0),
                 ..Default::default()
             };
-            // Use first family for persistent detector (most scenarios use one family)
-            let ref_detector = PersistentReferenceDetector::new(families[0], &ref_config);
+            let ref_detector = if families.len() == 1 {
+                PersistentReferenceDetector::new(families[0], &ref_config)
+            } else {
+                PersistentReferenceDetector::with_families(&families, &ref_config)
+            };
 
             // Warmup runs (3 iterations to stabilize caches and allocator)
             for _ in 0..3 {

@@ -65,6 +65,12 @@ extern "C" {
         nthreads: i32,
     ) -> *mut BenchDetector;
 
+    fn bench_create_detector_multi(
+        family_names_csv: *const std::ffi::c_char,
+        quad_decimate: f32,
+        nthreads: i32,
+    ) -> *mut BenchDetector;
+
     fn bench_detect(
         detector: *mut BenchDetector,
         buf: *const u8,
@@ -92,6 +98,20 @@ impl PersistentReferenceDetector {
         assert!(
             !ptr.is_null(),
             "failed to create reference detector for family {family}"
+        );
+        Self { ptr }
+    }
+
+    /// Create a new persistent detector with multiple families.
+    pub fn with_families(families: &[&str], config: &ReferenceConfig) -> Self {
+        let csv = families.join(",");
+        let csv_cstr = std::ffi::CString::new(csv).expect("family names contain null byte");
+        let ptr = unsafe {
+            bench_create_detector_multi(csv_cstr.as_ptr(), config.quad_decimate, config.nthreads)
+        };
+        assert!(
+            !ptr.is_null(),
+            "failed to create reference detector for families {families:?}"
         );
         Self { ptr }
     }

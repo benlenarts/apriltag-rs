@@ -151,40 +151,54 @@ void bench_free_detections(bench_detection_t* detections) {
 
 /* --- Persistent detector API for benchmarking --- */
 
+#define MAX_FAMILIES 8
+
 typedef struct {
     apriltag_detector_t* td;
-    apriltag_family_t* tf;
-    char family_name[64];
+    apriltag_family_t* families[MAX_FAMILIES];
+    char family_names[MAX_FAMILIES][64];
+    int num_families;
 } bench_detector_t;
 
 /**
- * Create a persistent detector for repeated detect calls.
+ * Look up a family by name and return a newly created instance, or NULL.
+ */
+static apriltag_family_t* create_family(const char* name) {
+    if (strcmp(name, "tag36h11") == 0) return tag36h11_create();
+    if (strcmp(name, "tag25h9") == 0) return tag25h9_create();
+    if (strcmp(name, "tag16h5") == 0) return tag16h5_create();
+    if (strcmp(name, "tagStandard41h12") == 0) return tagStandard41h12_create();
+    if (strcmp(name, "tagStandard52h13") == 0) return tagStandard52h13_create();
+    if (strcmp(name, "tagCircle21h7") == 0) return tagCircle21h7_create();
+    if (strcmp(name, "tagCircle49h12") == 0) return tagCircle49h12_create();
+    if (strcmp(name, "tagCustom48h12") == 0) return tagCustom48h12_create();
+    return NULL;
+}
+
+/**
+ * Destroy a family by name.
+ */
+static void destroy_family(const char* name, apriltag_family_t* tf) {
+    if (strcmp(name, "tag36h11") == 0) { tag36h11_destroy(tf); return; }
+    if (strcmp(name, "tag25h9") == 0) { tag25h9_destroy(tf); return; }
+    if (strcmp(name, "tag16h5") == 0) { tag16h5_destroy(tf); return; }
+    if (strcmp(name, "tagStandard41h12") == 0) { tagStandard41h12_destroy(tf); return; }
+    if (strcmp(name, "tagStandard52h13") == 0) { tagStandard52h13_destroy(tf); return; }
+    if (strcmp(name, "tagCircle21h7") == 0) { tagCircle21h7_destroy(tf); return; }
+    if (strcmp(name, "tagCircle49h12") == 0) { tagCircle49h12_destroy(tf); return; }
+    if (strcmp(name, "tagCustom48h12") == 0) { tagCustom48h12_destroy(tf); return; }
+}
+
+/**
+ * Create a persistent detector for a single family (backwards compatible).
  */
 bench_detector_t* bench_create_detector(
     const char* family,
     float quad_decimate,
     int nthreads
 ) {
-    apriltag_family_t* tf = NULL;
-    if (strcmp(family, "tag36h11") == 0) {
-        tf = tag36h11_create();
-    } else if (strcmp(family, "tag25h9") == 0) {
-        tf = tag25h9_create();
-    } else if (strcmp(family, "tag16h5") == 0) {
-        tf = tag16h5_create();
-    } else if (strcmp(family, "tagStandard41h12") == 0) {
-        tf = tagStandard41h12_create();
-    } else if (strcmp(family, "tagStandard52h13") == 0) {
-        tf = tagStandard52h13_create();
-    } else if (strcmp(family, "tagCircle21h7") == 0) {
-        tf = tagCircle21h7_create();
-    } else if (strcmp(family, "tagCircle49h12") == 0) {
-        tf = tagCircle49h12_create();
-    } else if (strcmp(family, "tagCustom48h12") == 0) {
-        tf = tagCustom48h12_create();
-    } else {
-        return NULL;
-    }
+    apriltag_family_t* tf = create_family(family);
+    if (!tf) return NULL;
 
     apriltag_detector_t* td = apriltag_detector_create();
     apriltag_detector_add_family(td, tf);
@@ -193,8 +207,58 @@ bench_detector_t* bench_create_detector(
 
     bench_detector_t* bd = (bench_detector_t*)calloc(1, sizeof(bench_detector_t));
     bd->td = td;
-    bd->tf = tf;
-    strncpy(bd->family_name, family, sizeof(bd->family_name) - 1);
+    bd->families[0] = tf;
+    strncpy(bd->family_names[0], family, sizeof(bd->family_names[0]) - 1);
+    bd->num_families = 1;
+
+    return bd;
+}
+
+/**
+ * Create a persistent detector with multiple families.
+ *
+ * Parameters:
+ *   family_names_csv - comma-separated family names (e.g. "tag36h11,tagStandard52h13")
+ *   quad_decimate    - quad decimation factor
+ *   nthreads         - number of threads
+ */
+bench_detector_t* bench_create_detector_multi(
+    const char* family_names_csv,
+    float quad_decimate,
+    int nthreads
+) {
+    bench_detector_t* bd = (bench_detector_t*)calloc(1, sizeof(bench_detector_t));
+    bd->num_families = 0;
+
+    apriltag_detector_t* td = apriltag_detector_create();
+    td->quad_decimate = quad_decimate;
+    td->nthreads = nthreads;
+    bd->td = td;
+
+    /* Parse comma-separated family names */
+    char buf[512];
+    strncpy(buf, family_names_csv, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    char* saveptr = NULL;
+    char* token = strtok_r(buf, ",", &saveptr);
+    while (token && bd->num_families < MAX_FAMILIES) {
+        apriltag_family_t* tf = create_family(token);
+        if (tf) {
+            apriltag_detector_add_family(td, tf);
+            bd->families[bd->num_families] = tf;
+            strncpy(bd->family_names[bd->num_families], token,
+                    sizeof(bd->family_names[0]) - 1);
+            bd->num_families++;
+        }
+        token = strtok_r(NULL, ",", &saveptr);
+    }
+
+    if (bd->num_families == 0) {
+        apriltag_detector_destroy(td);
+        free(bd);
+        return NULL;
+    }
 
     return bd;
 }
@@ -252,22 +316,8 @@ void bench_destroy_detector(bench_detector_t* bd) {
 
     apriltag_detector_destroy(bd->td);
 
-    if (strcmp(bd->family_name, "tag36h11") == 0) {
-        tag36h11_destroy(bd->tf);
-    } else if (strcmp(bd->family_name, "tag25h9") == 0) {
-        tag25h9_destroy(bd->tf);
-    } else if (strcmp(bd->family_name, "tag16h5") == 0) {
-        tag16h5_destroy(bd->tf);
-    } else if (strcmp(bd->family_name, "tagStandard41h12") == 0) {
-        tagStandard41h12_destroy(bd->tf);
-    } else if (strcmp(bd->family_name, "tagStandard52h13") == 0) {
-        tagStandard52h13_destroy(bd->tf);
-    } else if (strcmp(bd->family_name, "tagCircle21h7") == 0) {
-        tagCircle21h7_destroy(bd->tf);
-    } else if (strcmp(bd->family_name, "tagCircle49h12") == 0) {
-        tagCircle49h12_destroy(bd->tf);
-    } else if (strcmp(bd->family_name, "tagCustom48h12") == 0) {
-        tagCustom48h12_destroy(bd->tf);
+    for (int i = 0; i < bd->num_families; i++) {
+        destroy_family(bd->family_names[i], bd->families[i]);
     }
 
     free(bd);
