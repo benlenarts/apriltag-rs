@@ -137,10 +137,10 @@ fn gaussian_blur(
 
     // Vertical pass: SIMD for 8-wide chunks, scalar remainder
     let mut out = ImageU8::new_reuse(img.width, img.height, out_buf);
+    let mut rows: Vec<&[u8]> = Vec::with_capacity(ksz);
     for y in 0..h {
-        let rows: Vec<&[u8]> = (0..ksz as i32)
-            .map(|k| tmp.row((y + k - half).clamp(0, h - 1) as u32))
-            .collect();
+        rows.clear();
+        rows.extend((0..ksz as i32).map(|k| tmp.row((y + k - half).clamp(0, h - 1) as u32)));
         let out_off = y as usize * wu;
 
         let mut x = 0usize;
