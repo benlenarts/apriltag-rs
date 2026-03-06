@@ -69,17 +69,12 @@ Run `just fetch-references` to download papers and clone reference repos. This i
 **Target: 100% test coverage.** TDD is the primary strategy — code written to pass a test is covered by definition. When a coverage gap appears, ask whether the uncovered code is reachable. If it isn't, delete it; unreachable code is a design problem, not a testing problem. If it is reachable, test it through the public API with a realistic scenario (bad input, boundary condition, corrupt data). Never write a test that exists only to hit a line — every test must assert meaningful behavior.
 
 ```bash
-# Quick summary (excludes CLI crate)
-cargo llvm-cov --ignore-filename-regex 'apriltag-gen-cli/'
-
-# Per-line detail (show uncovered lines)
-cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/'
-
-# HTML report
-cargo llvm-cov --html --ignore-filename-regex 'apriltag-gen-cli/' && open target/llvm-cov/html/index.html
+just coverage        # quick summary
+just coverage-text   # per-line detail (show uncovered lines)
+just coverage-html   # HTML report (opens in browser)
 ```
 
-After completing any feature or fix, run `cargo llvm-cov --text` and inspect for uncovered lines. If coverage is below 100%, add targeted tests before moving on. Each new test is its own atomic commit.
+After completing any feature or fix, run `just coverage-text` and inspect for uncovered lines. If coverage is below 100%, add targeted tests before moving on. Each new test is its own atomic commit.
 
 ## Benchmarking Policy
 
@@ -111,11 +106,12 @@ When optimizing hot paths, inspect generated assembly — benchmarks tell you *w
 Run `just --list` for available recipes. Key commands:
 
 ```bash
-cargo test                                           # run all tests
-cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/'  # coverage
-just regression                                      # bench regression gate
-cargo clippy -- -D warnings                          # lint
-cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen  # WASM check
+just test            # run all tests
+just coverage-text   # per-line coverage
+just lint            # clippy lints
+just wasm-check      # verify WASM compatibility
+just regression      # bench regression gate
+just ci              # full local CI suite (test + lint + fmt-check + wasm-check + regression)
 ```
 
 ## Code Style
@@ -123,7 +119,7 @@ cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen  # WASM 
 - **No `unsafe` code** — `unsafe` is completely disallowed in this project. No `unsafe` blocks, `unsafe fn`, `unsafe impl`, or `unsafe trait`. Find safe alternatives instead.
 - Idiomatic Rust with a preference for pattern matching and 'functional' iteration
 - Follow standard `rustfmt` formatting
-- Use `clippy` with default lints: `cargo clippy -- -D warnings`
+- Use `clippy` with default lints: `just lint`
 - Prefer `&[T]` over `&Vec<T>`, iterators over index loops where natural
 - Use `thiserror` or similar for error types; avoid `.unwrap()` in library code
 - Document public APIs with doc comments

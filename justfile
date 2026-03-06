@@ -1,3 +1,34 @@
+# Run all tests
+test:
+    cargo test
+
+# Run clippy lints
+lint:
+    cargo clippy -- -D warnings
+
+# Check formatting
+fmt-check:
+    cargo fmt --all -- --check
+
+# Coverage summary (excludes CLI crate)
+coverage:
+    cargo llvm-cov --ignore-filename-regex 'apriltag-gen-cli/'
+
+# Coverage with per-line detail
+coverage-text:
+    cargo llvm-cov --text --ignore-filename-regex 'apriltag-gen-cli/'
+
+# Coverage as HTML report (opens in browser)
+coverage-html:
+    cargo llvm-cov --html --ignore-filename-regex 'apriltag-gen-cli/' && open target/llvm-cov/html/index.html
+
+# Verify WASM compatibility (core crates only)
+wasm-check:
+    cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen
+
+# Full local CI suite
+ci: test lint fmt-check wasm-check regression
+
 # Run the bench CLI (forwards all arguments)
 bench *ARGS:
     cargo run -p apriltag-bench --bin apriltag-bench -- {{ARGS}}
