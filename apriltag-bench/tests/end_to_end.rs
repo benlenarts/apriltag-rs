@@ -1,5 +1,5 @@
 /// End-to-end integration tests: build scenes → detect → evaluate metrics.
-use apriltag::detect::detector::{Detector, DetectorConfig};
+use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
 use apriltag::family;
 use apriltag_bench::distortion::{self, Distortion};
 use apriltag_bench::metrics;
@@ -29,7 +29,7 @@ fn detect_single_centered_tag() {
         .build();
 
     let detector = detector_with_family("tag36h11");
-    let detections = detector.detect(&scene.image);
+    let detections = detector.detect(&scene.image, &mut DetectorBuffers::new());
 
     assert_eq!(detections.len(), 1, "should detect exactly one tag");
     assert_eq!(detections[0].id, 0);
@@ -61,7 +61,7 @@ fn detect_rotated_tag() {
         .build();
 
     let detector = detector_with_family("tag36h11");
-    let detections = detector.detect(&scene.image);
+    let detections = detector.detect(&scene.image, &mut DetectorBuffers::new());
 
     assert_eq!(detections.len(), 1, "should detect rotated tag");
     assert_eq!(detections[0].id, 5);
@@ -102,7 +102,7 @@ fn detect_multiple_tags() {
         .build();
 
     let detector = detector_with_family("tag36h11");
-    let detections = detector.detect(&scene.image);
+    let detections = detector.detect(&scene.image, &mut DetectorBuffers::new());
 
     assert_eq!(detections.len(), 2, "should detect both tags");
 
@@ -136,7 +136,7 @@ fn detect_with_noise() {
     );
 
     let detector = detector_with_family("tag36h11");
-    let detections = detector.detect(&scene.image);
+    let detections = detector.detect(&scene.image, &mut DetectorBuffers::new());
 
     assert_eq!(
         detections.len(),
@@ -165,7 +165,7 @@ fn detect_with_perspective_tilt() {
         .build();
 
     let detector = detector_with_family("tag36h11");
-    let detections = detector.detect(&scene.image);
+    let detections = detector.detect(&scene.image, &mut DetectorBuffers::new());
 
     assert!(!detections.is_empty(), "should detect tilted tag");
     assert_eq!(detections[0].id, 0);
@@ -205,7 +205,7 @@ fn detect_with_gradient_lighting() {
     );
 
     let detector = detector_with_family("tag36h11");
-    let detections = detector.detect(&scene.image);
+    let detections = detector.detect(&scene.image, &mut DetectorBuffers::new());
 
     assert_eq!(
         detections.len(),
@@ -231,7 +231,7 @@ fn metrics_json_round_trip() {
         .build();
 
     let detector = detector_with_family("tag36h11");
-    let detections = detector.detect(&scene.image);
+    let detections = detector.detect(&scene.image, &mut DetectorBuffers::new());
     let result = metrics::evaluate(&scene.ground_truth, &detections, 1234);
 
     // Serialize to JSON and back

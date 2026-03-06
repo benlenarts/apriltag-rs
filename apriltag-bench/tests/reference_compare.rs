@@ -3,7 +3,7 @@
 /// the C reference also fails to detect large tags on mid-gray backgrounds.
 #[cfg(feature = "reference")]
 mod gray_background {
-    use apriltag::detect::detector::{Detector, DetectorConfig};
+    use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
     use apriltag::family;
     use apriltag_bench::reference::{reference_detect, ReferenceConfig};
     use apriltag_bench::scene::{Background, SceneBuilder};
@@ -39,7 +39,7 @@ mod gray_background {
                 )
                 .build();
 
-            let rust_dets = detector.detect(&scene.image);
+            let rust_dets = detector.detect(&scene.image, &mut DetectorBuffers::new());
             let ref_dets = reference_detect(&scene.image, "tag36h11", &ref_config);
 
             println!("\n=== tag_size={tag_size} (scale={scale}) ===");

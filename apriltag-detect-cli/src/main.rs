@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use serde::Serialize;
 
-use apriltag::detect::detector::{Detector, DetectorConfig};
+use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
 use apriltag::detect::image::ImageU8;
 use apriltag::detect::pose::{estimate_tag_pose, Pose, PoseParams};
 use apriltag::detect::quad::QuadThreshParams;
@@ -182,7 +182,7 @@ fn main() -> Result<()> {
             eprintln!("detecting in {} ({}x{})", image_path, img.width, img.height);
         }
 
-        let detections = detector.detect(&img);
+        let detections = detector.detect(&img, &mut DetectorBuffers::new());
 
         let output_detections: Vec<OutputDetection> = detections
             .iter()

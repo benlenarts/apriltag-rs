@@ -6,7 +6,7 @@
 //! Usage: profile_loop [scenario-name] [iterations]
 //! Default: noise-sigma20, 1000 iterations
 
-use apriltag::detect::detector::{Detector, DetectorConfig, DetectorState};
+use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
 use apriltag::family;
 use apriltag_bench::distortion::{self, Distortion};
 use apriltag_bench::scene::{Background, SceneBuilder};
@@ -62,13 +62,13 @@ fn main() {
     let mut detector = Detector::new(DetectorConfig::default());
     detector.add_family(family::tag36h11(), 2);
 
-    let mut state = DetectorState::new();
+    let mut buffers = DetectorBuffers::new();
 
     // Warmup
-    let _ = detector.detect_with_state(&image, &mut state);
+    let _ = detector.detect(&image, &mut buffers);
 
     for _ in 0..iterations {
-        let dets = detector.detect_with_state(&image, &mut state);
+        let dets = detector.detect(&image, &mut buffers);
         // Prevent the compiler from optimizing away the detection
         std::hint::black_box(&dets);
     }

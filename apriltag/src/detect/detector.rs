@@ -48,19 +48,19 @@ impl Default for DetectorConfig {
     }
 }
 
-/// Reusable buffer state for [`Detector::detect_with_state`].
+/// Reusable buffers for [`Detector::detect`].
 ///
 /// Holds pre-allocated buffers that are reused across consecutive `detect` calls,
 /// avoiding ~850KB of allocation per frame for a 640x480/decimate=2 image.
 ///
-/// Create once and pass to [`Detector::detect_with_state`] in a loop:
+/// Create once and pass to [`Detector::detect`] in a loop:
 /// ```ignore
-/// let mut state = DetectorState::new();
+/// let mut buffers = DetectorBuffers::new();
 /// for frame in frames {
-///     let dets = detector.detect_with_state(&frame, &mut state);
+///     let dets = detector.detect(&frame, &mut buffers);
 /// }
 /// ```
-pub struct DetectorState {
+pub struct DetectorBuffers {
     decimated_buf: Vec<u8>,
     filtered_buf: Vec<u8>,
     blur_tmp_buf: Vec<u8>,
@@ -69,8 +69,8 @@ pub struct DetectorState {
     cluster_map: super::cluster::ClusterMap,
 }
 
-impl DetectorState {
-    /// Create a new empty state with no pre-allocated buffers.
+impl DetectorBuffers {
+    /// Create new empty buffers with no pre-allocated memory.
     pub fn new() -> Self {
         Self {
             decimated_buf: Vec::new(),
@@ -83,7 +83,7 @@ impl DetectorState {
     }
 }
 
-impl Default for DetectorState {
+impl Default for DetectorBuffers {
     fn default() -> Self {
         Self::new()
     }
@@ -110,29 +110,23 @@ impl Detector {
         self.families.push((family, qd));
     }
 
-    /// Detect tags in a grayscale image.
-    pub fn detect(&self, img: &ImageU8) -> Vec<Detection> {
-        let mut state = DetectorState::new();
-        self.detect_with_state(img, &mut state)
-    }
-
-    /// Detect tags, reusing buffers from `state` to avoid per-frame allocation.
+    /// Detect tags in a grayscale image, reusing buffers to avoid per-frame allocation.
     ///
     /// On the first call, buffers are allocated as needed. On subsequent calls
     /// with the same (or smaller) image dimensions, no allocation occurs.
-    pub fn detect_with_state(&self, img: &ImageU8, state: &mut DetectorState) -> Vec<Detection> {
+    pub fn detect(&self, img: &ImageU8, buffers: &mut DetectorBuffers) -> Vec<Detection> {
         let f = self.config.quad_decimate as u32;
 
         // Stage 1: Preprocess
-        let decimated = decimate(img, f, std::mem::take(&mut state.decimated_buf));
+        let decimated = decimate(img, f, std::mem::take(&mut buffers.decimated_buf));
         let (filtered, blur_tmp) = apply_sigma(
             &decimated,
             self.config.quad_sigma,
-            std::mem::take(&mut state.filtered_buf),
-            std::mem::take(&mut state.blur_tmp_buf),
+            std::mem::take(&mut buffers.filtered_buf),
+            std::mem::take(&mut buffers.blur_tmp_buf),
         );
-        state.decimated_buf = decimated.into_buf();
-        state.blur_tmp_buf = blur_tmp;
+        buffers.decimated_buf = decimated.into_buf();
+        buffers.blur_tmp_buf = blur_tmp;
 
         // Save filtered dimensions before consuming the image
         let filtered_w = filtered.width;
@@ -143,19 +137,19 @@ impl Detector {
             &filtered,
             self.config.qtp.min_white_black_diff,
             self.config.qtp.deglitch,
-            std::mem::take(&mut state.threshed_buf),
+            std::mem::take(&mut buffers.threshed_buf),
         );
-        state.filtered_buf = filtered.into_buf();
+        buffers.filtered_buf = filtered.into_buf();
 
         // Stage 3: Connected components
-        connected_components(&threshed, &mut state.uf);
+        connected_components(&threshed, &mut buffers.uf);
 
         // Stage 4: Gradient clustering
         let mut clusters = gradient_clusters(
             &threshed,
-            &mut state.uf,
+            &mut buffers.uf,
             self.config.qtp.min_cluster_pixels as u32,
-            &mut state.cluster_map,
+            &mut buffers.cluster_map,
         );
 
         // Determine border orientations needed
@@ -163,7 +157,7 @@ impl Detector {
         let has_reversed = self.families.iter().any(|(f, _)| f.layout.reversed_border);
 
         // Reclaim threshed buffer (no longer needed after clustering)
-        state.threshed_buf = threshed.into_buf();
+        buffers.threshed_buf = threshed.into_buf();
 
         // Stage 5: Quad fitting
         let mut quads = fit_quads(
@@ -294,7 +288,7 @@ mod tests {
         let mut det = Detector::new(DetectorConfig::default());
         det.add_family(family::tag16h5(), 2);
         let img = ImageU8::new(100, 100);
-        let dets = det.detect(&img);
+        let dets = det.detect(&img, &mut DetectorBuffers::new());
         assert!(dets.is_empty());
     }
 
@@ -342,7 +336,7 @@ mod tests {
         let mut det = Detector::new(config);
         det.add_family(family, 2);
 
-        let dets = det.detect(&img);
+        let dets = det.detect(&img, &mut DetectorBuffers::new());
 
         // We should detect tag ID 0
         assert!(!dets.is_empty(), "Should detect at least one tag, got none");
@@ -445,7 +439,7 @@ mod tests {
         let mut det = Detector::new(config);
         det.add_family(family, 2);
 
-        let dets = det.detect(&img);
+        let dets = det.detect(&img, &mut DetectorBuffers::new());
         // should detect large tag with decimation=2.0
         assert!(!dets.is_empty());
         assert_eq!(dets[0].id, 0);
@@ -499,7 +493,7 @@ mod tests {
         let mut det = Detector::new(config);
         det.add_family(family, 2);
 
-        let dets = det.detect(&img);
+        let dets = det.detect(&img, &mut DetectorBuffers::new());
         // should detect large tag on gray-128 background
         assert!(!dets.is_empty());
         assert_eq!(dets[0].id, 0);
@@ -568,7 +562,7 @@ mod tests {
         det.add_family(tag16h5, 2);
         det.add_family(circle21h7, 2);
 
-        let dets = det.detect(&img);
+        let dets = det.detect(&img, &mut DetectorBuffers::new());
         // Should still detect tag16h5 tag ID 0; circle21h7 is skipped via the
         // reversed_border mismatch continue.
         assert!(!dets.is_empty());
@@ -577,20 +571,20 @@ mod tests {
     }
 
     #[test]
-    fn detector_state_default() {
-        let state = DetectorState::new();
-        assert!(state.decimated_buf.is_empty());
-        assert!(state.filtered_buf.is_empty());
-        assert!(state.blur_tmp_buf.is_empty());
-        assert!(state.threshed_buf.is_empty());
+    fn detector_buffers_default() {
+        let buffers = DetectorBuffers::new();
+        assert!(buffers.decimated_buf.is_empty());
+        assert!(buffers.filtered_buf.is_empty());
+        assert!(buffers.blur_tmp_buf.is_empty());
+        assert!(buffers.threshed_buf.is_empty());
 
-        let state2 = DetectorState::default();
-        assert!(state2.decimated_buf.is_empty());
+        let buffers2 = DetectorBuffers::default();
+        assert!(buffers2.decimated_buf.is_empty());
     }
 
     #[test]
     #[cfg(feature = "family-tag16h5")]
-    fn detect_with_state_matches_detect() {
+    fn detect_deterministic_across_buffer_reuse() {
         let (img, family) = build_synthetic_tag_image();
 
         let mut config = DetectorConfig::default();
@@ -599,12 +593,12 @@ mod tests {
         let mut det = Detector::new(config);
         det.add_family(family, 2);
 
-        let dets_plain = det.detect(&img);
-        let mut state = DetectorState::new();
-        let dets_reuse = det.detect_with_state(&img, &mut state);
+        let dets_fresh = det.detect(&img, &mut DetectorBuffers::new());
+        let mut buffers = DetectorBuffers::new();
+        let dets_reuse = det.detect(&img, &mut buffers);
 
-        assert_eq!(dets_plain.len(), dets_reuse.len());
-        for (a, b) in dets_plain.iter().zip(dets_reuse.iter()) {
+        assert_eq!(dets_fresh.len(), dets_reuse.len());
+        for (a, b) in dets_fresh.iter().zip(dets_reuse.iter()) {
             assert_eq!(a.id, b.id);
             assert_eq!(a.hamming, b.hamming);
             for i in 0..4 {
@@ -616,7 +610,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "family-tag16h5")]
-    fn detect_with_state_reuses_allocations() {
+    fn detect_reuses_allocations() {
         let (img, family) = build_synthetic_tag_image();
 
         let mut config = DetectorConfig::default();
@@ -625,22 +619,22 @@ mod tests {
         let mut det = Detector::new(config);
         det.add_family(family, 2);
 
-        let mut state = DetectorState::new();
+        let mut buffers = DetectorBuffers::new();
 
         // First call populates buffers
-        let _ = det.detect_with_state(&img, &mut state);
+        let _ = det.detect(&img, &mut buffers);
         let cap_after_first = (
-            state.decimated_buf.capacity(),
-            state.filtered_buf.capacity(),
-            state.threshed_buf.capacity(),
+            buffers.decimated_buf.capacity(),
+            buffers.filtered_buf.capacity(),
+            buffers.threshed_buf.capacity(),
         );
 
         // Second call should not grow
-        let _ = det.detect_with_state(&img, &mut state);
+        let _ = det.detect(&img, &mut buffers);
         let cap_after_second = (
-            state.decimated_buf.capacity(),
-            state.filtered_buf.capacity(),
-            state.threshed_buf.capacity(),
+            buffers.decimated_buf.capacity(),
+            buffers.filtered_buf.capacity(),
+            buffers.threshed_buf.capacity(),
         );
 
         assert_eq!(cap_after_first, cap_after_second);
@@ -648,7 +642,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "family-tag36h11")]
-    fn detect_with_state_matches_detect_with_sigma() {
+    fn detect_deterministic_with_sigma() {
         // Test with quad_sigma > 0 to exercise blur buffer reuse
         let family = family::tag36h11();
         let rendered = render::render(&family.layout, family.codes[0]);
@@ -689,12 +683,12 @@ mod tests {
         let mut det = Detector::new(config);
         det.add_family(family, 2);
 
-        let dets_plain = det.detect(&img);
-        let mut state = DetectorState::new();
-        let dets_reuse = det.detect_with_state(&img, &mut state);
+        let dets_fresh = det.detect(&img, &mut DetectorBuffers::new());
+        let mut buffers = DetectorBuffers::new();
+        let dets_reuse = det.detect(&img, &mut buffers);
 
-        assert_eq!(dets_plain.len(), dets_reuse.len());
-        for (a, b) in dets_plain.iter().zip(dets_reuse.iter()) {
+        assert_eq!(dets_fresh.len(), dets_reuse.len());
+        for (a, b) in dets_fresh.iter().zip(dets_reuse.iter()) {
             assert_eq!(a.id, b.id);
         }
     }

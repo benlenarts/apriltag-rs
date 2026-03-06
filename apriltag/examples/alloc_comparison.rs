@@ -1,4 +1,4 @@
-//! Compare allocation counts between `detect()` and `detect_with_state()`.
+//! Compare allocation counts between fresh buffers and reused buffers.
 //!
 //! Run with: cargo run -p apriltag --example alloc_comparison --release
 
@@ -36,7 +36,7 @@ fn snapshot() -> (usize, usize) {
 }
 
 fn main() {
-    use apriltag::detect::detector::{Detector, DetectorConfig, DetectorState};
+    use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
     use apriltag::detect::image::ImageU8;
     use apriltag::family;
     use apriltag::render;
@@ -81,11 +81,11 @@ fn main() {
     let mut detector = Detector::new(config);
     detector.add_family(fam, 2);
 
-    // --- detect() baseline ---
-    println!("=== detect() (fresh alloc each call) ===");
+    // --- detect() with fresh buffers ---
+    println!("=== detect() with fresh buffers each call ===");
     for i in 0..3 {
         reset();
-        let dets = detector.detect(&img);
+        let dets = detector.detect(&img, &mut DetectorBuffers::new());
         let (count, bytes) = snapshot();
         println!(
             "  call {}: {} allocs, {} bytes ({:.1} KB), {} detections",
@@ -97,12 +97,12 @@ fn main() {
         );
     }
 
-    // --- detect_with_state() ---
-    println!("\n=== detect_with_state() (reusing buffers) ===");
-    let mut state = DetectorState::new();
+    // --- detect() reusing buffers ---
+    println!("\n=== detect() reusing buffers ===");
+    let mut buffers = DetectorBuffers::new();
     for i in 0..3 {
         reset();
-        let dets = detector.detect_with_state(&img, &mut state);
+        let dets = detector.detect(&img, &mut buffers);
         let (count, bytes) = snapshot();
         println!(
             "  call {}: {} allocs, {} bytes ({:.1} KB), {} detections",

@@ -5,7 +5,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use apriltag::detect::cluster::gradient_clusters;
 use apriltag::detect::connected::connected_components;
 use apriltag::detect::decode::{decode_quad, QuickDecode};
-use apriltag::detect::detector::{Detector, DetectorConfig, DetectorState};
+use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
 use apriltag::detect::homography::Homography;
 use apriltag::detect::image::ImageU8;
 use apriltag::detect::preprocess::{apply_sigma, decimate};
@@ -356,7 +356,8 @@ fn bench_end_to_end_multi(c: &mut Criterion) {
     let mut detector = Detector::new(config);
     detector.add_family(family::tag36h11(), 2);
 
-    let dets = detector.detect(&img);
+    let mut buffers = DetectorBuffers::new();
+    let dets = detector.detect(&img, &mut buffers);
     assert!(
         dets.len() >= 50,
         "multi-tag image should produce many detections, got {}",
@@ -364,7 +365,7 @@ fn bench_end_to_end_multi(c: &mut Criterion) {
     );
 
     c.bench_function("end_to_end_multi", |b| {
-        b.iter(|| detector.detect(black_box(&img)))
+        b.iter(|| detector.detect(black_box(&img), &mut buffers))
     });
 }
 
@@ -377,12 +378,13 @@ fn bench_end_to_end(c: &mut Criterion) {
     let mut detector = Detector::new(config);
     detector.add_family(family::tag36h11(), 2);
 
+    let mut buffers = DetectorBuffers::new();
     // Sanity check: the image should produce a detection
-    let dets = detector.detect(&img);
+    let dets = detector.detect(&img, &mut buffers);
     assert!(!dets.is_empty(), "bench image should produce a detection");
 
     c.bench_function("end_to_end", |b| {
-        b.iter(|| detector.detect(black_box(&img)))
+        b.iter(|| detector.detect(black_box(&img), &mut buffers))
     });
 }
 
@@ -395,13 +397,13 @@ fn bench_end_to_end_reuse(c: &mut Criterion) {
     let mut detector = Detector::new(config);
     detector.add_family(family::tag36h11(), 2);
 
-    let mut state = DetectorState::new();
+    let mut buffers = DetectorBuffers::new();
     // Warm up to populate buffers
-    let dets = detector.detect_with_state(&img, &mut state);
+    let dets = detector.detect(&img, &mut buffers);
     assert!(!dets.is_empty(), "bench image should produce a detection");
 
     c.bench_function("end_to_end_reuse", |b| {
-        b.iter(|| detector.detect_with_state(black_box(&img), &mut state))
+        b.iter(|| detector.detect(black_box(&img), &mut buffers))
     });
 }
 
@@ -568,8 +570,8 @@ fn bench_end_to_end_highres(c: &mut Criterion) {
     let mut detector = Detector::new(config);
     detector.add_family(family::tag36h11(), 2);
 
-    let mut state = DetectorState::new();
-    let dets = detector.detect_with_state(&img, &mut state);
+    let mut buffers = DetectorBuffers::new();
+    let dets = detector.detect(&img, &mut buffers);
     eprintln!(
         "highres 4000x3000: detected {} tags (image {}x{})",
         dets.len(),
@@ -583,7 +585,7 @@ fn bench_end_to_end_highres(c: &mut Criterion) {
     );
 
     c.bench_function("end_to_end_highres_4000x3000", |b| {
-        b.iter(|| detector.detect_with_state(black_box(&img), &mut state))
+        b.iter(|| detector.detect(black_box(&img), &mut buffers))
     });
 }
 

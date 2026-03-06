@@ -5,7 +5,7 @@ use tsify_next::Tsify;
 use wasm_bindgen::prelude::*;
 
 use apriltag::detect::detector::{
-    Detection as CoreDetection, Detector as CoreDetector, DetectorConfig,
+    Detection as CoreDetection, Detector as CoreDetector, DetectorBuffers, DetectorConfig,
 };
 use apriltag::detect::image::ImageU8;
 use apriltag::detect::pose::{estimate_tag_pose, PoseParams};
@@ -158,7 +158,7 @@ impl Detector {
         }
 
         let img = ImageU8::from_buf(width, height, width, data.to_vec());
-        let detections = self.inner.detect(&img);
+        let detections = self.inner.detect(&img, &mut DetectorBuffers::new());
 
         let wasm_dets: Vec<WasmDetection> = detections.iter().map(detection_to_wasm).collect();
 
