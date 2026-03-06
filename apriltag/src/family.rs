@@ -12,6 +12,18 @@ use crate::layout::Layout;
 ///
 /// Wraps `Arc<str>` so that cloning into each `Detection` is a cheap refcount
 /// bump instead of an allocation.
+///
+/// ```
+/// use apriltag::family::FamilyId;
+///
+/// let id = FamilyId::new("tag36h11");
+/// assert_eq!(&*id, "tag36h11");
+/// assert_eq!(id, "tag36h11");
+///
+/// // Cloning is cheap (refcount bump)
+/// let id2 = id.clone();
+/// assert_eq!(id, id2);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FamilyId(Arc<str>);
 
@@ -89,6 +101,17 @@ pub enum LayoutConfig {
 }
 
 /// A fully loaded tag family with config, layout, codes, and computed fields.
+///
+/// ```
+/// use apriltag::family;
+///
+/// let f = family::tag36h11();
+/// assert_eq!(f.config.name, "tag36h11");
+/// assert_eq!(f.layout.nbits, 36);
+/// assert_eq!(f.layout.grid_size, 10);
+/// assert_eq!(f.codes.len(), 587);
+/// assert_eq!(f.bit_locations.len(), 36);
+/// ```
 #[derive(Debug, Clone)]
 pub struct TagFamily {
     pub config: FamilyConfig,
@@ -99,6 +122,21 @@ pub struct TagFamily {
 
 impl TagFamily {
     /// Construct a family from a parsed config and a slice of codes.
+    ///
+    /// ```
+    /// use apriltag::family::{FamilyConfig, FamilyId, LayoutConfig, TagFamily};
+    ///
+    /// let config = FamilyConfig {
+    ///     name: FamilyId::new("my-tag"),
+    ///     min_hamming: 5,
+    ///     min_complexity: None,
+    ///     layout: LayoutConfig::Classic { grid_size: 8 },
+    /// };
+    /// let codes = vec![0x27c8, 0x31b6];
+    /// let family = TagFamily::from_config_and_codes(config, codes).unwrap();
+    /// assert_eq!(family.layout.nbits, 16);
+    /// assert_eq!(family.codes.len(), 2);
+    /// ```
     pub fn from_config_and_codes(
         config: FamilyConfig,
         codes: Vec<u64>,
@@ -200,6 +238,12 @@ builtin_family!(
 );
 
 /// List of all built-in family names (varies based on enabled features).
+///
+/// ```
+/// use apriltag::family::BUILTIN_NAMES;
+///
+/// assert!(BUILTIN_NAMES.contains(&"tag36h11"));
+/// ```
 pub const BUILTIN_NAMES: &[&str] = &[
     #[cfg(feature = "family-tag16h5")]
     "tag16h5",
@@ -220,6 +264,18 @@ pub const BUILTIN_NAMES: &[&str] = &[
 ];
 
 /// Load a built-in family by name.
+///
+/// Returns `None` if the name is not recognized or the corresponding feature
+/// is not enabled.
+///
+/// ```
+/// use apriltag::family::builtin_family;
+///
+/// let family = builtin_family("tag36h11").unwrap();
+/// assert_eq!(family.config.name, "tag36h11");
+///
+/// assert!(builtin_family("nonexistent").is_none());
+/// ```
 pub fn builtin_family(name: &str) -> Option<TagFamily> {
     match name {
         #[cfg(feature = "family-tag16h5")]
