@@ -1010,6 +1010,7 @@ mod tests {
                             corners[i][0] = params.fx * px / pz + params.cx;
                             corners[i][1] = params.fy * py / pz + params.cy;
                         }
+                        // COVERAGE: continuation of the pz <= 0.01 test-only filter above
                         if !all_valid {
                             continue;
                         }

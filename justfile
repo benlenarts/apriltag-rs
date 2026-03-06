@@ -27,6 +27,10 @@ coverage-text:
 coverage-html:
     cargo llvm-cov --html --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|bin/|report\.rs))' && open target/llvm-cov/html/index.html
 
+# Check that all uncovered lines have a COVERAGE: comment
+check-coverage:
+    ./scripts/check-coverage-comments.sh "apriltag/src/"
+
 # Verify WASM compatibility (core crates only)
 wasm-check:
     cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen
