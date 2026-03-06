@@ -103,6 +103,16 @@ pub trait GrayImage {
 /// A borrowed, read-only view of grayscale image data.
 ///
 /// Use this to pass `&[u8]` pixel data into the detection pipeline without copying.
+///
+/// ```
+/// use apriltag::detect::image::ImageRef;
+/// use apriltag::detect::image::GrayImage;
+///
+/// let pixels = vec![0u8; 640 * 480];
+/// let img = ImageRef::new(640, 480, 640, &pixels);
+/// assert_eq!(img.width(), 640);
+/// assert_eq!(img.height(), 480);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct ImageRef<'a> {
     width: u32,
@@ -147,6 +157,18 @@ impl GrayImage for ImageRef<'_> {
 }
 
 /// Grayscale image with row-major pixel data.
+///
+/// ```
+/// use apriltag::detect::image::ImageU8;
+///
+/// let mut img = ImageU8::new(100, 80);
+/// assert_eq!(img.width, 100);
+/// assert_eq!(img.height, 80);
+/// assert_eq!(img.get(0, 0), 0); // initialized to zero
+///
+/// img.set(10, 20, 128);
+/// assert_eq!(img.get(10, 20), 128);
+/// ```
 #[derive(Debug, Clone)]
 pub struct ImageU8 {
     pub width: u32,
