@@ -52,6 +52,12 @@ pub struct ThresholdBuffers {
     pub morph_b: Vec<u8>,
 }
 
+impl Default for ThresholdBuffers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ThresholdBuffers {
     pub fn new() -> Self {
         Self {
