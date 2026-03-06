@@ -6,7 +6,7 @@ use super::quad::Quad;
 /// For each quad edge, samples along the edge and searches perpendicular to it
 /// to find the strongest gradient, then re-fits the edge line and recomputes
 /// corner intersections.
-pub fn refine_edges(quad: &mut Quad, img: &ImageU8, quad_decimate: f32) {
+pub fn refine_edges(quad: &mut Quad, img: &ImageU8, quad_decimate: f32, vals: &mut Vec<f64>) {
     let range = quad_decimate as f64 + 1.0;
 
     let mut lines = [[0.0f64; 4]; 4]; // [px, py, nx, ny]
@@ -16,7 +16,6 @@ pub fn refine_edges(quad: &mut Quad, img: &ImageU8, quad_decimate: f32) {
     // n ranges [-range, +range], so unique offsets span [-range-1, range+1].
     // Count: steps + 1 (for g2 values at offsets n-1) + 8 (g1 at n+1 is 8 quarter-steps ahead).
     let n_vals = steps + 9;
-    let mut vals: Vec<f64> = Vec::with_capacity(n_vals);
 
     for edge in 0..4 {
         let a = quad.corners[edge];
@@ -191,7 +190,7 @@ mod tests {
             corners: [[20.0, 20.0], [80.0, 20.0], [80.0, 80.0], [20.0, 80.0]],
             reversed_border: false,
         };
-        refine_edges(&mut quad, &img, 2.0);
+        refine_edges(&mut quad, &img, 2.0, &mut Vec::new());
         // Should not crash; corners may change slightly
         for c in &quad.corners {
             assert!(c[0].is_finite());
@@ -213,7 +212,7 @@ mod tests {
             corners: [[45.0, 20.0], [55.0, 20.0], [55.0, 80.0], [45.0, 80.0]],
             reversed_border: false,
         };
-        refine_edges(&mut quad, &img, 2.0);
+        refine_edges(&mut quad, &img, 2.0, &mut Vec::new());
 
         // Corners should still be finite
         for c in &quad.corners {
@@ -262,7 +261,7 @@ mod tests {
             reversed_border: false,
         };
 
-        refine_edges(&mut quad, &img, 1.0);
+        refine_edges(&mut quad, &img, 1.0, &mut Vec::new());
 
         // Each refined corner should be closer to its own expected position
         // than to the cyclically-shifted expected position.
@@ -292,7 +291,7 @@ mod tests {
             corners: [[0.0, 1.0], [48.0, 1.0], [48.0, 48.0], [0.0, 48.0]],
             reversed_border: false,
         };
-        refine_edges(&mut quad, &img, 2.0);
+        refine_edges(&mut quad, &img, 2.0, &mut Vec::new());
         for c in &quad.corners {
             assert!(c[0].is_finite());
             assert!(c[1].is_finite());
@@ -322,7 +321,7 @@ mod tests {
             corners: [[90.0, 50.0], [110.0, 50.0], [110.0, 150.0], [90.0, 150.0]],
             reversed_border: false,
         };
-        refine_edges(&mut quad_fast, &img, 2.0);
+        refine_edges(&mut quad_fast, &img, 2.0, &mut Vec::new());
 
         // Capture golden values — these were computed by the scalar implementation.
         // If SIMD changes the result, this test fails.
@@ -360,7 +359,7 @@ mod tests {
             corners: [[20.0, 20.0], [80.0, 20.0], [80.0, 80.0], [20.0, 80.0]],
             reversed_border: true,
         };
-        refine_edges(&mut quad, &img, 1.0);
+        refine_edges(&mut quad, &img, 1.0, &mut Vec::new());
         for c in &quad.corners {
             assert!(c[0].is_finite());
             assert!(c[1].is_finite());

@@ -40,6 +40,37 @@ fn binarize_block(
     }
 }
 
+/// Reusable buffers for the tile-based threshold computation.
+///
+/// Pool these in `DetectorBuffers` to avoid 4 allocations (~5 KB) per frame.
+pub struct ThresholdBuffers {
+    pub tile_min: Vec<u8>,
+    pub tile_max: Vec<u8>,
+    pub dilated_max: Vec<u8>,
+    pub eroded_min: Vec<u8>,
+    pub morph_a: Vec<u8>,
+    pub morph_b: Vec<u8>,
+}
+
+impl Default for ThresholdBuffers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ThresholdBuffers {
+    pub fn new() -> Self {
+        Self {
+            tile_min: Vec::new(),
+            tile_max: Vec::new(),
+            dilated_max: Vec::new(),
+            eroded_min: Vec::new(),
+            morph_a: Vec::new(),
+            morph_b: Vec::new(),
+        }
+    }
+}
+
 /// Produce a ternary threshold image: 0 (black), 255 (white), or 127 (unknown).
 ///
 /// Uses tile-based adaptive thresholding with min/max dilation to handle
@@ -52,6 +83,7 @@ pub fn threshold(
     min_white_black_diff: i32,
     deglitch: bool,
     buf: Vec<u8>,
+    tile_bufs: &mut ThresholdBuffers,
 ) -> ImageU8 {
     let w = img.width;
     let h = img.height;
@@ -67,8 +99,14 @@ pub fn threshold(
     // dilation/erosion loop can index unconditionally without bounds checks.
     let padded_w = tw + 2;
     let padded_h = th + 2;
-    let mut tile_min = vec![255u8; (padded_w * padded_h) as usize];
-    let mut tile_max = vec![0u8; (padded_w * padded_h) as usize];
+    let padded_len = (padded_w * padded_h) as usize;
+
+    tile_bufs.tile_min.clear();
+    tile_bufs.tile_min.resize(padded_len, 255u8);
+    tile_bufs.tile_max.clear();
+    tile_bufs.tile_max.resize(padded_len, 0u8);
+    let tile_min = &mut tile_bufs.tile_min;
+    let tile_max = &mut tile_bufs.tile_max;
 
     for ty in 0..th {
         for tx in 0..tw {
@@ -87,8 +125,13 @@ pub fn threshold(
     }
 
     // Dilate max, erode min using 3x3 tile neighborhood (no bounds checks needed)
-    let mut dilated_max = vec![0u8; (tw * th) as usize];
-    let mut eroded_min = vec![255u8; (tw * th) as usize];
+    let tile_len = (tw * th) as usize;
+    tile_bufs.dilated_max.clear();
+    tile_bufs.dilated_max.resize(tile_len, 0u8);
+    tile_bufs.eroded_min.clear();
+    tile_bufs.eroded_min.resize(tile_len, 255u8);
+    let dilated_max = &mut tile_bufs.dilated_max;
+    let eroded_min = &mut tile_bufs.eroded_min;
 
     for ty in 0..th {
         for tx in 0..tw {
@@ -193,24 +236,27 @@ pub fn threshold(
     }
 
     if deglitch {
-        deglitch_image(&mut out);
+        deglitch_image(&mut out, &mut tile_bufs.morph_a, &mut tile_bufs.morph_b);
     }
 
     out
 }
 
 /// Morphological close (dilate then erode) with 3x3 structuring element.
-fn deglitch_image(img: &mut ImageU8) {
-    let dilated = morph_op(img, true);
-    let eroded = morph_op(&dilated, false);
-    img.buf = eroded.buf;
+fn deglitch_image(img: &mut ImageU8, buf_a: &mut Vec<u8>, buf_b: &mut Vec<u8>) {
+    let dilated = morph_op(img, true, std::mem::take(buf_a));
+    let eroded = morph_op(&dilated, false, std::mem::take(buf_b));
+    *buf_a = dilated.into_buf();
+    // Swap eroded result into img, reclaim old img.buf into buf_b
+    let old_buf = std::mem::replace(&mut img.buf, eroded.into_buf());
+    *buf_b = old_buf;
 }
 
 /// Morphological operation: dilate (max) or erode (min) with 3x3 kernel.
-fn morph_op(img: &ImageU8, dilate: bool) -> ImageU8 {
+fn morph_op(img: &ImageU8, dilate: bool, buf: Vec<u8>) -> ImageU8 {
     let w = img.width as i32;
     let h = img.height as i32;
-    let mut out = ImageU8::new(img.width, img.height);
+    let mut out = ImageU8::new_reuse(img.width, img.height, buf);
 
     for y in 0..h {
         for x in 0..w {
@@ -248,7 +294,7 @@ mod tests {
             }
         }
         let buf = Vec::with_capacity(1024);
-        let out = threshold(&img, 5, false, buf);
+        let out = threshold(&img, 5, false, buf, &mut ThresholdBuffers::new());
         assert!(out.buf.capacity() >= 1024);
     }
 
@@ -261,7 +307,7 @@ mod tests {
                 img.set(x, y, 200);
             }
         }
-        let out = threshold(&img, 5, false, Vec::new());
+        let out = threshold(&img, 5, false, Vec::new(), &mut ThresholdBuffers::new());
         for y in 0..8 {
             for x in 0..8 {
                 assert_eq!(out.get(x, y), 127, "({x}, {y})");
@@ -281,7 +327,7 @@ mod tests {
                 img.set(x, y, 255);
             }
         }
-        let out = threshold(&img, 5, false, Vec::new());
+        let out = threshold(&img, 5, false, Vec::new(), &mut ThresholdBuffers::new());
         // Tile (0,0) spans x=[0,3], all 0. Tile (1,0) spans x=[4,7], all 255.
         // After dilation, tile (0,0) has min=0, max=255 (from neighbor tile (1,0))
         // thresh = 0 + 255/2 = 127
@@ -293,7 +339,7 @@ mod tests {
     #[test]
     fn threshold_small_image_no_panic() {
         let img = ImageU8::new(2, 2);
-        let out = threshold(&img, 5, false, Vec::new());
+        let out = threshold(&img, 5, false, Vec::new(), &mut ThresholdBuffers::new());
         assert_eq!(out.width, 2);
         assert_eq!(out.height, 2);
     }
@@ -309,7 +355,7 @@ mod tests {
         }
         img.set(4, 4, 255); // single bright pixel
                             // With deglitch, the single pixel noise should be removed by close operation
-        let out = threshold(&img, 5, true, Vec::new());
+        let out = threshold(&img, 5, true, Vec::new(), &mut ThresholdBuffers::new());
         // The close operation (dilate then erode) should remove or smooth isolated changes
         assert_eq!(out.width, 8);
     }
@@ -323,7 +369,7 @@ mod tests {
                 img.set(x, y, if x < 5 { 0 } else { 255 });
             }
         }
-        let out = threshold(&img, 5, false, Vec::new());
+        let out = threshold(&img, 5, false, Vec::new(), &mut ThresholdBuffers::new());
         // Pixel at x=8 should use tile tx=min(8/4, tw-1) = min(2, 1) = 1
         assert_eq!(out.get(8, 0), 255);
     }
@@ -332,7 +378,7 @@ mod tests {
     fn morph_dilate_expands_bright() {
         let mut img = ImageU8::new(5, 5);
         img.set(2, 2, 255);
-        let out = morph_op(&img, true);
+        let out = morph_op(&img, true, Vec::new());
         // All 8 neighbors should become 255
         for dy in -1..=1i32 {
             for dx in -1..=1i32 {
@@ -350,12 +396,18 @@ mod tests {
             }
         }
         img.set(2, 2, 0);
-        let out = morph_op(&img, false);
+        let out = morph_op(&img, false, Vec::new());
         // All 8 neighbors of (2,2) should become 0
         for dy in -1..=1i32 {
             for dx in -1..=1i32 {
                 assert_eq!(out.get((2 + dx) as u32, (2 + dy) as u32), 0);
             }
         }
+    }
+
+    #[test]
+    fn threshold_buffers_default() {
+        let bufs = ThresholdBuffers::default();
+        assert!(bufs.tile_min.is_empty());
     }
 }

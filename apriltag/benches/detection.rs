@@ -11,7 +11,7 @@ use apriltag::detect::image::ImageU8;
 use apriltag::detect::preprocess::{apply_sigma, decimate};
 use apriltag::detect::quad::{fit_quads, QuadThreshParams};
 use apriltag::detect::refine::refine_edges;
-use apriltag::detect::threshold::threshold;
+use apriltag::detect::threshold::{threshold, ThresholdBuffers};
 use apriltag::detect::unionfind::UnionFind;
 use apriltag::family;
 use apriltag::render;
@@ -66,7 +66,7 @@ fn bench_decimate(c: &mut Criterion) {
 fn bench_sigma(c: &mut Criterion) {
     let img = build_bench_image();
     c.bench_function("preprocess/sigma", |b| {
-        b.iter(|| apply_sigma(black_box(&img), 0.8, Vec::new(), Vec::new()))
+        b.iter(|| apply_sigma(black_box(&img), 0.8, Vec::new(), Vec::new(), Vec::new()))
     });
 }
 
@@ -74,14 +74,21 @@ fn bench_threshold(c: &mut Criterion) {
     let img = build_bench_image();
     let decimated = decimate(&img, 2, Vec::new());
     c.bench_function("threshold", |b| {
-        b.iter(|| threshold(black_box(&decimated), 5, false, Vec::new()))
+        let mut tbufs = ThresholdBuffers::new();
+        b.iter(|| threshold(black_box(&decimated), 5, false, Vec::new(), &mut tbufs))
     });
 }
 
 fn bench_connected_components(c: &mut Criterion) {
     let img = build_bench_image();
     let decimated = decimate(&img, 2, Vec::new());
-    let threshed = threshold(&decimated, 5, false, Vec::new());
+    let threshed = threshold(
+        &decimated,
+        5,
+        false,
+        Vec::new(),
+        &mut ThresholdBuffers::new(),
+    );
     c.bench_function("connected_components", |b| {
         b.iter(|| {
             let mut uf = UnionFind::empty();
@@ -93,7 +100,13 @@ fn bench_connected_components(c: &mut Criterion) {
 fn bench_gradient_clusters(c: &mut Criterion) {
     let img = build_bench_image();
     let decimated = decimate(&img, 2, Vec::new());
-    let threshed = threshold(&decimated, 5, false, Vec::new());
+    let threshed = threshold(
+        &decimated,
+        5,
+        false,
+        Vec::new(),
+        &mut ThresholdBuffers::new(),
+    );
     c.bench_function("gradient_clusters", |b| {
         b.iter(|| {
             let mut uf = UnionFind::empty();
@@ -166,7 +179,13 @@ fn build_noisy_image() -> ImageU8 {
 fn bench_gradient_clusters_noisy(c: &mut Criterion) {
     let img = build_noisy_image();
     let decimated = decimate(&img, 2, Vec::new());
-    let threshed = threshold(&decimated, 5, false, Vec::new());
+    let threshed = threshold(
+        &decimated,
+        5,
+        false,
+        Vec::new(),
+        &mut ThresholdBuffers::new(),
+    );
     c.bench_function("gradient_clusters_noisy", |b| {
         b.iter(|| {
             let mut uf = UnionFind::empty();
@@ -184,7 +203,13 @@ fn bench_gradient_clusters_noisy(c: &mut Criterion) {
 fn bench_fit_quads(c: &mut Criterion) {
     let img = build_bench_image();
     let decimated = decimate(&img, 2, Vec::new());
-    let threshed = threshold(&decimated, 5, false, Vec::new());
+    let threshed = threshold(
+        &decimated,
+        5,
+        false,
+        Vec::new(),
+        &mut ThresholdBuffers::new(),
+    );
     let mut uf = UnionFind::empty();
     connected_components(&threshed, &mut uf);
     let clusters = gradient_clusters(
@@ -236,19 +261,21 @@ fn bench_refine_edges(c: &mut Criterion) {
     let mut group = c.benchmark_group("refine_edges");
 
     group.bench_function("many_quads", |b| {
+        let mut vals = Vec::new();
         b.iter(|| {
             let mut qs = quads.clone();
             for q in &mut qs {
-                refine_edges(black_box(q), black_box(&img), 2.0);
+                refine_edges(black_box(q), black_box(&img), 2.0, &mut vals);
             }
         })
     });
 
     group.bench_function("high_decimate", |b| {
+        let mut vals = Vec::new();
         b.iter(|| {
             let mut qs = quads.clone();
             for q in &mut qs {
-                refine_edges(black_box(q), black_box(&img), 4.0);
+                refine_edges(black_box(q), black_box(&img), 4.0, &mut vals);
             }
         })
     });
@@ -263,7 +290,13 @@ fn bench_decode(c: &mut Criterion) {
 
     // Run the pipeline to get a real quad + homography
     let decimated = decimate(&img, 2, Vec::new());
-    let threshed = threshold(&decimated, 5, false, Vec::new());
+    let threshed = threshold(
+        &decimated,
+        5,
+        false,
+        Vec::new(),
+        &mut ThresholdBuffers::new(),
+    );
     let mut uf = UnionFind::empty();
     connected_components(&threshed, &mut uf);
     let mut clusters = gradient_clusters(

@@ -12,7 +12,7 @@ use super::image::ImageU8;
 use super::preprocess::{apply_sigma, decimate};
 use super::quad::{fit_quads, QuadThreshParams};
 use super::refine::refine_edges;
-use super::threshold::threshold;
+use super::threshold::{threshold, ThresholdBuffers};
 use super::unionfind::UnionFind;
 
 /// A detected AprilTag in an image.
@@ -64,8 +64,11 @@ pub struct DetectorBuffers {
     decimated_buf: Vec<u8>,
     filtered_buf: Vec<u8>,
     blur_tmp_buf: Vec<u8>,
+    unsharp_buf: Vec<u8>,
     threshed_buf: Vec<u8>,
+    threshold_bufs: ThresholdBuffers,
     uf: UnionFind,
+    refine_vals: Vec<f64>,
     cluster_map: super::cluster::ClusterMap,
 }
 
@@ -76,7 +79,10 @@ impl DetectorBuffers {
             decimated_buf: Vec::new(),
             filtered_buf: Vec::new(),
             blur_tmp_buf: Vec::new(),
+            unsharp_buf: Vec::new(),
             threshed_buf: Vec::new(),
+            threshold_bufs: ThresholdBuffers::new(),
+            refine_vals: Vec::new(),
             uf: UnionFind::empty(),
             cluster_map: super::cluster::ClusterMap::new(),
         }
@@ -119,14 +125,16 @@ impl Detector {
 
         // Stage 1: Preprocess
         let decimated = decimate(img, f, std::mem::take(&mut buffers.decimated_buf));
-        let (filtered, blur_tmp) = apply_sigma(
+        let (filtered, blur_tmp, unsharp) = apply_sigma(
             &decimated,
             self.config.quad_sigma,
             std::mem::take(&mut buffers.filtered_buf),
             std::mem::take(&mut buffers.blur_tmp_buf),
+            std::mem::take(&mut buffers.unsharp_buf),
         );
         buffers.decimated_buf = decimated.into_buf();
         buffers.blur_tmp_buf = blur_tmp;
+        buffers.unsharp_buf = unsharp;
 
         // Save filtered dimensions before consuming the image
         let filtered_w = filtered.width;
@@ -138,6 +146,7 @@ impl Detector {
             self.config.qtp.min_white_black_diff,
             self.config.qtp.deglitch,
             std::mem::take(&mut buffers.threshed_buf),
+            &mut buffers.threshold_bufs,
         );
         buffers.filtered_buf = filtered.into_buf();
 
@@ -182,7 +191,12 @@ impl Detector {
         // Stage 6: Edge refinement
         if self.config.refine_edges {
             for quad in &mut quads {
-                refine_edges(quad, img, self.config.quad_decimate);
+                refine_edges(
+                    quad,
+                    img,
+                    self.config.quad_decimate,
+                    &mut buffers.refine_vals,
+                );
             }
         }
 
@@ -507,7 +521,13 @@ mod tests {
         let (img, _family) = build_synthetic_tag_image();
 
         // Stage 2: Threshold
-        let threshed = threshold::threshold(&img, 5, false, Vec::new());
+        let threshed = threshold::threshold(
+            &img,
+            5,
+            false,
+            Vec::new(),
+            &mut threshold::ThresholdBuffers::new(),
+        );
         let mut black_count = 0;
         let mut white_count = 0;
         let mut unknown_count = 0;
