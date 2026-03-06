@@ -1004,7 +1004,7 @@ fn cmd_compare(category: Option<String>, scenario: Option<String>, format: &str)
                         decision_margin: d.decision_margin,
                         center: d.center,
                         corners,
-                        family_id: apriltag::family::FamilyId::from(fam.as_ref()),
+                        family_id: apriltag::family::FamilyId::from(&**fam),
                     });
                 }
             }
