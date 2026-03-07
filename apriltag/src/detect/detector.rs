@@ -29,7 +29,7 @@ use super::unionfind::UnionFind;
 ///
 /// // Create a synthetic image with a tag16h5 tag
 /// let f = family::tag16h5();
-/// let rendered = f.render(0);
+/// let rendered = f.tag(0).render();
 /// let mut img = ImageU8::new(200, 200);
 /// for y in 0..200 { for x in 0..200 { img.set(x, y, 255); } }
 /// let scale = 10u32;

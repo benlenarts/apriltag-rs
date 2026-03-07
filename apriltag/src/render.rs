@@ -8,7 +8,7 @@ use crate::types::{CellType, Pixel};
 /// use apriltag::types::Pixel;
 ///
 /// let f = family::tag16h5();
-/// let tag = f.render(0);
+/// let tag = f.tag(0).render();
 /// assert_eq!(tag.grid_size, 8);
 ///
 /// // Outer border is white, inner border is black
@@ -38,7 +38,7 @@ impl RenderedTag {
     /// use apriltag::family;
     ///
     /// let f = family::tag16h5();
-    /// let tag = f.render(0);
+    /// let tag = f.tag(0).render();
     /// let rgba = tag.to_rgba();
     /// assert_eq!(rgba.len(), 8 * 8 * 4); // 4 bytes per pixel
     ///

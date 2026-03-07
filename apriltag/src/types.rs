@@ -28,7 +28,7 @@ pub enum CellType {
 /// use apriltag::types::Pixel;
 ///
 /// let f = family::tag16h5();
-/// let tag = f.render(0);
+/// let tag = f.tag(0).render();
 /// assert_eq!(tag.pixel(0, 0), Pixel::White);
 /// assert_eq!(tag.pixel(1, 1), Pixel::Black);
 /// ```
