@@ -1,4 +1,5 @@
-docs/papers/
+docs/papers/*
+!docs/papers/README.md
 docs/reference-detection/
 docs/reference-generation/
 target/
