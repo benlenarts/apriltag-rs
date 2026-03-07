@@ -24,12 +24,11 @@ pub enum CellType {
 /// A rendered pixel value.
 ///
 /// ```
-/// use apriltag::layout::Layout;
-/// use apriltag::render;
+/// use apriltag::family;
 /// use apriltag::types::Pixel;
 ///
-/// let layout = Layout::classic(8).unwrap();
-/// let tag = render::render(&layout, 0x27c8);
+/// let f = family::tag16h5();
+/// let tag = f.render(0);
 /// assert_eq!(tag.pixel(0, 0), Pixel::White);
 /// assert_eq!(tag.pixel(1, 1), Pixel::Black);
 /// ```

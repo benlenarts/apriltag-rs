@@ -25,12 +25,11 @@ use super::unionfind::UnionFind;
 /// use apriltag::detect::detector::{Detector, DetectorConfig, DetectorBuffers};
 /// use apriltag::detect::image::ImageU8;
 /// use apriltag::family;
-/// use apriltag::render;
 /// use apriltag::types::Pixel;
 ///
 /// // Create a synthetic image with a tag16h5 tag
 /// let f = family::tag16h5();
-/// let rendered = render::render(&f.layout, f.codes[0]);
+/// let rendered = f.render(0);
 /// let mut img = ImageU8::new(200, 200);
 /// for y in 0..200 { for x in 0..200 { img.set(x, y, 255); } }
 /// let scale = 10u32;

@@ -4,12 +4,11 @@ use crate::types::{CellType, Pixel};
 /// A rendered tag as a grid of pixels.
 ///
 /// ```
-/// use apriltag::layout::Layout;
-/// use apriltag::render;
+/// use apriltag::family;
 /// use apriltag::types::Pixel;
 ///
-/// let layout = Layout::classic(8).unwrap();
-/// let tag = render::render(&layout, 0x27c8); // tag16h5 code 0
+/// let f = family::tag16h5();
+/// let tag = f.render(0);
 /// assert_eq!(tag.grid_size, 8);
 ///
 /// // Outer border is white, inner border is black
@@ -36,11 +35,10 @@ impl RenderedTag {
     /// Transparent = (0, 0, 0, 0).
     ///
     /// ```
-    /// use apriltag::layout::Layout;
-    /// use apriltag::render;
+    /// use apriltag::family;
     ///
-    /// let layout = Layout::classic(8).unwrap();
-    /// let tag = render::render(&layout, 0x27c8);
+    /// let f = family::tag16h5();
+    /// let tag = f.render(0);
     /// let rgba = tag.to_rgba();
     /// assert_eq!(rgba.len(), 8 * 8 * 4); // 4 bytes per pixel
     ///
@@ -67,16 +65,17 @@ impl RenderedTag {
 /// 3. Apply one final rotate90
 ///
 /// ```
-/// use apriltag::family;
+/// use apriltag::layout::Layout;
 /// use apriltag::render;
 /// use apriltag::types::Pixel;
 ///
-/// let f = family::tag16h5();
-/// let tag = render::render(&f.layout, f.codes[0]);
+/// // Render a specific code with a layout
+/// let layout = Layout::classic(8).unwrap();
+/// let tag = render::render(&layout, 0x27c8); // tag16h5 code 0
 /// assert_eq!(tag.grid_size, 8);
 ///
 /// // All data-zero bits render as black
-/// let all_black = render::render(&f.layout, 0x0000);
+/// let all_black = render::render(&layout, 0x0000);
 /// assert_eq!(all_black.pixel(3, 3), Pixel::Black);
 /// ```
 pub fn render(layout: &Layout, code: u64) -> RenderedTag {
