@@ -152,6 +152,16 @@ impl TagFamily {
     }
 
     /// Return a [`Tag`](crate::tag::Tag) handle for the tag at `index`.
+    ///
+    /// ```
+    /// use apriltag::family;
+    /// use apriltag::types::Pixel;
+    ///
+    /// let f = family::tag16h5();
+    /// let tag = f.tag(0).render();
+    /// assert_eq!(tag.grid_size, 8);
+    /// assert_eq!(tag.pixel(0, 0), Pixel::White); // outer border
+    /// ```
     pub fn tag(&self, index: usize) -> crate::tag::Tag<'_> {
         crate::tag::Tag::new(self, index)
     }
