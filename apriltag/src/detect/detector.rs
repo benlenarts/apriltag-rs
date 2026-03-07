@@ -16,6 +16,43 @@ use super::threshold::{threshold, ThresholdBuffers};
 use super::unionfind::UnionFind;
 
 /// A detected AprilTag in an image.
+///
+/// Contains the tag ID, Hamming distance from the nearest valid code,
+/// decision margin, and the detected corner and center positions in
+/// pixel coordinates.
+///
+/// ```
+/// use apriltag::detect::detector::{Detector, DetectorConfig, DetectorBuffers};
+/// use apriltag::detect::image::ImageU8;
+/// use apriltag::family;
+/// use apriltag::types::Pixel;
+///
+/// // Create a synthetic image with a tag16h5 tag
+/// let f = family::tag16h5();
+/// let rendered = f.tag(0).render();
+/// let mut img = ImageU8::new(200, 200);
+/// for y in 0..200 { for x in 0..200 { img.set(x, y, 255); } }
+/// let scale = 10u32;
+/// for ty in 0..rendered.grid_size {
+///     for tx in 0..rendered.grid_size {
+///         let val = if rendered.pixel(tx, ty) == Pixel::Black { 0 } else { 255 };
+///         for dy in 0..scale { for dx in 0..scale {
+///             img.set(60 + tx as u32 * scale + dx, 60 + ty as u32 * scale + dy, val);
+///         }}
+///     }
+/// }
+///
+/// // Detect tags
+/// let mut config = DetectorConfig::default();
+/// config.quad_decimate = 1.0;
+/// let mut det = Detector::new(config);
+/// det.add_family(f, 2);
+/// let detections = det.detect(&img, &mut DetectorBuffers::new());
+///
+/// assert!(!detections.is_empty());
+/// assert_eq!(detections[0].id, 0);
+/// assert_eq!(detections[0].hamming, 0);
+/// ```
 #[derive(Debug, Clone)]
 pub struct Detection {
     pub family_id: FamilyId,
@@ -54,10 +91,19 @@ impl Default for DetectorConfig {
 /// avoiding ~850KB of allocation per frame for a 640x480/decimate=2 image.
 ///
 /// Create once and pass to [`Detector::detect`] in a loop:
-/// ```ignore
+///
+/// ```
+/// use apriltag::detect::detector::{Detector, DetectorConfig, DetectorBuffers};
+/// use apriltag::detect::image::ImageU8;
+/// use apriltag::family;
+///
+/// let mut det = Detector::new(DetectorConfig::default());
+/// det.add_family(family::tag36h11(), 2);
+///
 /// let mut buffers = DetectorBuffers::new();
-/// for frame in frames {
-///     let dets = detector.detect(&frame, &mut buffers);
+/// let frames = [ImageU8::new(100, 100), ImageU8::new(100, 100)];
+/// for frame in &frames {
+///     let dets = det.detect(frame, &mut buffers);
 /// }
 /// ```
 pub struct DetectorBuffers {
@@ -96,6 +142,14 @@ impl Default for DetectorBuffers {
 }
 
 /// An AprilTag detector with pre-built lookup tables.
+///
+/// ```
+/// use apriltag::detect::detector::{Detector, DetectorConfig};
+/// use apriltag::family;
+///
+/// let mut det = Detector::new(DetectorConfig::default());
+/// det.add_family(family::tag36h11(), 2);
+/// ```
 pub struct Detector {
     pub config: DetectorConfig,
     families: Vec<(TagFamily, QuickDecode)>,

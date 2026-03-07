@@ -1,5 +1,19 @@
 use thiserror::Error;
 
+/// Errors produced when parsing or validating a tag layout.
+///
+/// ```
+/// use apriltag::layout::Layout;
+/// use apriltag::error::LayoutError;
+///
+/// // Non-square string length
+/// let err = Layout::from_data_string("ddd").unwrap_err();
+/// assert!(matches!(err, LayoutError::NotSquare(3)));
+///
+/// // Invalid character
+/// let err = Layout::from_data_string("dddZddddd").unwrap_err();
+/// assert!(matches!(err, LayoutError::InvalidChar('Z', 3)));
+/// ```
 #[derive(Debug, Error)]
 pub enum LayoutError {
     #[error("layout string length {0} is not a perfect square")]

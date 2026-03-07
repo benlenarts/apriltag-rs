@@ -3,6 +3,18 @@
 /// Matches the Java `TagFamily.rotate90()`:
 /// - When `nbits % 4 == 0`: left-rotate all bits by `nbits/4` positions
 /// - When `nbits % 4 == 1`: preserve the center bit (LSB), rotate remaining bits
+///
+/// ```
+/// use apriltag::hamming::rotate90;
+///
+/// // Four rotations return to the original code
+/// let code: u64 = 0xd7e00984b; // tag36h11 code 0
+/// let mut v = code;
+/// for _ in 0..4 {
+///     v = rotate90(v, 36);
+/// }
+/// assert_eq!(v, code);
+/// ```
 pub fn rotate90(w: u64, nbits: u32) -> u64 {
     let (p, l): (u64, u64) = if nbits % 4 == 1 {
         (nbits as u64 - 1, 1)
@@ -16,6 +28,14 @@ pub fn rotate90(w: u64, nbits: u32) -> u64 {
 }
 
 /// Compute the Hamming distance between two code words.
+///
+/// ```
+/// use apriltag::hamming::hamming_distance;
+///
+/// assert_eq!(hamming_distance(0b1010, 0b1010), 0);
+/// assert_eq!(hamming_distance(0b1010, 0b1011), 1);
+/// assert_eq!(hamming_distance(0xFF, 0x00), 8);
+/// ```
 pub fn hamming_distance(a: u64, b: u64) -> u32 {
     (a ^ b).count_ones()
 }
@@ -23,6 +43,13 @@ pub fn hamming_distance(a: u64, b: u64) -> u32 {
 /// Check whether the Hamming distance between two code words is at least `min_val`.
 ///
 /// Uses early-exit by checking 16-bit chunks, matching the Java reference.
+///
+/// ```
+/// use apriltag::hamming::hamming_distance_at_least;
+///
+/// assert!(hamming_distance_at_least(0xFF, 0x00, 8));
+/// assert!(!hamming_distance_at_least(0xFF, 0x00, 9));
+/// ```
 pub fn hamming_distance_at_least(a: u64, b: u64, min_val: u32) -> bool {
     let mut w = a ^ b;
     let mut count = 0u32;

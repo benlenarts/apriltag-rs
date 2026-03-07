@@ -2,6 +2,19 @@ use crate::layout::Layout;
 use crate::types::{CellType, Pixel};
 
 /// A rendered tag as a grid of pixels.
+///
+/// ```
+/// use apriltag::family;
+/// use apriltag::types::Pixel;
+///
+/// let f = family::tag16h5();
+/// let tag = f.tag(0).render();
+/// assert_eq!(tag.grid_size, 8);
+///
+/// // Outer border is white, inner border is black
+/// assert_eq!(tag.pixel(0, 0), Pixel::White);
+/// assert_eq!(tag.pixel(1, 1), Pixel::Black);
+/// ```
 #[derive(Debug, Clone)]
 pub struct RenderedTag {
     /// Grid dimension (same as layout grid_size).
@@ -20,6 +33,18 @@ impl RenderedTag {
     ///
     /// Black = (0, 0, 0, 255), White = (255, 255, 255, 255),
     /// Transparent = (0, 0, 0, 0).
+    ///
+    /// ```
+    /// use apriltag::family;
+    ///
+    /// let f = family::tag16h5();
+    /// let tag = f.tag(0).render();
+    /// let rgba = tag.to_rgba();
+    /// assert_eq!(rgba.len(), 8 * 8 * 4); // 4 bytes per pixel
+    ///
+    /// // First pixel (0,0) is white border → [255, 255, 255, 255]
+    /// assert_eq!(&rgba[0..4], &[255, 255, 255, 255]);
+    /// ```
     pub fn to_rgba(&self) -> Vec<u8> {
         self.pixels
             .iter()
@@ -38,7 +63,10 @@ impl RenderedTag {
 /// 1. Loop 4 times: rotate image 90 degrees, then fill the top half strip
 /// 2. Handle center pixel if grid_size is odd
 /// 3. Apply one final rotate90
-pub fn render(layout: &Layout, code: u64) -> RenderedTag {
+///
+/// Prefer [`TagFamily::render`](crate::family::TagFamily::render) for
+/// rendering a tag by index.
+pub(crate) fn render(layout: &Layout, code: u64) -> RenderedTag {
     let size = layout.grid_size;
     let mut im = vec![vec![Pixel::Transparent; size]; size];
     let mut code = code;

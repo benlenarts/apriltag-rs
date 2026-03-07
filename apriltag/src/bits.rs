@@ -5,6 +5,19 @@ use crate::types::CellType;
 ///
 /// Coordinates can be negative for Standard/Circle layouts where
 /// data bits extend outside the inner border.
+///
+/// ```
+/// use apriltag::bits::bit_locations;
+/// use apriltag::layout::Layout;
+///
+/// let layout = Layout::classic(8).unwrap(); // tag16h5 layout
+/// let locs = bit_locations(&layout);
+/// assert_eq!(locs.len(), 16);
+///
+/// // First bit is at (1, 1) relative to border_start
+/// assert_eq!(locs[0].x, 1);
+/// assert_eq!(locs[0].y, 1);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BitLocation {
     pub x: i32,
@@ -18,6 +31,15 @@ pub struct BitLocation {
 /// 2. Generate remaining three quadrants by rotating coordinates 90 degrees
 /// 3. If grid_size is odd and center cell is data, add it as the final bit
 /// 4. Shift all coordinates by subtracting border_start
+///
+/// ```
+/// use apriltag::bits::bit_locations;
+/// use apriltag::layout::Layout;
+///
+/// let layout = Layout::classic(10).unwrap(); // tag36h11 layout
+/// let locs = bit_locations(&layout);
+/// assert_eq!(locs.len(), 36);
+/// ```
 pub fn bit_locations(layout: &Layout) -> Vec<BitLocation> {
     let size = layout.grid_size;
     let mut locations: Vec<(usize, usize)> = Vec::with_capacity(layout.nbits);
