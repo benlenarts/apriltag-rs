@@ -64,21 +64,9 @@ impl RenderedTag {
 /// 2. Handle center pixel if grid_size is odd
 /// 3. Apply one final rotate90
 ///
-/// ```
-/// use apriltag::layout::Layout;
-/// use apriltag::render;
-/// use apriltag::types::Pixel;
-///
-/// // Render a specific code with a layout
-/// let layout = Layout::classic(8).unwrap();
-/// let tag = render::render(&layout, 0x27c8); // tag16h5 code 0
-/// assert_eq!(tag.grid_size, 8);
-///
-/// // All data-zero bits render as black
-/// let all_black = render::render(&layout, 0x0000);
-/// assert_eq!(all_black.pixel(3, 3), Pixel::Black);
-/// ```
-pub fn render(layout: &Layout, code: u64) -> RenderedTag {
+/// Prefer [`TagFamily::render`](crate::family::TagFamily::render) for
+/// rendering a tag by index.
+pub(crate) fn render(layout: &Layout, code: u64) -> RenderedTag {
     let size = layout.grid_size;
     let mut im = vec![vec![Pixel::Transparent; size]; size];
     let mut code = code;
