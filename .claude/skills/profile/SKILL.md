@@ -21,10 +21,10 @@ If no command is given, defaults to the apriltag noise profiling loop.
 ### 1. Build and record
 
 ```bash
-cargo build -p apriltag-bench --release --bin profile_loop
+cargo build -p apriltag-bench --release --example profile_loop
 samply record --save-only --unstable-presymbolicate \
   -o /tmp/apriltag-profile.json.gz \
-  -- ./target/release/profile_loop noise-sigma20 1000
+  -- ./target/release/examples/profile_loop noise-sigma20 1000
 ```
 
 ### 2. Decompress

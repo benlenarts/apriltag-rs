@@ -28,15 +28,15 @@ verify-coverage:
 
 # Coverage summary (excludes CLI crate)
 coverage:
-    cargo llvm-cov --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|bin/|report\.rs))'
+    cargo llvm-cov --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|report\.rs))'
 
 # Coverage with per-line detail
 coverage-text:
-    cargo llvm-cov --text --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|bin/|report\.rs))'
+    cargo llvm-cov --text --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|report\.rs))'
 
 # Coverage as HTML report (opens in browser)
 coverage-html:
-    cargo llvm-cov --html --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|bin/|report\.rs))' && open target/llvm-cov/html/index.html
+    cargo llvm-cov --html --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|report\.rs))' && open target/llvm-cov/html/index.html
 
 # Run Criterion microbenchmarks
 bench *ARGS:
@@ -52,11 +52,11 @@ bench-compare NAME='baseline':
 
 # Run the simulation harness CLI (forwards all arguments)
 sim *ARGS:
-    cargo run --release -p apriltag-bench --bin apriltag-bench -- {{ARGS}}
+    cargo run --release -p apriltag-bench -- {{ARGS}}
 
 # Run simulation harness with reference feature enabled (forwards all arguments)
 sim-ref *ARGS:
-    cargo run --release -p apriltag-bench --bin apriltag-bench --features reference -- {{ARGS}}
+    cargo run --release -p apriltag-bench --features reference -- {{ARGS}}
 
 # Verify WASM compatibility (core crates only)
 wasm-check:
@@ -75,7 +75,7 @@ wasm: wasm-bench wasm-detect
 
 # Launch the bench web UI (builds WASM modules first)
 serve: wasm
-    cargo run --release -p apriltag-bench --bin apriltag-bench -- serve
+    cargo run --release -p apriltag-bench -- serve
 
 # Download reference papers and clone reference implementations
 fetch-references:
