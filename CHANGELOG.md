@@ -91,6 +91,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Development Workflow
+
+- Justfile: renamed `bench`/`bench-ref` → `sim`/`sim-ref` (simulation harness)
+- Justfile: renamed `regression` → `verify-func`, `check-coverage` → `verify-coverage`
+- Justfile: removed `compare` (use `just sim-ref compare` instead)
+- Justfile: added `bench`, `bench-baseline`, `bench-compare` for Criterion microbenchmarks
+
 #### Performance
 
 - Gaussian blur converted from f32 to fixed-point Q15 integer arithmetic

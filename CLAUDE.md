@@ -86,14 +86,14 @@ After completing any feature or fix, run `just coverage-text` and inspect for un
 - **Detection-affecting changes** — image processing, gradient computation, segmentation, quad detection, homography, or decoding must run the full suite.
 - **Refactors and "safe" changes** — even seemingly neutral refactors can affect performance. Benchmark them.
 
-Run `just regression` before and after your change. If any scenario regresses, fix it before committing. For large changes, generate a full HTML report (`just compare --format html`) and review manually.
+Run `just verify-func` before and after your change. If any scenario regresses, fix it before committing. For large changes, generate a full HTML report (`just sim-ref compare --format html`) and review manually.
 
 ### Regression criteria
 
 - **Detection quality** — detection rate, false positive rate, and decode accuracy must not decrease.
 - **Performance (time)** — no measurable latency regression without justification and approval.
 - **Performance (space)** — no unexpected memory growth. WASM targets are memory-constrained.
-- **CI gate** — `just regression` must pass before any PR is merged.
+- **CI gate** — `just verify-func` must pass before any PR is merged.
 
 ### Assembly inspection
 
@@ -110,8 +110,9 @@ just test            # run all tests
 just coverage-text   # per-line coverage
 just lint            # clippy lints
 just wasm-check      # verify WASM compatibility
-just regression      # bench regression gate
-just ci              # full local CI suite (test + lint + fmt-check + wasm-check + regression)
+just verify-func     # detection quality regression gate
+just bench           # Criterion microbenchmarks
+just ci              # full local CI suite (test + lint + fmt-check + wasm-check + verify-func)
 ```
 
 ## Code Style

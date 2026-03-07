@@ -15,6 +15,17 @@ lint:
 fmt-check:
     cargo fmt --all -- --check
 
+# Full local CI suite
+ci: test lint fmt-check wasm-check verify-func
+
+# Detection quality regression gate (exit 1 on failure)
+verify-func:
+    just sim regression
+
+# Check that all uncovered lines have a COVERAGE: comment
+verify-coverage:
+    ./scripts/check-coverage-comments.sh "apriltag/src/"
+
 # Coverage summary (excludes CLI crate)
 coverage:
     cargo llvm-cov --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|bin/|report\.rs))'
@@ -27,36 +38,29 @@ coverage-text:
 coverage-html:
     cargo llvm-cov --html --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|bin/|report\.rs))' && open target/llvm-cov/html/index.html
 
-# Check that all uncovered lines have a COVERAGE: comment
-check-coverage:
-    ./scripts/check-coverage-comments.sh "apriltag/src/"
+# Run Criterion microbenchmarks
+bench *ARGS:
+    cargo bench -p apriltag {{ARGS}}
+
+# Save a named Criterion baseline (default: "baseline")
+bench-baseline NAME='baseline':
+    cargo bench -p apriltag -- --save-baseline {{NAME}}
+
+# Compare against a named Criterion baseline (default: "baseline")
+bench-compare NAME='baseline':
+    cargo bench -p apriltag -- --baseline {{NAME}}
+
+# Run the simulation harness CLI (forwards all arguments)
+sim *ARGS:
+    cargo run --release -p apriltag-bench --bin apriltag-bench -- {{ARGS}}
+
+# Run simulation harness with reference feature enabled (forwards all arguments)
+sim-ref *ARGS:
+    cargo run --release -p apriltag-bench --bin apriltag-bench --features reference -- {{ARGS}}
 
 # Verify WASM compatibility (core crates only)
 wasm-check:
     cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen
-
-# Full local CI suite
-ci: test lint fmt-check wasm-check regression
-
-# Run the bench CLI (forwards all arguments)
-bench *ARGS:
-    cargo run --release -p apriltag-bench --bin apriltag-bench -- {{ARGS}}
-
-# Run bench with reference feature enabled (forwards all arguments)
-bench-ref *ARGS:
-    cargo run --release -p apriltag-bench --bin apriltag-bench --features reference -- {{ARGS}}
-
-# CI regression gate (exit 1 on failure)
-regression:
-    cargo run --release -p apriltag-bench --bin apriltag-bench -- regression
-
-# Compare against C reference (requires reference feature + fetch-references.sh)
-compare *ARGS:
-    cargo run --release -p apriltag-bench --bin apriltag-bench --features reference -- compare {{ARGS}}
-
-# Download reference papers and clone reference implementations
-fetch-references:
-    ./scripts/fetch-references.sh
 
 # Build WASM module for bench scene generation
 wasm-bench:
@@ -72,3 +76,7 @@ wasm: wasm-bench wasm-detect
 # Launch the bench web UI (builds WASM modules first)
 serve: wasm
     cargo run --release -p apriltag-bench --bin apriltag-bench -- serve
+
+# Download reference papers and clone reference implementations
+fetch-references:
+    ./scripts/fetch-references.sh
