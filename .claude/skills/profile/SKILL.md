@@ -21,10 +21,25 @@ If no command is given, defaults to the apriltag noise profiling loop.
 ### 1. Build and record
 
 ```bash
-cargo build -p apriltag-bench --release --example profile_loop
+cargo build -p apriltag-bench --release
 samply record --save-only --unstable-presymbolicate \
   -o /tmp/apriltag-profile.json.gz \
-  -- ./target/release/examples/profile_loop noise-sigma20 1000
+  -- ./target/release/apriltag-bench profile --noise 20 --iterations 1000
+```
+
+Or with a catalog scenario:
+
+```bash
+samply record --save-only --unstable-presymbolicate \
+  -o /tmp/apriltag-profile.json.gz \
+  -- ./target/release/apriltag-bench profile --scenario noise-sigma20 --iterations 1000
+```
+
+Via justfile:
+
+```bash
+just sim profile --noise 20 --iterations 1000
+just sim profile --scenario noise-sigma20 --iterations 1000
 ```
 
 ### 2. Decompress
@@ -58,7 +73,7 @@ Run the full workflow before and after your change, then compare self-time perce
 
 ## Tips
 
-- Increase iterations for more samples: `profile_loop noise-sigma20 5000`
+- Increase iterations for more samples: `profile --iterations 5000`
 - Look at self-time first to find where CPU time is actually spent
 - Look at inclusive-time to understand the critical path
 - Use `--filter` to drill into specific functions by name

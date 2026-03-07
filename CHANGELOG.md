@@ -76,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `benchmark-sweep` command for comprehensive multi-tag performance grid sweep
 - `PersistentReferenceDetector::with_families()` for multi-family C reference benchmarks
 - `alloc_comparison` example showing allocation reduction across pipeline
-- `profile_loop` example for samply profiling
+- `profile` subcommand for samply/perf profiling (supports catalog scenarios and custom scene params)
 
 #### Infrastructure
 

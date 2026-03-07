@@ -112,6 +112,48 @@ enum Command {
         #[arg(long, default_value_t = 8080)]
         port: u16,
     },
+    /// Run detection in a tight loop for profiling with samply/perf.
+    Profile {
+        /// Use a catalog scenario by name (e.g. noise-sigma20).
+        #[arg(long)]
+        scenario: Option<String>,
+        /// Tag family.
+        #[arg(long, default_value = "tag36h11")]
+        family: String,
+        /// Tag ID.
+        #[arg(long, default_value_t = 0)]
+        tag_id: u32,
+        /// Tag size in pixels (border region width).
+        #[arg(long, default_value_t = 100.0)]
+        tag_size: f64,
+        /// In-plane rotation in degrees.
+        #[arg(long, default_value_t = 0.0)]
+        rotation: f64,
+        /// Perspective tilt X in degrees.
+        #[arg(long, default_value_t = 0.0)]
+        tilt_x: f64,
+        /// Perspective tilt Y in degrees.
+        #[arg(long, default_value_t = 0.0)]
+        tilt_y: f64,
+        /// Gaussian noise sigma.
+        #[arg(long, default_value_t = 0.0)]
+        noise: f64,
+        /// Gaussian blur sigma.
+        #[arg(long, default_value_t = 0.0)]
+        blur: f64,
+        /// Contrast scale factor.
+        #[arg(long, default_value_t = 1.0)]
+        contrast: f64,
+        /// Image width.
+        #[arg(long, default_value_t = 500)]
+        width: u32,
+        /// Image height.
+        #[arg(long, default_value_t = 500)]
+        height: u32,
+        /// Number of detection iterations.
+        #[arg(long, default_value_t = 1000)]
+        iterations: usize,
+    },
     /// Generate and detect a single scene with custom parameters.
     Explore {
         /// Tag family.
@@ -189,6 +231,24 @@ fn main() {
             output,
         } => cmd_generate_images(category, scenario, &output),
         Command::Serve { port } => cmd_serve(port),
+        Command::Profile {
+            scenario,
+            family,
+            tag_id,
+            tag_size,
+            rotation,
+            tilt_x,
+            tilt_y,
+            noise,
+            blur,
+            contrast,
+            width,
+            height,
+            iterations,
+        } => cmd_profile(
+            scenario, &family, tag_id, tag_size, rotation, tilt_x, tilt_y, noise, blur, contrast,
+            width, height, iterations,
+        ),
         Command::Explore {
             family,
             tag_id,
@@ -1112,6 +1172,101 @@ fn cmd_compare(category: Option<String>, scenario: Option<String>, format: &str)
             println!("Matching: {}/{} scenarios", matching, rows.len());
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_profile(
+    scenario_name: Option<String>,
+    family_name: &str,
+    tag_id: u32,
+    tag_size: f64,
+    rotation_deg: f64,
+    tilt_x_deg: f64,
+    tilt_y_deg: f64,
+    noise_sigma: f64,
+    blur_sigma: f64,
+    contrast: f64,
+    width: u32,
+    height: u32,
+    iterations: usize,
+) {
+    let (image, scene_desc) = if let Some(name) = &scenario_name {
+        let scenarios = filter_scenarios(None, Some(name.clone()));
+        let s = scenarios
+            .into_iter()
+            .find(|s| s.name == *name)
+            .unwrap_or_else(|| panic!("unknown scenario: {name}"));
+        let scene = s.build();
+        let desc = format!(
+            "scenario={}, {}x{}",
+            s.name, scene.image.width, scene.image.height
+        );
+        (scene.image, desc)
+    } else {
+        let cx = width as f64 / 2.0;
+        let cy = height as f64 / 2.0;
+        let transform = if tilt_x_deg.abs() > 0.01 || tilt_y_deg.abs() > 0.01 {
+            Transform::FromPose {
+                center: [cx, cy],
+                size: tag_size,
+                roll: rotation_deg.to_radians(),
+                tilt_x: tilt_x_deg.to_radians(),
+                tilt_y: tilt_y_deg.to_radians(),
+            }
+        } else {
+            Transform::Similarity {
+                cx,
+                cy,
+                scale: tag_size / 2.0,
+                theta: rotation_deg.to_radians(),
+            }
+        };
+
+        let mut scene = SceneBuilder::new(width, height)
+            .background(Background::Solid(128))
+            .add_tag(family_name, tag_id, transform)
+            .build();
+
+        let mut distortions = Vec::new();
+        if contrast != 1.0 {
+            distortions.push(Distortion::ContrastScale { factor: contrast });
+        }
+        if blur_sigma > 0.0 {
+            distortions.push(Distortion::GaussianBlur { sigma: blur_sigma });
+        }
+        if noise_sigma > 0.0 {
+            distortions.push(Distortion::GaussianNoise {
+                sigma: noise_sigma,
+                seed: 42,
+            });
+        }
+        if !distortions.is_empty() {
+            distortion::apply(&mut scene.image, &distortions);
+        }
+
+        let desc = format!(
+            "custom: {}x{}, family={}, noise={}, blur={}, contrast={}",
+            width, height, family_name, noise_sigma, blur_sigma, contrast
+        );
+        (scene.image, desc)
+    };
+
+    eprintln!("Scene: {scene_desc}");
+    eprintln!("Iterations: {iterations}");
+
+    let mut detector = Detector::new(DetectorConfig::default());
+    if let Some(fam) = family::builtin_family(family_name) {
+        detector.add_family(fam, 2);
+    }
+
+    let mut buffers = DetectorBuffers::new();
+
+    for _ in 0..iterations {
+        let dets = detector.detect(&image, &mut buffers);
+        std::hint::black_box(&dets);
+    }
+
+    eprintln!("Done.");
 }
 
 #[allow(clippy::too_many_arguments)]
