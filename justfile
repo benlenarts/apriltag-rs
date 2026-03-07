@@ -77,6 +77,16 @@ wasm: wasm-bench wasm-detect
 serve: wasm
     cargo run --release -p apriltag-bench -- serve
 
+# Compare Rust vs C reference across thread counts (default: 1,2,4,8)
+bench-par THREADS='1,2,4,8':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for t in $(echo "{{THREADS}}" | tr ',' ' '); do
+        echo "=== $t thread(s) ==="
+        just sim-ref benchmark --threads "$t"
+        echo
+    done
+
 # Download reference papers and clone reference implementations
 fetch-references:
     ./scripts/fetch-references.sh
