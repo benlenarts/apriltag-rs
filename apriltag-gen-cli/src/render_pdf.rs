@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use apriltag_gen::family::TagFamily;
-use apriltag_gen::render::{self, RenderedTag};
+use apriltag_gen::render::RenderedTag;
 use apriltag_gen::types::Pixel;
 use printpdf::*;
 
@@ -84,7 +84,7 @@ pub fn write_mosaic_pdf(
                     break;
                 }
 
-                let tag = render::render(&family.layout, family.codes[idx]);
+                let tag = family.render(idx);
                 let x_mm = margin_mm + col as f32 * (tag_mm + spacing_mm);
                 // PDF coordinates are bottom-up; place first row at top
                 let y_mm = page_h_mm

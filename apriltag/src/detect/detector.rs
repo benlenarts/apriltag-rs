@@ -285,7 +285,6 @@ mod tests {
     use super::*;
     use crate::detect::image::{ImageRef, ImageU8};
     use crate::family;
-    use crate::render;
 
     #[test]
     fn detector_default_config() {
@@ -319,7 +318,7 @@ mod tests {
     fn detect_synthetic_tag() {
         // Render a tag16h5 tag and embed it in a larger image
         let family = family::tag16h5();
-        let rendered = render::render(&family.layout, family.codes[0]);
+        let rendered = family.render(0);
 
         // Create a 200x200 image with white background
         let mut img = ImageU8::new(200, 200);
@@ -384,7 +383,7 @@ mod tests {
     #[cfg(feature = "family-tag16h5")]
     fn build_synthetic_tag_image() -> (ImageU8, crate::family::TagFamily) {
         let family = family::tag16h5();
-        let rendered = render::render(&family.layout, family.codes[0]);
+        let rendered = family.render(0);
 
         let mut img = ImageU8::new(200, 200);
         for y in 0..200 {
@@ -425,7 +424,7 @@ mod tests {
     #[cfg(feature = "family-tag36h11")]
     fn detect_large_tag_with_decimation() {
         let family = family::tag36h11();
-        let rendered = render::render(&family.layout, family.codes[0]);
+        let rendered = family.render(0);
 
         let img_size = 500u32;
         let scale = 20u32; // 10 grid cells * 20 = 200px tag
@@ -475,7 +474,7 @@ mod tests {
     #[cfg(feature = "family-tag36h11")]
     fn detect_large_tag_gray128_background() {
         let family = family::tag36h11();
-        let rendered = render::render(&family.layout, family.codes[0]);
+        let rendered = family.render(0);
 
         let img_size = 300u32;
         let scale = 20u32; // 10 grid cells * 20 = 200px tag in 300x300
@@ -673,7 +672,7 @@ mod tests {
     fn detect_deterministic_with_sigma() {
         // Test with quad_sigma > 0 to exercise blur buffer reuse
         let family = family::tag36h11();
-        let rendered = render::render(&family.layout, family.codes[0]);
+        let rendered = family.render(0);
 
         let img_size = 500u32;
         let scale = 20u32;

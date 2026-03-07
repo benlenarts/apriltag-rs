@@ -230,7 +230,7 @@ fn cmd_render(
         .with_context(|| format!("creating output directory '{}'", output_dir))?;
 
     for &id in &ids {
-        let tag = apriltag_gen::render::render(&family.layout, family.codes[id]);
+        let tag = family.render(id);
         let filename = format!("{}_{:04}.{}", family.config.name, id, format);
         let path = std::path::Path::new(output_dir).join(&filename);
 

@@ -39,12 +39,11 @@ fn main() {
     use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
     use apriltag::detect::image::ImageU8;
     use apriltag::family;
-    use apriltag::render;
     use apriltag::types::Pixel;
 
     // Build 640x480 image with a tag
     let fam = family::tag36h11();
-    let rendered = render::render(&fam.layout, fam.codes[0]);
+    let rendered = fam.render(0);
     let (w, h) = (640u32, 480u32);
     let mut img = ImageU8::new(w, h);
     for y in 0..h {

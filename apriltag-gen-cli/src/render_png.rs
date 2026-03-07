@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use apriltag_gen::family::TagFamily;
-use apriltag_gen::render::{self, RenderedTag};
+use apriltag_gen::render::RenderedTag;
 use apriltag_gen::types::Pixel;
 use std::path::Path;
 
@@ -35,13 +35,13 @@ pub fn write_mosaic_png(
     // White background
     let mut pixels = vec![255u8; img_width * img_height];
 
-    for (idx, &code) in family.codes.iter().enumerate() {
+    for idx in 0..family.codes.len() {
         let col = idx % cols;
         let row = idx / cols;
         let x_off = col * (tag_img_size + spacing_px);
         let y_off = row * (tag_img_size + spacing_px);
 
-        let tag = render::render(&family.layout, code);
+        let tag = family.render(idx);
         let img = tag_to_image(&tag, scale, 1);
 
         // Blit tag image into mosaic

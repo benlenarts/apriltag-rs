@@ -1,7 +1,7 @@
 /// Scene composition: place rendered tags into an image with ground truth.
 use apriltag::detect::image::ImageU8;
 use apriltag::family;
-use apriltag::render::{self, RenderedTag};
+use apriltag::render::RenderedTag;
 use apriltag::types::Pixel;
 use serde::{Deserialize, Serialize};
 
@@ -84,8 +84,7 @@ impl SceneBuilder {
             let fam = family::builtin_family(&placement.family_name)
                 .unwrap_or_else(|| panic!("unknown tag family: {}", placement.family_name));
 
-            let code = fam.codes[placement.tag_id as usize];
-            let rendered = render::render(&fam.layout, code);
+            let rendered = fam.render(placement.tag_id as usize);
 
             composite_tag(
                 &mut image,
