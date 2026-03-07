@@ -379,7 +379,7 @@ mod tests {
         // Render a normal-polarity tag, then call decode_quad with reversed_border=true.
         // The polarity check should reject it.
         let family = crate::family::tag16h5();
-        let rendered = family.render(0);
+        let rendered = family.tag(0).render();
         let qd = QuickDecode::new(&family, 2);
 
         let w = family.layout.border_width as f64;
@@ -437,7 +437,7 @@ mod tests {
     fn decode_quad_with_sharpening() {
         // Call decode_quad with decode_sharpening > 0 to exercise the sharpening path
         let family = crate::family::tag16h5();
-        let rendered = family.render(0);
+        let rendered = family.tag(0).render();
         let qd = QuickDecode::new(&family, 2);
 
         let scale = 10.0;
@@ -496,7 +496,7 @@ mod tests {
         // exercising the gx >= total_width fallback (line 316).
         let mut family = crate::family::tag16h5();
         let qd = QuickDecode::new(&family, 2);
-        let rendered = family.render(0);
+        let rendered = family.tag(0).render();
 
         let scale = 10.0;
         let ox = 60.0;
@@ -583,7 +583,7 @@ mod tests {
         // reversed-polarity image (swap black/white) and decode with
         // reversed_border=false. The polarity check at line 251 should reject.
         let family = crate::family::tag16h5();
-        let rendered = family.render(0);
+        let rendered = family.tag(0).render();
         let qd = QuickDecode::new(&family, 2);
 
         let scale = 10.0;

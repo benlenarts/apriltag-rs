@@ -84,7 +84,7 @@ impl SceneBuilder {
             let fam = family::builtin_family(&placement.family_name)
                 .unwrap_or_else(|| panic!("unknown tag family: {}", placement.family_name));
 
-            let rendered = fam.render(placement.tag_id as usize);
+            let rendered = fam.tag(placement.tag_id as usize).render();
 
             composite_tag(
                 &mut image,

@@ -41,7 +41,7 @@ pub fn write_mosaic_png(
         let x_off = col * (tag_img_size + spacing_px);
         let y_off = row * (tag_img_size + spacing_px);
 
-        let tag = family.render(idx);
+        let tag = family.tag(idx).render();
         let img = tag_to_image(&tag, scale, 1);
 
         // Blit tag image into mosaic

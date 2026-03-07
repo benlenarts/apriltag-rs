@@ -43,7 +43,7 @@ fn main() {
 
     // Build 640x480 image with a tag
     let fam = family::tag36h11();
-    let rendered = fam.render(0);
+    let rendered = fam.tag(0).render();
     let (w, h) = (640u32, 480u32);
     let mut img = ImageU8::new(w, h);
     for y in 0..h {

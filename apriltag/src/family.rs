@@ -7,7 +7,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::bits::{self, BitLocation};
 use crate::error::LayoutError;
 use crate::layout::Layout;
-use crate::render::{self, RenderedTag};
 
 /// A shared, immutable identifier for a tag family.
 ///
@@ -114,9 +113,9 @@ impl TagFamily {
         })
     }
 
-    /// Render the tag at `index` as a pixel grid.
-    pub fn render(&self, index: usize) -> RenderedTag {
-        render::render(&self.layout, self.codes[index])
+    /// Return a [`Tag`](crate::tag::Tag) handle for the tag at `index`.
+    pub fn tag(&self, index: usize) -> crate::tag::Tag<'_> {
+        crate::tag::Tag::new(self, index)
     }
 
     /// Parse a TOML config string and binary code data into a TagFamily.

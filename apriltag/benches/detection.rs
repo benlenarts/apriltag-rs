@@ -19,7 +19,7 @@ use apriltag::types::Pixel;
 /// Build a 640x480 image with a centered tag36h11 tag (scale ~40px per grid cell).
 fn build_bench_image() -> ImageU8 {
     let fam = family::tag36h11();
-    let rendered = fam.render(0);
+    let rendered = fam.tag(0).render();
 
     let (w, h) = (640u32, 480u32);
     let mut img = ImageU8::new(w, h);
@@ -124,7 +124,7 @@ fn bench_gradient_clusters(c: &mut Criterion) {
 /// harness noise-sigma20 scenario.
 fn build_noisy_image() -> ImageU8 {
     let fam = family::tag36h11();
-    let rendered = fam.render(0);
+    let rendered = fam.tag(0).render();
 
     let (w, h) = (300u32, 300u32);
     let mut img = ImageU8::new(w, h);
@@ -356,7 +356,7 @@ fn build_multi_tag_image() -> ImageU8 {
     while oy + tag_px < h {
         let mut ox = 10u32;
         while ox + tag_px < w {
-            let rendered = fam.render(code_idx % fam.codes.len());
+            let rendered = fam.tag(code_idx % fam.codes.len()).render();
             for ty in 0..rendered.grid_size {
                 for tx in 0..rendered.grid_size {
                     let val = match rendered.pixel(tx, ty) {
@@ -469,7 +469,7 @@ fn build_highres_image() -> ImageU8 {
     while cy + tag_half < h as f64 - 10.0 {
         let mut cx = 180.0f64;
         while cx + tag_half < w as f64 - 10.0 {
-            let rendered = fam.render(code_idx % fam.codes.len());
+            let rendered = fam.tag(code_idx % fam.codes.len()).render();
 
             // Per-tag rotation: -30° to +30°
             let angle = (next_f32(&mut rng) - 0.5) * 60.0_f32.to_radians();
