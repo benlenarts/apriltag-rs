@@ -98,6 +98,7 @@ dependencies = [
  "apriltag",
  "cc",
  "clap",
+ "rayon",
  "serde",
  "serde_json",
 ]

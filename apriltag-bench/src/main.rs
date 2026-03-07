@@ -66,6 +66,9 @@ enum Command {
         /// Output format: terminal, json.
         #[arg(long, default_value = "terminal")]
         format: String,
+        /// Number of threads (1 = single-threaded, 0 = all cores).
+        #[arg(long, default_value_t = 1)]
+        threads: usize,
     },
     /// Run a comprehensive benchmark sweep: many tags × distortion conditions (requires --features reference).
     BenchmarkSweep {
@@ -75,6 +78,9 @@ enum Command {
         /// Output format: terminal, json.
         #[arg(long, default_value = "terminal")]
         format: String,
+        /// Number of threads (1 = single-threaded, 0 = all cores).
+        #[arg(long, default_value_t = 1)]
+        threads: usize,
     },
     /// Compare Rust detector vs C reference (requires --features reference).
     Compare {
@@ -165,8 +171,13 @@ fn main() {
             scenario,
             iterations,
             format,
-        } => cmd_benchmark(category, scenario, iterations, &format),
-        Command::BenchmarkSweep { iterations, format } => cmd_benchmark_sweep(iterations, &format),
+            threads,
+        } => cmd_benchmark(category, scenario, iterations, &format, threads),
+        Command::BenchmarkSweep {
+            iterations,
+            format,
+            threads,
+        } => cmd_benchmark_sweep(iterations, &format, threads),
         Command::Compare {
             category,
             scenario,
@@ -389,15 +400,27 @@ fn cmd_serve(port: u16) {
     }
 }
 
+#[cfg(feature = "reference")]
+fn resolve_threads(threads: usize) -> usize {
+    if threads == 0 {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+    } else {
+        threads
+    }
+}
+
 fn cmd_benchmark(
     category: Option<String>,
     scenario: Option<String>,
     iterations: usize,
     format: &str,
+    threads: usize,
 ) {
     #[cfg(not(feature = "reference"))]
     {
-        let _ = (category, scenario, iterations, format);
+        let _ = (category, scenario, iterations, format, threads);
         eprintln!("Error: the 'benchmark' command requires the 'reference' feature.");
         eprintln!("Build with: cargo run -p apriltag-bench --features reference -- benchmark");
         eprintln!("Make sure to run scripts/fetch-references.sh first.");
@@ -406,179 +429,199 @@ fn cmd_benchmark(
 
     #[cfg(feature = "reference")]
     {
-        use apriltag_bench::reference::{PersistentReferenceDetector, ReferenceConfig};
+        let threads = resolve_threads(threads);
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .expect("failed to create thread pool");
 
-        let scenarios = filter_scenarios(category, scenario);
-
-        #[derive(serde::Serialize)]
-        struct BenchRow {
-            name: String,
-            image_size: [u32; 2],
-            rust_median_us: u64,
-            ref_median_us: u64,
-            ratio: f64,
-            iterations: usize,
-        }
-
-        let mut rows = Vec::new();
-
-        if format != "json" {
-            println!(
-                "{:<35} {:>10} {:>10} {:>10} {:>8} {:>6}",
-                "Scenario", "Rust(ms)", "Ref(ms)", "Ratio", "Size", "N"
-            );
-            println!("{}", "-".repeat(85));
-        }
-
-        for s in &scenarios {
-            let scene = s.build();
-            let img = &scene.image;
-            let size = [img.width, img.height];
-
-            // Collect unique families for this scenario
-            let families: Vec<&str> = s
-                .expect_ids
-                .iter()
-                .map(|(f, _)| f.as_str())
-                .collect::<std::collections::HashSet<_>>()
-                .into_iter()
-                .collect();
-
-            // Create Rust detector (persistent across iterations)
-            let mut rust_config = DetectorConfig::default();
-            if let Some(decimate) = s.quad_decimate {
-                rust_config.quad_decimate = decimate;
-            }
-            let mut rust_detector = Detector::new(rust_config);
-            for fam_name in &families {
-                if let Some(fam) = family::builtin_family(fam_name) {
-                    rust_detector.add_family(fam, 2);
-                }
-            }
-
-            // Create C reference detector (persistent across iterations)
-            let ref_config = ReferenceConfig {
-                quad_decimate: s.quad_decimate.unwrap_or(2.0),
-                ..Default::default()
-            };
-            let ref_detector = if families.len() == 1 {
-                PersistentReferenceDetector::new(families[0], &ref_config)
-            } else {
-                PersistentReferenceDetector::with_families(&families, &ref_config)
-            };
-
-            // Reuse a single buffer across all iterations (matches C which reuses internal allocs)
-            let mut buffers = DetectorBuffers::new();
-
-            // Warmup runs (3 iterations to stabilize caches and allocator)
-            for _ in 0..3 {
-                let _ = rust_detector.detect(&scene.image, &mut buffers);
-                let _ = ref_detector.detect(&scene.image);
-            }
-
-            // Adaptive iteration count: calibrate from a single timed run,
-            // then target at least 200ms total measurement time per detector.
-            let calib_start = Instant::now();
-            let _ = rust_detector.detect(&scene.image, &mut buffers);
-            let calib_dur = calib_start.elapsed();
-            let min_total = std::time::Duration::from_millis(200);
-            let adaptive_iters = if calib_dur.is_zero() {
-                iterations
-            } else {
-                (min_total.as_nanos() / calib_dur.as_nanos()).max(1) as usize
-            }
-            .max(iterations);
-
-            // Benchmark Rust detector
-            let mut rust_times = Vec::with_capacity(adaptive_iters);
-            for _ in 0..adaptive_iters {
-                let start = Instant::now();
-                let _ = rust_detector.detect(&scene.image, &mut buffers);
-                rust_times.push(start.elapsed());
-            }
-
-            // Benchmark C reference detector
-            let mut ref_times = Vec::with_capacity(adaptive_iters);
-            for _ in 0..adaptive_iters {
-                let start = Instant::now();
-                let _ = ref_detector.detect(&scene.image);
-                ref_times.push(start.elapsed());
-            }
-
-            rust_times.sort();
-            ref_times.sort();
-
-            let rust_median = rust_times[adaptive_iters / 2];
-            let ref_median = ref_times[adaptive_iters / 2];
-
-            let rust_us = rust_median.as_micros() as u64;
-            let ref_us = ref_median.as_micros() as u64;
-            let ratio = if ref_us > 0 {
-                rust_us as f64 / ref_us as f64
-            } else {
-                0.0
-            };
-
-            if format != "json" {
-                println!(
-                    "{:<35} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4} {:>5}",
-                    &s.name,
-                    rust_us as f64 / 1000.0,
-                    ref_us as f64 / 1000.0,
-                    ratio,
-                    size[0],
-                    size[1],
-                    adaptive_iters,
-                );
-            }
-
-            rows.push(BenchRow {
-                name: s.name.clone(),
-                image_size: size,
-                rust_median_us: rust_us,
-                ref_median_us: ref_us,
-                ratio,
-                iterations: adaptive_iters,
-            });
-        }
-
-        if format == "json" {
-            println!("{}", serde_json::to_string_pretty(&rows).unwrap());
-        } else {
-            println!("{}", "-".repeat(85));
-
-            // Summary statistics
-            let total_rust: u64 = rows.iter().map(|r| r.rust_median_us).sum();
-            let total_ref: u64 = rows.iter().map(|r| r.ref_median_us).sum();
-            let overall_ratio = if total_ref > 0 {
-                total_rust as f64 / total_ref as f64
-            } else {
-                0.0
-            };
-            println!(
-                "{:<35} {:>9.1} {:>9.1} {:>9.2}x",
-                "TOTAL",
-                total_rust as f64 / 1000.0,
-                total_ref as f64 / 1000.0,
-                overall_ratio,
-            );
-            let min_n = rows.iter().map(|r| r.iterations).min().unwrap_or(0);
-            let max_n = rows.iter().map(|r| r.iterations).max().unwrap_or(0);
-            println!(
-                "\n{} scenarios, {}-{} iterations (adaptive, min {}), median times shown",
-                rows.len(),
-                min_n,
-                max_n,
-                iterations,
-            );
-        }
+        pool.install(|| cmd_benchmark_inner(category, scenario, iterations, format, threads));
     }
 }
 
-fn cmd_benchmark_sweep(iterations: usize, format: &str) {
+#[cfg(feature = "reference")]
+fn cmd_benchmark_inner(
+    category: Option<String>,
+    scenario: Option<String>,
+    iterations: usize,
+    format: &str,
+    threads: usize,
+) {
+    use apriltag_bench::reference::{PersistentReferenceDetector, ReferenceConfig};
+
+    let scenarios = filter_scenarios(category, scenario);
+
+    #[derive(serde::Serialize)]
+    struct BenchRow {
+        name: String,
+        image_size: [u32; 2],
+        rust_median_us: u64,
+        ref_median_us: u64,
+        ratio: f64,
+        iterations: usize,
+    }
+
+    let mut rows = Vec::new();
+
+    if format != "json" {
+        println!(
+            "{:<35} {:>10} {:>10} {:>10} {:>8} {:>6}",
+            "Scenario", "Rust(ms)", "Ref(ms)", "Ratio", "Size", "N"
+        );
+        println!("{}", "-".repeat(85));
+    }
+
+    for s in &scenarios {
+        let scene = s.build();
+        let img = &scene.image;
+        let size = [img.width, img.height];
+
+        // Collect unique families for this scenario
+        let families: Vec<&str> = s
+            .expect_ids
+            .iter()
+            .map(|(f, _)| f.as_str())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        // Create Rust detector (persistent across iterations)
+        let mut rust_config = DetectorConfig::default();
+        if let Some(decimate) = s.quad_decimate {
+            rust_config.quad_decimate = decimate;
+        }
+        let mut rust_detector = Detector::new(rust_config);
+        for fam_name in &families {
+            if let Some(fam) = family::builtin_family(fam_name) {
+                rust_detector.add_family(fam, 2);
+            }
+        }
+
+        // Create C reference detector (persistent across iterations)
+        let ref_config = ReferenceConfig {
+            quad_decimate: s.quad_decimate.unwrap_or(2.0),
+            nthreads: threads as i32,
+            ..Default::default()
+        };
+        let ref_detector = if families.len() == 1 {
+            PersistentReferenceDetector::new(families[0], &ref_config)
+        } else {
+            PersistentReferenceDetector::with_families(&families, &ref_config)
+        };
+
+        // Reuse a single buffer across all iterations (matches C which reuses internal allocs)
+        let mut buffers = DetectorBuffers::new();
+
+        // Warmup runs (3 iterations to stabilize caches and allocator)
+        for _ in 0..3 {
+            let _ = rust_detector.detect(&scene.image, &mut buffers);
+            let _ = ref_detector.detect(&scene.image);
+        }
+
+        // Adaptive iteration count: calibrate from a single timed run,
+        // then target at least 200ms total measurement time per detector.
+        let calib_start = Instant::now();
+        let _ = rust_detector.detect(&scene.image, &mut buffers);
+        let calib_dur = calib_start.elapsed();
+        let min_total = std::time::Duration::from_millis(200);
+        let adaptive_iters = if calib_dur.is_zero() {
+            iterations
+        } else {
+            (min_total.as_nanos() / calib_dur.as_nanos()).max(1) as usize
+        }
+        .max(iterations);
+
+        // Benchmark Rust detector
+        let mut rust_times = Vec::with_capacity(adaptive_iters);
+        for _ in 0..adaptive_iters {
+            let start = Instant::now();
+            let _ = rust_detector.detect(&scene.image, &mut buffers);
+            rust_times.push(start.elapsed());
+        }
+
+        // Benchmark C reference detector
+        let mut ref_times = Vec::with_capacity(adaptive_iters);
+        for _ in 0..adaptive_iters {
+            let start = Instant::now();
+            let _ = ref_detector.detect(&scene.image);
+            ref_times.push(start.elapsed());
+        }
+
+        rust_times.sort();
+        ref_times.sort();
+
+        let rust_median = rust_times[adaptive_iters / 2];
+        let ref_median = ref_times[adaptive_iters / 2];
+
+        let rust_us = rust_median.as_micros() as u64;
+        let ref_us = ref_median.as_micros() as u64;
+        let ratio = if ref_us > 0 {
+            rust_us as f64 / ref_us as f64
+        } else {
+            0.0
+        };
+
+        if format != "json" {
+            println!(
+                "{:<35} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4} {:>5}",
+                &s.name,
+                rust_us as f64 / 1000.0,
+                ref_us as f64 / 1000.0,
+                ratio,
+                size[0],
+                size[1],
+                adaptive_iters,
+            );
+        }
+
+        rows.push(BenchRow {
+            name: s.name.clone(),
+            image_size: size,
+            rust_median_us: rust_us,
+            ref_median_us: ref_us,
+            ratio,
+            iterations: adaptive_iters,
+        });
+    }
+
+    if format == "json" {
+        println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+    } else {
+        println!("{}", "-".repeat(85));
+
+        // Summary statistics
+        let total_rust: u64 = rows.iter().map(|r| r.rust_median_us).sum();
+        let total_ref: u64 = rows.iter().map(|r| r.ref_median_us).sum();
+        let overall_ratio = if total_ref > 0 {
+            total_rust as f64 / total_ref as f64
+        } else {
+            0.0
+        };
+        println!(
+            "{:<35} {:>9.1} {:>9.1} {:>9.2}x",
+            "TOTAL",
+            total_rust as f64 / 1000.0,
+            total_ref as f64 / 1000.0,
+            overall_ratio,
+        );
+        let min_n = rows.iter().map(|r| r.iterations).min().unwrap_or(0);
+        let max_n = rows.iter().map(|r| r.iterations).max().unwrap_or(0);
+        println!(
+            "\n{} scenarios, {}-{} iterations (adaptive, min {}), {} thread{}, median times shown",
+            rows.len(),
+            min_n,
+            max_n,
+            iterations,
+            threads,
+            if threads == 1 { "" } else { "s" },
+        );
+    }
+}
+
+fn cmd_benchmark_sweep(iterations: usize, format: &str, threads: usize) {
     #[cfg(not(feature = "reference"))]
     {
-        let _ = (iterations, format);
+        let _ = (iterations, format, threads);
         eprintln!("Error: the 'benchmark-sweep' command requires the 'reference' feature.");
         eprintln!(
             "Build with: cargo run -p apriltag-bench --features reference -- benchmark-sweep"
@@ -589,310 +632,323 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
 
     #[cfg(feature = "reference")]
     {
-        use apriltag_bench::reference::{PersistentReferenceDetector, ReferenceConfig};
+        let threads = resolve_threads(threads);
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .expect("failed to create thread pool");
 
-        #[derive(serde::Serialize)]
-        struct BenchRow {
-            name: String,
-            tags: usize,
-            condition: String,
-            image_size: [u32; 2],
-            rust_median_us: u64,
-            ref_median_us: u64,
-            ratio: f64,
-            iterations: usize,
-        }
+        pool.install(|| cmd_benchmark_sweep_inner(iterations, format, threads));
+    }
+}
 
-        struct SweepScene {
-            name: String,
-            tags: usize,
-            condition: String,
-            scene: apriltag_bench::scene::Scene,
-        }
+#[cfg(feature = "reference")]
+fn cmd_benchmark_sweep_inner(iterations: usize, format: &str, threads: usize) {
+    use apriltag_bench::reference::{PersistentReferenceDetector, ReferenceConfig};
 
-        // Tag counts and corresponding image sizes / tag scale
-        let tag_configs: &[(usize, u32, u32, f64)] = &[
-            // (n_tags, width, height, tag_scale)
-            (1, 500, 500, 80.0),
-            (5, 800, 600, 50.0),
-            (10, 1000, 800, 45.0),
-            (25, 1280, 960, 35.0),
-        ];
+    #[derive(serde::Serialize)]
+    struct BenchRow {
+        name: String,
+        tags: usize,
+        condition: String,
+        image_size: [u32; 2],
+        rust_median_us: u64,
+        ref_median_us: u64,
+        ratio: f64,
+        iterations: usize,
+    }
 
-        // Distortion conditions
-        struct Condition {
-            name: &'static str,
-            rotation_deg: f64,
-            tilt_x_deg: f64,
-            distortions: Vec<Distortion>,
-        }
+    struct SweepScene {
+        name: String,
+        tags: usize,
+        condition: String,
+        scene: apriltag_bench::scene::Scene,
+    }
 
-        let conditions = vec![
-            Condition {
-                name: "clean",
-                rotation_deg: 0.0,
-                tilt_x_deg: 0.0,
-                distortions: vec![],
-            },
-            Condition {
-                name: "rotation-30",
-                rotation_deg: 30.0,
-                tilt_x_deg: 0.0,
-                distortions: vec![],
-            },
-            Condition {
-                name: "tilt-20",
-                rotation_deg: 0.0,
-                tilt_x_deg: 20.0,
-                distortions: vec![],
-            },
-            Condition {
-                name: "noise-20",
-                rotation_deg: 0.0,
-                tilt_x_deg: 0.0,
-                distortions: vec![Distortion::GaussianNoise {
-                    sigma: 20.0,
+    // Tag counts and corresponding image sizes / tag scale
+    let tag_configs: &[(usize, u32, u32, f64)] = &[
+        // (n_tags, width, height, tag_scale)
+        (1, 500, 500, 80.0),
+        (5, 800, 600, 50.0),
+        (10, 1000, 800, 45.0),
+        (25, 1280, 960, 35.0),
+    ];
+
+    // Distortion conditions
+    struct Condition {
+        name: &'static str,
+        rotation_deg: f64,
+        tilt_x_deg: f64,
+        distortions: Vec<Distortion>,
+    }
+
+    let conditions = vec![
+        Condition {
+            name: "clean",
+            rotation_deg: 0.0,
+            tilt_x_deg: 0.0,
+            distortions: vec![],
+        },
+        Condition {
+            name: "rotation-30",
+            rotation_deg: 30.0,
+            tilt_x_deg: 0.0,
+            distortions: vec![],
+        },
+        Condition {
+            name: "tilt-20",
+            rotation_deg: 0.0,
+            tilt_x_deg: 20.0,
+            distortions: vec![],
+        },
+        Condition {
+            name: "noise-20",
+            rotation_deg: 0.0,
+            tilt_x_deg: 0.0,
+            distortions: vec![Distortion::GaussianNoise {
+                sigma: 20.0,
+                seed: 42,
+            }],
+        },
+        Condition {
+            name: "blur-2",
+            rotation_deg: 0.0,
+            tilt_x_deg: 0.0,
+            distortions: vec![Distortion::GaussianBlur { sigma: 2.0 }],
+        },
+        Condition {
+            name: "contrast-25",
+            rotation_deg: 0.0,
+            tilt_x_deg: 0.0,
+            distortions: vec![Distortion::ContrastScale { factor: 0.25 }],
+        },
+        Condition {
+            name: "combined",
+            rotation_deg: 15.0,
+            tilt_x_deg: 15.0,
+            distortions: vec![
+                Distortion::GaussianNoise {
+                    sigma: 10.0,
                     seed: 42,
-                }],
-            },
-            Condition {
-                name: "blur-2",
-                rotation_deg: 0.0,
-                tilt_x_deg: 0.0,
-                distortions: vec![Distortion::GaussianBlur { sigma: 2.0 }],
-            },
-            Condition {
-                name: "contrast-25",
-                rotation_deg: 0.0,
-                tilt_x_deg: 0.0,
-                distortions: vec![Distortion::ContrastScale { factor: 0.25 }],
-            },
-            Condition {
-                name: "combined",
-                rotation_deg: 15.0,
-                tilt_x_deg: 15.0,
-                distortions: vec![
-                    Distortion::GaussianNoise {
-                        sigma: 10.0,
-                        seed: 42,
-                    },
-                    Distortion::GaussianBlur { sigma: 1.0 },
-                ],
-            },
-        ];
+                },
+                Distortion::GaussianBlur { sigma: 1.0 },
+            ],
+        },
+    ];
 
-        // Generate all sweep scenes
-        let mut sweep_scenes = Vec::new();
+    // Generate all sweep scenes
+    let mut sweep_scenes = Vec::new();
 
-        for &(n_tags, width, height, tag_scale) in tag_configs {
-            // Compute grid positions for tags
-            let positions = grid_positions(n_tags, width, height, tag_scale);
+    for &(n_tags, width, height, tag_scale) in tag_configs {
+        // Compute grid positions for tags
+        let positions = grid_positions(n_tags, width, height, tag_scale);
 
-            for cond in &conditions {
-                let name = format!("{}tags-{}", n_tags, cond.name);
+        for cond in &conditions {
+            let name = format!("{}tags-{}", n_tags, cond.name);
 
-                let mut builder =
-                    SceneBuilder::new(width, height).background(Background::Solid(128));
+            let mut builder = SceneBuilder::new(width, height).background(Background::Solid(128));
 
-                for (id, &(cx, cy)) in positions.iter().enumerate() {
-                    let transform =
-                        if cond.tilt_x_deg.abs() > 0.01 || cond.rotation_deg.abs() > 0.01 {
-                            if cond.tilt_x_deg.abs() > 0.01 {
-                                Transform::FromPose {
-                                    center: [cx, cy],
-                                    size: tag_scale,
-                                    roll: cond.rotation_deg.to_radians(),
-                                    tilt_x: cond.tilt_x_deg.to_radians(),
-                                    tilt_y: 0.0,
-                                }
-                            } else {
-                                Transform::Similarity {
-                                    cx,
-                                    cy,
-                                    scale: tag_scale / 2.0,
-                                    theta: cond.rotation_deg.to_radians(),
-                                }
-                            }
-                        } else {
-                            Transform::Similarity {
-                                cx,
-                                cy,
-                                scale: tag_scale / 2.0,
-                                theta: 0.0,
-                            }
-                        };
+            for (id, &(cx, cy)) in positions.iter().enumerate() {
+                let transform = if cond.tilt_x_deg.abs() > 0.01 || cond.rotation_deg.abs() > 0.01 {
+                    if cond.tilt_x_deg.abs() > 0.01 {
+                        Transform::FromPose {
+                            center: [cx, cy],
+                            size: tag_scale,
+                            roll: cond.rotation_deg.to_radians(),
+                            tilt_x: cond.tilt_x_deg.to_radians(),
+                            tilt_y: 0.0,
+                        }
+                    } else {
+                        Transform::Similarity {
+                            cx,
+                            cy,
+                            scale: tag_scale / 2.0,
+                            theta: cond.rotation_deg.to_radians(),
+                        }
+                    }
+                } else {
+                    Transform::Similarity {
+                        cx,
+                        cy,
+                        scale: tag_scale / 2.0,
+                        theta: 0.0,
+                    }
+                };
 
-                    builder = builder.add_tag("tag36h11", id as u32, transform);
-                }
-
-                let mut scene = builder.build();
-
-                if !cond.distortions.is_empty() {
-                    distortion::apply(&mut scene.image, &cond.distortions);
-                }
-
-                sweep_scenes.push(SweepScene {
-                    name,
-                    tags: n_tags,
-                    condition: cond.name.to_string(),
-                    scene,
-                });
+                builder = builder.add_tag("tag36h11", id as u32, transform);
             }
+
+            let mut scene = builder.build();
+
+            if !cond.distortions.is_empty() {
+                distortion::apply(&mut scene.image, &cond.distortions);
+            }
+
+            sweep_scenes.push(SweepScene {
+                name,
+                tags: n_tags,
+                condition: cond.name.to_string(),
+                scene,
+            });
+        }
+    }
+
+    // Run benchmarks
+    let mut rows = Vec::new();
+    let ref_config = ReferenceConfig {
+        nthreads: threads as i32,
+        ..Default::default()
+    };
+    let ref_detector = PersistentReferenceDetector::new("tag36h11", &ref_config);
+
+    let mut rust_detector = Detector::new(DetectorConfig::default());
+    if let Some(fam) = family::builtin_family("tag36h11") {
+        rust_detector.add_family(fam, 2);
+    }
+
+    if format != "json" {
+        println!(
+            "{:<30} {:>5} {:>10} {:>10} {:>10} {:>10} {:>6}",
+            "Scenario", "Tags", "Rust(ms)", "Ref(ms)", "Ratio", "Size", "N"
+        );
+        println!("{}", "-".repeat(87));
+    }
+
+    let mut buffers = DetectorBuffers::new();
+
+    for ss in &sweep_scenes {
+        let img = &ss.scene.image;
+        let size = [img.width, img.height];
+
+        // Warmup runs (3 iterations to stabilize caches and allocator)
+        for _ in 0..3 {
+            let _ = rust_detector.detect(img, &mut buffers);
+            let _ = ref_detector.detect(img);
         }
 
-        // Run benchmarks
-        let mut rows = Vec::new();
-        let ref_config = ReferenceConfig::default();
-        let ref_detector = PersistentReferenceDetector::new("tag36h11", &ref_config);
-
-        let mut rust_detector = Detector::new(DetectorConfig::default());
-        if let Some(fam) = family::builtin_family("tag36h11") {
-            rust_detector.add_family(fam, 2);
+        // Adaptive iteration count
+        let calib_start = Instant::now();
+        let _ = rust_detector.detect(img, &mut buffers);
+        let calib_dur = calib_start.elapsed();
+        let min_total = std::time::Duration::from_millis(200);
+        let adaptive_iters = if calib_dur.is_zero() {
+            iterations
+        } else {
+            (min_total.as_nanos() / calib_dur.as_nanos()).max(1) as usize
         }
+        .max(iterations);
+
+        // Benchmark Rust
+        let mut rust_times = Vec::with_capacity(adaptive_iters);
+        for _ in 0..adaptive_iters {
+            let start = Instant::now();
+            let _ = rust_detector.detect(img, &mut buffers);
+            rust_times.push(start.elapsed());
+        }
+
+        // Benchmark C reference
+        let mut ref_times = Vec::with_capacity(adaptive_iters);
+        for _ in 0..adaptive_iters {
+            let start = Instant::now();
+            let _ = ref_detector.detect(img);
+            ref_times.push(start.elapsed());
+        }
+
+        rust_times.sort();
+        ref_times.sort();
+
+        let rust_us = rust_times[adaptive_iters / 2].as_micros() as u64;
+        let ref_us = ref_times[adaptive_iters / 2].as_micros() as u64;
+        let ratio = if ref_us > 0 {
+            rust_us as f64 / ref_us as f64
+        } else {
+            0.0
+        };
 
         if format != "json" {
             println!(
-                "{:<30} {:>5} {:>10} {:>10} {:>10} {:>10} {:>6}",
-                "Scenario", "Tags", "Rust(ms)", "Ref(ms)", "Ratio", "Size", "N"
-            );
-            println!("{}", "-".repeat(87));
-        }
-
-        let mut buffers = DetectorBuffers::new();
-
-        for ss in &sweep_scenes {
-            let img = &ss.scene.image;
-            let size = [img.width, img.height];
-
-            // Warmup runs (3 iterations to stabilize caches and allocator)
-            for _ in 0..3 {
-                let _ = rust_detector.detect(img, &mut buffers);
-                let _ = ref_detector.detect(img);
-            }
-
-            // Adaptive iteration count
-            let calib_start = Instant::now();
-            let _ = rust_detector.detect(img, &mut buffers);
-            let calib_dur = calib_start.elapsed();
-            let min_total = std::time::Duration::from_millis(200);
-            let adaptive_iters = if calib_dur.is_zero() {
-                iterations
-            } else {
-                (min_total.as_nanos() / calib_dur.as_nanos()).max(1) as usize
-            }
-            .max(iterations);
-
-            // Benchmark Rust
-            let mut rust_times = Vec::with_capacity(adaptive_iters);
-            for _ in 0..adaptive_iters {
-                let start = Instant::now();
-                let _ = rust_detector.detect(img, &mut buffers);
-                rust_times.push(start.elapsed());
-            }
-
-            // Benchmark C reference
-            let mut ref_times = Vec::with_capacity(adaptive_iters);
-            for _ in 0..adaptive_iters {
-                let start = Instant::now();
-                let _ = ref_detector.detect(img);
-                ref_times.push(start.elapsed());
-            }
-
-            rust_times.sort();
-            ref_times.sort();
-
-            let rust_us = rust_times[adaptive_iters / 2].as_micros() as u64;
-            let ref_us = ref_times[adaptive_iters / 2].as_micros() as u64;
-            let ratio = if ref_us > 0 {
-                rust_us as f64 / ref_us as f64
-            } else {
-                0.0
-            };
-
-            if format != "json" {
-                println!(
-                    "{:<30} {:>5} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4} {:>5}",
-                    &ss.name,
-                    ss.tags,
-                    rust_us as f64 / 1000.0,
-                    ref_us as f64 / 1000.0,
-                    ratio,
-                    size[0],
-                    size[1],
-                    adaptive_iters,
-                );
-            }
-
-            rows.push(BenchRow {
-                name: ss.name.clone(),
-                tags: ss.tags,
-                condition: ss.condition.clone(),
-                image_size: size,
-                rust_median_us: rust_us,
-                ref_median_us: ref_us,
+                "{:<30} {:>5} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4} {:>5}",
+                &ss.name,
+                ss.tags,
+                rust_us as f64 / 1000.0,
+                ref_us as f64 / 1000.0,
                 ratio,
-                iterations: adaptive_iters,
-            });
+                size[0],
+                size[1],
+                adaptive_iters,
+            );
         }
 
-        if format == "json" {
-            println!("{}", serde_json::to_string_pretty(&rows).unwrap());
-        } else {
-            println!("{}", "-".repeat(87));
+        rows.push(BenchRow {
+            name: ss.name.clone(),
+            tags: ss.tags,
+            condition: ss.condition.clone(),
+            image_size: size,
+            rust_median_us: rust_us,
+            ref_median_us: ref_us,
+            ratio,
+            iterations: adaptive_iters,
+        });
+    }
 
-            // Per-condition summary
-            println!("\nPer-condition averages:");
-            let cond_names: Vec<String> = conditions.iter().map(|c| c.name.to_string()).collect();
-            for cond_name in &cond_names {
-                let cond_rows: Vec<_> = rows.iter().filter(|r| r.condition == *cond_name).collect();
-                let total_rust: u64 = cond_rows.iter().map(|r| r.rust_median_us).sum();
-                let total_ref: u64 = cond_rows.iter().map(|r| r.ref_median_us).sum();
-                let ratio = if total_ref > 0 {
-                    total_rust as f64 / total_ref as f64
-                } else {
-                    0.0
-                };
-                println!(
-                    "  {:<20} {:>9.1} vs {:>9.1} ms  ({:.2}x)",
-                    cond_name,
-                    total_rust as f64 / 1000.0,
-                    total_ref as f64 / 1000.0,
-                    ratio,
-                );
-            }
+    if format == "json" {
+        println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+    } else {
+        println!("{}", "-".repeat(87));
 
-            // Per-tag-count summary
-            println!("\nPer-tag-count averages:");
-            for &(n_tags, _, _, _) in tag_configs {
-                let tag_rows: Vec<_> = rows.iter().filter(|r| r.tags == n_tags).collect();
-                let total_rust: u64 = tag_rows.iter().map(|r| r.rust_median_us).sum();
-                let total_ref: u64 = tag_rows.iter().map(|r| r.ref_median_us).sum();
-                let ratio = if total_ref > 0 {
-                    total_rust as f64 / total_ref as f64
-                } else {
-                    0.0
-                };
-                println!(
-                    "  {:>3} tags             {:>9.1} vs {:>9.1} ms  ({:.2}x)",
-                    n_tags,
-                    total_rust as f64 / 1000.0,
-                    total_ref as f64 / 1000.0,
-                    ratio,
-                );
-            }
-
-            // Overall total
-            let total_rust: u64 = rows.iter().map(|r| r.rust_median_us).sum();
-            let total_ref: u64 = rows.iter().map(|r| r.ref_median_us).sum();
-            let overall_ratio = if total_ref > 0 {
+        // Per-condition summary
+        println!("\nPer-condition averages:");
+        let cond_names: Vec<String> = conditions.iter().map(|c| c.name.to_string()).collect();
+        for cond_name in &cond_names {
+            let cond_rows: Vec<_> = rows.iter().filter(|r| r.condition == *cond_name).collect();
+            let total_rust: u64 = cond_rows.iter().map(|r| r.rust_median_us).sum();
+            let total_ref: u64 = cond_rows.iter().map(|r| r.ref_median_us).sum();
+            let ratio = if total_ref > 0 {
                 total_rust as f64 / total_ref as f64
             } else {
                 0.0
             };
-            let min_n = rows.iter().map(|r| r.iterations).min().unwrap_or(0);
-            let max_n = rows.iter().map(|r| r.iterations).max().unwrap_or(0);
             println!(
-                "\nOVERALL: {:.1} vs {:.1} ms ({:.2}x), {} scenarios, {}-{} iterations (adaptive, min {})",
+                "  {:<20} {:>9.1} vs {:>9.1} ms  ({:.2}x)",
+                cond_name,
+                total_rust as f64 / 1000.0,
+                total_ref as f64 / 1000.0,
+                ratio,
+            );
+        }
+
+        // Per-tag-count summary
+        println!("\nPer-tag-count averages:");
+        for &(n_tags, _, _, _) in tag_configs {
+            let tag_rows: Vec<_> = rows.iter().filter(|r| r.tags == n_tags).collect();
+            let total_rust: u64 = tag_rows.iter().map(|r| r.rust_median_us).sum();
+            let total_ref: u64 = tag_rows.iter().map(|r| r.ref_median_us).sum();
+            let ratio = if total_ref > 0 {
+                total_rust as f64 / total_ref as f64
+            } else {
+                0.0
+            };
+            println!(
+                "  {:>3} tags             {:>9.1} vs {:>9.1} ms  ({:.2}x)",
+                n_tags,
+                total_rust as f64 / 1000.0,
+                total_ref as f64 / 1000.0,
+                ratio,
+            );
+        }
+
+        // Overall total
+        let total_rust: u64 = rows.iter().map(|r| r.rust_median_us).sum();
+        let total_ref: u64 = rows.iter().map(|r| r.ref_median_us).sum();
+        let overall_ratio = if total_ref > 0 {
+            total_rust as f64 / total_ref as f64
+        } else {
+            0.0
+        };
+        let min_n = rows.iter().map(|r| r.iterations).min().unwrap_or(0);
+        let max_n = rows.iter().map(|r| r.iterations).max().unwrap_or(0);
+        println!(
+                "\nOVERALL: {:.1} vs {:.1} ms ({:.2}x), {} scenarios, {}-{} iterations (adaptive, min {}), {} thread{}",
                 total_rust as f64 / 1000.0,
                 total_ref as f64 / 1000.0,
                 overall_ratio,
@@ -900,8 +956,9 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str) {
                 min_n,
                 max_n,
                 iterations,
+                threads,
+                if threads == 1 { "" } else { "s" },
             );
-        }
     }
 }
 
