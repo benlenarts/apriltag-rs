@@ -1,3 +1,4 @@
+use super::linear_solve::forward_eliminate;
 use super::mat3::Mat3;
 
 /// A 3x3 homography matrix.
@@ -39,35 +40,7 @@ impl Homography {
         }
 
         // Gaussian elimination with partial pivoting (8x9 augmented)
-        for col in 0..8 {
-            // Find pivot
-            let mut max_val = a[col][col].abs();
-            let mut max_row = col;
-            for row in (col + 1)..8 {
-                let v = a[row][col].abs();
-                if v > max_val {
-                    max_val = v;
-                    max_row = row;
-                }
-            }
-            if max_val < 1e-10 {
-                return None;
-            }
-
-            // Swap
-            if max_row != col {
-                a.swap(col, max_row);
-            }
-
-            // Eliminate below
-            let pivot = a[col][col];
-            for row in (col + 1)..8 {
-                let factor = a[row][col] / pivot;
-                for c in col..9 {
-                    a[row][c] -= factor * a[col][c];
-                }
-            }
-        }
+        forward_eliminate::<8, 9>(&mut a, 1e-10)?;
 
         // Back-substitute (h[8] = 1, solve for h[0..8])
         let mut h = [0.0f64; 9];

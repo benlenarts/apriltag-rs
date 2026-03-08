@@ -3,6 +3,7 @@ use crate::hamming;
 
 use super::homography::Homography;
 use super::image::GrayImage;
+use super::linear_solve::forward_eliminate;
 
 /// Result of decoding a tag from a quad.
 #[derive(Debug, Clone)]
@@ -50,28 +51,8 @@ impl GrayModel {
             aug[i][3] = self.b[i];
         }
 
-        for col in 0..3 {
-            let mut max_val = aug[col][col].abs();
-            let mut max_row = col;
-            for row in (col + 1)..3 {
-                if aug[row][col].abs() > max_val {
-                    max_val = aug[row][col].abs();
-                    max_row = row;
-                }
-            }
-            if max_val < 1e-20 {
-                return;
-            }
-            if max_row != col {
-                aug.swap(col, max_row);
-            }
-            let pivot = aug[col][col];
-            for row in (col + 1)..3 {
-                let factor = aug[row][col] / pivot;
-                for c in col..4 {
-                    aug[row][c] -= factor * aug[col][c];
-                }
-            }
+        if forward_eliminate::<3, 4>(&mut aug, 1e-20).is_none() {
+            return;
         }
 
         // Back-substitute
