@@ -199,6 +199,21 @@ impl QuickDecode {
     }
 }
 
+/// Reusable scratch buffers for decode, avoiding per-quad allocation.
+pub struct DecodeBufs {
+    values: Vec<f64>,
+    sharp: Vec<f64>,
+}
+
+impl DecodeBufs {
+    pub fn new() -> Self {
+        Self {
+            values: Vec::new(),
+            sharp: Vec::new(),
+        }
+    }
+}
+
 /// Attempt to decode a tag from a quad using the given tag family.
 pub fn decode_quad(
     img: &impl GrayImage,
@@ -207,6 +222,7 @@ pub fn decode_quad(
     h: &Homography,
     reversed_border: bool,
     decode_sharpening: f64,
+    bufs: &mut DecodeBufs,
 ) -> Option<DecodeResult> {
     let w = family.layout.border_width as f64;
     let total_width = family.layout.grid_size;
@@ -274,8 +290,11 @@ pub fn decode_quad(
     let nbits = family.layout.nbits;
     let bit_locs = &family.bit_locations;
 
-    // Create values grid for sharpening
-    let mut values = vec![vec![0.0f64; total_width]; total_width];
+    // Flat values grid for sharpening (total_width × total_width)
+    let grid_len = total_width * total_width;
+    let values = &mut bufs.values;
+    values.clear();
+    values.resize(grid_len, 0.0f64);
 
     for i in 0..nbits {
         let bx = bit_locs[i].x as f64 + 0.5;
@@ -293,23 +312,25 @@ pub fn decode_quad(
         let gx = (bit_locs[i].x + family.layout.border_start as i32) as usize;
         let gy = (bit_locs[i].y + family.layout.border_start as i32) as usize;
         if gx < total_width && gy < total_width {
-            values[gy][gx] = pixel_val - thresh;
+            values[gy * total_width + gx] = pixel_val - thresh;
         }
     }
 
     // Apply decode sharpening
     if decode_sharpening > 0.0 && total_width >= 3 {
-        let orig = values.clone();
+        let sharp = &mut bufs.sharp;
+        sharp.clear();
+        sharp.extend_from_slice(values);
         for i in 0..nbits {
             let gx = (bit_locs[i].x + family.layout.border_start as i32) as usize;
             let gy = (bit_locs[i].y + family.layout.border_start as i32) as usize;
             if gx >= 1 && gx + 1 < total_width && gy >= 1 && gy + 1 < total_width {
-                let laplacian = 4.0 * orig[gy][gx]
-                    - orig[gy - 1][gx]
-                    - orig[gy + 1][gx]
-                    - orig[gy][gx - 1]
-                    - orig[gy][gx + 1];
-                values[gy][gx] += decode_sharpening * laplacian;
+                let laplacian = 4.0 * sharp[gy * total_width + gx]
+                    - sharp[(gy - 1) * total_width + gx]
+                    - sharp[(gy + 1) * total_width + gx]
+                    - sharp[gy * total_width + gx - 1]
+                    - sharp[gy * total_width + gx + 1];
+                values[gy * total_width + gx] += decode_sharpening * laplacian;
             }
         }
     }
@@ -326,7 +347,7 @@ pub fn decode_quad(
         let gx = (bit_locs[i].x + family.layout.border_start as i32) as usize;
         let gy = (bit_locs[i].y + family.layout.border_start as i32) as usize;
         let v = if gx < total_width && gy < total_width {
-            values[gy][gx]
+            values[gy * total_width + gx]
         } else {
             0.0
         };
@@ -428,7 +449,7 @@ mod tests {
         let h = Homography::from_quad_corners(&corners).unwrap();
 
         // reversed_border=true on a normal-polarity tag should fail polarity check
-        let result = decode_quad(&img, &family, &qd, &h, true, 0.0);
+        let result = decode_quad(&img, &family, &qd, &h, true, 0.0, &mut DecodeBufs::new());
         assert!(result.is_none());
     }
 
@@ -483,7 +504,7 @@ mod tests {
         let h = Homography::from_quad_corners(&corners).unwrap();
 
         // decode_sharpening = 1.0 exercises the sharpening branch
-        let result = decode_quad(&img, &family, &qd, &h, false, 1.0);
+        let result = decode_quad(&img, &family, &qd, &h, false, 1.0, &mut DecodeBufs::new());
         assert!(result.is_some());
         let r = result.unwrap();
         assert_eq!(r.id, 0);
@@ -545,7 +566,7 @@ mod tests {
 
         // Should still return a result (the out-of-bounds bit gets value 0.0)
         // but the code will differ, so decode may or may not find a match
-        let _result = decode_quad(&img, &family, &qd, &h, false, 0.0);
+        let _result = decode_quad(&img, &family, &qd, &h, false, 0.0, &mut DecodeBufs::new());
         // We just care that it doesn't panic
     }
 
@@ -573,7 +594,7 @@ mod tests {
 
         // Border samples extend beyond [-1,1] tag-space. With corners at
         // pixel edges, these project outside the 20x20 image → OOB continue.
-        let _result = decode_quad(&img, &family, &qd, &h, false, 0.0);
+        let _result = decode_quad(&img, &family, &qd, &h, false, 0.0, &mut DecodeBufs::new());
     }
 
     #[test]
@@ -630,7 +651,7 @@ mod tests {
         let h = Homography::from_quad_corners(&corners).unwrap();
 
         // reversed_border=false on an inverted-polarity tag → white <= black → None
-        let result = decode_quad(&img, &family, &qd, &h, false, 0.0);
+        let result = decode_quad(&img, &family, &qd, &h, false, 0.0, &mut DecodeBufs::new());
         assert!(result.is_none());
     }
 
