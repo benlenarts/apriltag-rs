@@ -60,6 +60,7 @@ struct FittedLine {
 struct QuadFitBufs {
     lfps: Vec<LineFitPt>,
     errors: Vec<f64>,
+    maxima: Vec<(usize, f64)>,
 }
 
 impl QuadFitBufs {
@@ -67,6 +68,7 @@ impl QuadFitBufs {
         Self {
             lfps: Vec::new(),
             errors: Vec::new(),
+            maxima: Vec::new(),
         }
     }
 }
@@ -161,7 +163,7 @@ fn fit_quad(
     build_line_fit_pts(&cluster.points, &mut bufs.lfps);
 
     // Corner detection
-    let corners_idx = find_corners(&bufs.lfps, &mut bufs.errors, params)?;
+    let corners_idx = find_corners(&bufs.lfps, &mut bufs.errors, &mut bufs.maxima, params)?;
 
     // Fit lines through each segment and compute corners
     let quad_corners = compute_quad_corners(&bufs.lfps, &corners_idx, sz)?;
@@ -376,6 +378,7 @@ fn fit_line(moments: &LineFitPt) -> Option<(FittedLine, f64)> {
 fn find_corners(
     lfps: &[LineFitPt],
     errors: &mut Vec<f64>,
+    maxima: &mut Vec<(usize, f64)>,
     params: &QuadThreshParams,
 ) -> Option<[usize; 4]> {
     let sz = lfps.len();
@@ -395,7 +398,7 @@ fn find_corners(
     smooth_errors(errors);
 
     // Find local maxima (use >= on left to handle plateaus from synthetic images)
-    let mut maxima: Vec<(usize, f64)> = Vec::new();
+    maxima.clear();
     for i in 0..sz {
         let prev = errors[(i + sz - 1) % sz];
         let next = errors[(i + 1) % sz];
@@ -524,13 +527,18 @@ fn compute_quad_corners(
     indices: &[usize; 4],
     _sz: usize,
 ) -> Option<[[f64; 2]; 4]> {
-    let mut lines = Vec::with_capacity(4);
+    let mut lines = [FittedLine {
+        px: 0.0,
+        py: 0.0,
+        nx: 0.0,
+        ny: 0.0,
+    }; 4];
     for seg in 0..4 {
         let i0 = indices[seg];
         let i1 = indices[(seg + 1) % 4];
         let moments = range_moments(lfps, i0, i1);
         let (line, _) = fit_line(&moments)?;
-        lines.push(line);
+        lines[seg] = line;
     }
 
     let mut corners = [[0.0f64; 2]; 4];
@@ -746,9 +754,10 @@ mod tests {
         let mut lfps = Vec::new();
         build_line_fit_pts(&points, &mut lfps);
         let mut errors = Vec::new();
+        let mut maxima = Vec::new();
         let params = QuadThreshParams::default();
         // collinear points have uniform error → fewer than 4 maxima
-        assert!(find_corners(&lfps, &mut errors, &params).is_none());
+        assert!(find_corners(&lfps, &mut errors, &mut maxima, &params).is_none());
     }
 
     #[test]
