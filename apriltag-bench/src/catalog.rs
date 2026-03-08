@@ -248,7 +248,7 @@ fn scale_scenarios() -> Vec<Scenario> {
 
 fn noise_scenarios() -> Vec<Scenario> {
     let sigmas = [5, 10, 20, 40];
-    sigmas
+    let mut scenarios: Vec<Scenario> = sigmas
         .iter()
         .map(|&sigma| Scenario {
             name: format!("noise-sigma{sigma}"),
@@ -281,7 +281,43 @@ fn noise_scenarios() -> Vec<Scenario> {
                 scene
             }),
         })
-        .collect()
+        .collect();
+
+    // Salt-and-pepper noise scenarios
+    let densities = [0.05, 0.10];
+    for &density in &densities {
+        let label = format!("{:.0}pct", density * 100.0);
+        scenarios.push(Scenario {
+            name: format!("noise-saltpepper-{label}"),
+            description: format!("Salt-and-pepper noise density={density:.0}%"),
+            category: Category::Noise,
+            expect_ids: vec![("tag36h11".to_string(), 0)],
+            max_corner_rmse: 5.0,
+            quad_decimate: None,
+            build_fn: Box::new(move || {
+                let mut scene = SceneBuilder::new(300, 300)
+                    .background(Background::Solid(128))
+                    .add_tag(
+                        "tag36h11",
+                        0,
+                        Transform::Similarity {
+                            cx: 150.0,
+                            cy: 150.0,
+                            scale: 50.0,
+                            theta: 0.0,
+                        },
+                    )
+                    .build();
+                crate::distortion::apply(
+                    &mut scene.image,
+                    &[Distortion::SaltPepper { density, seed: 42 }],
+                );
+                scene
+            }),
+        });
+    }
+
+    scenarios
 }
 
 fn contrast_scenarios() -> Vec<Scenario> {
@@ -323,7 +359,7 @@ fn contrast_scenarios() -> Vec<Scenario> {
 }
 
 fn lighting_scenarios() -> Vec<Scenario> {
-    vec![
+    let mut scenarios = vec![
         Scenario {
             name: "lighting-gradient-lr".to_string(),
             description: "Left-to-right gradient lighting (0.5–1.5×)".to_string(),
@@ -384,7 +420,41 @@ fn lighting_scenarios() -> Vec<Scenario> {
                 scene
             }),
         },
-    ]
+    ];
+
+    // Brightness shift scenarios
+    for &(offset, label) in &[(60i16, "bright+60"), (-80i16, "bright-80")] {
+        scenarios.push(Scenario {
+            name: format!("lighting-{label}"),
+            description: format!("Brightness shift offset={offset}"),
+            category: Category::Lighting,
+            expect_ids: vec![("tag36h11".to_string(), 0)],
+            max_corner_rmse: 3.0,
+            quad_decimate: None,
+            build_fn: Box::new(move || {
+                let mut scene = SceneBuilder::new(300, 300)
+                    .background(Background::Solid(128))
+                    .add_tag(
+                        "tag36h11",
+                        0,
+                        Transform::Similarity {
+                            cx: 150.0,
+                            cy: 150.0,
+                            scale: 50.0,
+                            theta: 0.0,
+                        },
+                    )
+                    .build();
+                crate::distortion::apply(
+                    &mut scene.image,
+                    &[Distortion::BrightnessShift { offset }],
+                );
+                scene
+            }),
+        });
+    }
+
+    scenarios
 }
 
 fn blur_scenarios() -> Vec<Scenario> {
