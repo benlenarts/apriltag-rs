@@ -404,7 +404,7 @@ mod tests {
         let rendered = family.tag(0).render();
         let qd = QuickDecode::new(&family, 2);
 
-        let w = family.layout.border_width as f64;
+        let _w = family.layout.border_width as f64;
         let scale = 10.0;
         let ox = 60.0;
         let oy = 60.0;

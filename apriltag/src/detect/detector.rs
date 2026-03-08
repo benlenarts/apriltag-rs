@@ -681,6 +681,7 @@ mod tests {
             true,
             true,
             &mut quads,
+            #[cfg(not(feature = "parallel"))]
             &mut quad::QuadFitBufs::new(),
         );
         // should find quads from clusters

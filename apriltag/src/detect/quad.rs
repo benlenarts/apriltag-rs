@@ -741,6 +741,7 @@ mod tests {
             true,
             true,
             &mut quads,
+            #[cfg(not(feature = "parallel"))]
             &mut QuadFitBufs::new(),
         );
         assert!(quads.is_empty());
@@ -968,6 +969,7 @@ mod tests {
             true,
             true,
             &mut quads,
+            #[cfg(not(feature = "parallel"))]
             &mut QuadFitBufs::new(),
         );
 
@@ -1046,6 +1048,7 @@ mod tests {
             true,
             true,
             &mut quads,
+            #[cfg(not(feature = "parallel"))]
             &mut QuadFitBufs::new(),
         );
         assert!(quads.is_empty());
@@ -1078,6 +1081,7 @@ mod tests {
             true,
             true,
             &mut quads,
+            #[cfg(not(feature = "parallel"))]
             &mut QuadFitBufs::new(),
         );
         assert!(quads.is_empty());
@@ -1140,6 +1144,7 @@ mod tests {
             false,
             true,
             &mut quads,
+            #[cfg(not(feature = "parallel"))]
             &mut QuadFitBufs::new(),
         );
         assert!(quads.is_empty());
