@@ -1,3 +1,4 @@
+#[allow(clippy::needless_range_loop)]
 /// Forward elimination with partial pivoting on an `R×C` augmented matrix.
 ///
 /// Reduces `a` to row echelon form in-place. Returns `None` if any

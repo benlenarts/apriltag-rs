@@ -83,6 +83,7 @@ fn homography_to_pose(h: &Homography, params: &PoseParams) -> Pose {
 ///
 /// Returns `(best_pose, best_error, alt_pose, alt_error)`.
 /// `alt_pose` is `None` when no second local minimum exists.
+#[allow(clippy::needless_range_loop)]
 pub fn estimate_tag_pose(det: &Detection, params: &PoseParams) -> (Pose, f64, Option<Pose>, f64) {
     // Build homography from detection corners
     let h = match Homography::from_quad_corners(&det.corners) {
@@ -139,6 +140,7 @@ pub fn estimate_tag_pose(det: &Detection, params: &PoseParams) -> (Pose, f64, Op
 }
 
 /// Orthogonal iteration (Lu et al. 2000).
+#[allow(clippy::needless_range_loop)]
 fn orthogonal_iteration(
     image_rays: &[Vec3; 4],
     tag_pts: &[Vec3; 4],

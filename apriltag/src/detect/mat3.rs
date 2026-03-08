@@ -177,15 +177,10 @@ impl Mat3 {
 impl ops::Mul<Mat3> for Mat3 {
     type Output = Mat3;
     fn mul(self, rhs: Mat3) -> Mat3 {
-        let mut c = [[0.0; 3]; 3];
-        for i in 0..3 {
-            for j in 0..3 {
-                c[i][j] = self.0[i][0] * rhs.0[0][j]
-                    + self.0[i][1] * rhs.0[1][j]
-                    + self.0[i][2] * rhs.0[2][j];
-            }
-        }
-        Mat3(c)
+        let (a, b) = (&self.0, &rhs.0);
+        Mat3(core::array::from_fn(|i| {
+            core::array::from_fn(|j| a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j])
+        }))
     }
 }
 
@@ -225,13 +220,9 @@ impl ops::Div<f64> for Mat3 {
 impl ops::Add for Mat3 {
     type Output = Mat3;
     fn add(self, rhs: Mat3) -> Mat3 {
-        let mut c = [[0.0; 3]; 3];
-        for i in 0..3 {
-            for j in 0..3 {
-                c[i][j] = self.0[i][j] + rhs.0[i][j];
-            }
-        }
-        Mat3(c)
+        Mat3(core::array::from_fn(|i| {
+            core::array::from_fn(|j| self.0[i][j] + rhs.0[i][j])
+        }))
     }
 }
 
@@ -239,22 +230,18 @@ impl ops::Add for Mat3 {
 impl ops::Sub for Mat3 {
     type Output = Mat3;
     fn sub(self, rhs: Mat3) -> Mat3 {
-        let mut c = [[0.0; 3]; 3];
-        for i in 0..3 {
-            for j in 0..3 {
-                c[i][j] = self.0[i][j] - rhs.0[i][j];
-            }
-        }
-        Mat3(c)
+        Mat3(core::array::from_fn(|i| {
+            core::array::from_fn(|j| self.0[i][j] - rhs.0[i][j])
+        }))
     }
 }
 
 // Mat3 += Mat3
 impl ops::AddAssign for Mat3 {
     fn add_assign(&mut self, rhs: Mat3) {
-        for i in 0..3 {
-            for j in 0..3 {
-                self.0[i][j] += rhs.0[i][j];
+        for (row, rhs_row) in self.0.iter_mut().zip(rhs.0.iter()) {
+            for (a, b) in row.iter_mut().zip(rhs_row.iter()) {
+                *a += b;
             }
         }
     }
@@ -263,9 +250,9 @@ impl ops::AddAssign for Mat3 {
 // Mat3 -= Mat3
 impl ops::SubAssign for Mat3 {
     fn sub_assign(&mut self, rhs: Mat3) {
-        for i in 0..3 {
-            for j in 0..3 {
-                self.0[i][j] -= rhs.0[i][j];
+        for (row, rhs_row) in self.0.iter_mut().zip(rhs.0.iter()) {
+            for (a, b) in row.iter_mut().zip(rhs_row.iter()) {
+                *a -= b;
             }
         }
     }

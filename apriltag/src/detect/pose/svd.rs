@@ -2,6 +2,7 @@ use super::super::mat3::{Mat3, Vec3};
 
 /// Compute SVD of a 3x3 matrix: M = U * diag(S) * V^T.
 /// Returns (U, S, V) where S is [s0, s1, s2] in decreasing order.
+#[allow(clippy::needless_range_loop)]
 pub(super) fn svd_3x3(m: &Mat3) -> (Mat3, [f64; 3], Mat3) {
     // Compute M^T * M
     let mt = m.transpose();
