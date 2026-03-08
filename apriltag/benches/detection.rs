@@ -9,7 +9,7 @@ use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
 use apriltag::detect::homography::Homography;
 use apriltag::detect::image::ImageU8;
 use apriltag::detect::preprocess::{apply_sigma, decimate};
-use apriltag::detect::quad::{fit_quads, QuadThreshParams};
+use apriltag::detect::quad::{fit_quads, QuadFitBufs, QuadThreshParams};
 use apriltag::detect::refine::refine_edges;
 use apriltag::detect::threshold::{threshold, ThresholdBuffers};
 use apriltag::detect::unionfind::UnionFind;
@@ -107,6 +107,7 @@ fn bench_gradient_clusters(c: &mut Criterion) {
         &mut ThresholdBuffers::new(),
     );
     c.bench_function("gradient_clusters", |b| {
+        let mut clusters = Vec::new();
         b.iter(|| {
             let mut uf = UnionFind::empty();
             connected_components(&threshed, &mut uf);
@@ -115,6 +116,7 @@ fn bench_gradient_clusters(c: &mut Criterion) {
                 &mut uf,
                 5,
                 &mut apriltag::detect::cluster::ClusterMap::new(),
+                &mut clusters,
             )
         })
     });
@@ -186,6 +188,7 @@ fn bench_gradient_clusters_noisy(c: &mut Criterion) {
         &mut ThresholdBuffers::new(),
     );
     c.bench_function("gradient_clusters_noisy", |b| {
+        let mut clusters = Vec::new();
         b.iter(|| {
             let mut uf = UnionFind::empty();
             connected_components(&threshed, &mut uf);
@@ -194,6 +197,7 @@ fn bench_gradient_clusters_noisy(c: &mut Criterion) {
                 &mut uf,
                 5,
                 &mut apriltag::detect::cluster::ClusterMap::new(),
+                &mut clusters,
             )
         })
     });
@@ -211,14 +215,18 @@ fn bench_fit_quads(c: &mut Criterion) {
     );
     let mut uf = UnionFind::empty();
     connected_components(&threshed, &mut uf);
-    let clusters = gradient_clusters(
+    let mut clusters = Vec::new();
+    gradient_clusters(
         &threshed,
         &mut uf,
         5,
         &mut apriltag::detect::cluster::ClusterMap::new(),
+        &mut clusters,
     );
     let qtp = QuadThreshParams::default();
     c.bench_function("fit_quads", |b| {
+        let mut quads = Vec::new();
+        let mut bufs = QuadFitBufs::new();
         b.iter(|| {
             let mut clusters = clusters.clone();
             fit_quads(
@@ -228,6 +236,8 @@ fn bench_fit_quads(c: &mut Criterion) {
                 black_box(&qtp),
                 true,
                 true,
+                &mut quads,
+                &mut bufs,
             )
         })
     });
@@ -298,20 +308,25 @@ fn bench_decode(c: &mut Criterion) {
     );
     let mut uf = UnionFind::empty();
     connected_components(&threshed, &mut uf);
-    let mut clusters = gradient_clusters(
+    let mut clusters = Vec::new();
+    gradient_clusters(
         &threshed,
         &mut uf,
         5,
         &mut apriltag::detect::cluster::ClusterMap::new(),
+        &mut clusters,
     );
     let qtp = QuadThreshParams::default();
-    let quads = fit_quads(
+    let mut quads = Vec::new();
+    fit_quads(
         &mut clusters,
         decimated.width,
         decimated.height,
         &qtp,
         true,
         true,
+        &mut quads,
+        &mut QuadFitBufs::new(),
     );
 
     // Find a quad that produces a valid homography and successful decode

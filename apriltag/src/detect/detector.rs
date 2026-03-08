@@ -3,14 +3,16 @@ use crate::family::{FamilyId, TagFamily};
 #[cfg(feature = "parallel")]
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use super::cluster::gradient_clusters;
+use super::cluster::{gradient_clusters, Cluster};
 use super::connected::connected_components;
 use super::decode::{decode_quad, DecodeBufs, QuickDecode};
 use super::dedup::deduplicate;
 use super::homography::Homography;
 use super::image::GrayImage;
 use super::preprocess::{apply_sigma, decimate};
-use super::quad::{fit_quads, QuadThreshParams};
+#[cfg(not(feature = "parallel"))]
+use super::quad::QuadFitBufs;
+use super::quad::{fit_quads, Quad, QuadThreshParams};
 use super::refine::refine_edges;
 use super::threshold::{threshold, ThresholdBuffers};
 use super::unionfind::UnionFind;
@@ -116,6 +118,10 @@ pub struct DetectorBuffers {
     uf: UnionFind,
     refine_vals: Vec<f64>,
     cluster_map: super::cluster::ClusterMap,
+    clusters: Vec<Cluster>,
+    quads: Vec<Quad>,
+    #[cfg(not(feature = "parallel"))]
+    quad_fit_bufs: QuadFitBufs,
     #[cfg(not(feature = "parallel"))]
     decode_bufs: DecodeBufs,
 }
@@ -133,6 +139,10 @@ impl DetectorBuffers {
             refine_vals: Vec::new(),
             uf: UnionFind::empty(),
             cluster_map: super::cluster::ClusterMap::new(),
+            clusters: Vec::new(),
+            quads: Vec::new(),
+            #[cfg(not(feature = "parallel"))]
+            quad_fit_bufs: QuadFitBufs::new(),
             #[cfg(not(feature = "parallel"))]
             decode_bufs: DecodeBufs::new(),
         }
@@ -219,11 +229,12 @@ impl Detector {
         connected_components(&threshed, &mut buffers.uf);
 
         // Stage 4: Gradient clustering
-        let mut clusters = gradient_clusters(
+        gradient_clusters(
             &threshed,
             &mut buffers.uf,
             self.config.qtp.min_cluster_pixels as u32,
             &mut buffers.cluster_map,
+            &mut buffers.clusters,
         );
 
         // Determine border orientations needed
@@ -234,18 +245,24 @@ impl Detector {
         buffers.threshed_buf = threshed.into_buf();
 
         // Stage 5: Quad fitting
-        let mut quads = fit_quads(
-            &mut clusters,
+        fit_quads(
+            &mut buffers.clusters,
             filtered_w,
             filtered_h,
             &self.config.qtp,
             has_normal,
             has_reversed,
+            &mut buffers.quads,
+            #[cfg(not(feature = "parallel"))]
+            &mut buffers.quad_fit_bufs,
         );
+
+        // Recycle cluster point Vecs back into ClusterMap's free pool
+        buffers.cluster_map.recycle_clusters(&mut buffers.clusters);
 
         // Scale quad corners back to original image coordinates
         if f > 1 {
-            for quad in &mut quads {
+            for quad in &mut buffers.quads {
                 for corner in &mut quad.corners {
                     corner[0] *= f as f64;
                     corner[1] *= f as f64;
@@ -255,7 +272,7 @@ impl Detector {
 
         // Stage 6: Edge refinement
         if self.config.refine_edges {
-            for quad in &mut quads {
+            for quad in &mut buffers.quads {
                 refine_edges(
                     quad,
                     img,
@@ -268,11 +285,24 @@ impl Detector {
         // Stages 7-8: Homography + Decode
         // COVERAGE: parallel feature block — only compiled with --features parallel
         #[cfg(feature = "parallel")]
-        let mut detections: Vec<Detection> = quads
+        let mut detections: Vec<Detection> = buffers
+            .quads
             .par_iter()
-            .map_init(DecodeBufs::new, |bufs, quad| {
-                decode_quad_to_detections(quad, img, &self.families, &self.config, bufs)
-            })
+            .map_init(
+                || (DecodeBufs::new(), Vec::new()),
+                |(bufs, local_dets), quad| {
+                    local_dets.clear();
+                    decode_quad_to_detections(
+                        quad,
+                        img,
+                        &self.families,
+                        &self.config,
+                        bufs,
+                        local_dets,
+                    );
+                    std::mem::take(local_dets)
+                },
+            )
             .flatten()
             .collect();
 
@@ -280,14 +310,15 @@ impl Detector {
         let mut detections: Vec<Detection> = {
             let mut detections = Vec::new();
             let bufs = &mut buffers.decode_bufs;
-            for quad in &quads {
-                detections.extend(decode_quad_to_detections(
+            for quad in &buffers.quads {
+                decode_quad_to_detections(
                     quad,
                     img,
                     &self.families,
                     &self.config,
                     bufs,
-                ));
+                    &mut detections,
+                );
             }
             detections
         };
@@ -299,21 +330,21 @@ impl Detector {
     }
 }
 
-/// Decode a single quad against all families, returning any detections.
+/// Decode a single quad against all families, appending detections to `out`.
 fn decode_quad_to_detections(
     quad: &super::quad::Quad,
     img: &(impl GrayImage + Sync),
     families: &[(TagFamily, QuickDecode)],
     config: &DetectorConfig,
     bufs: &mut DecodeBufs,
-) -> Vec<Detection> {
+    out: &mut Vec<Detection>,
+) {
     // COVERAGE: None branch requires a degenerate quad (all corners collinear)
     // surviving all prior pipeline stages — not reachable in practice.
     let Some(h) = Homography::from_quad_corners(&quad.corners) else {
-        return Vec::new();
+        return;
     };
 
-    let mut dets = Vec::new();
     for (family, qd) in families {
         if quad.reversed_border != family.layout.reversed_border {
             continue;
@@ -330,7 +361,7 @@ fn decode_quad_to_detections(
         ) {
             let (center, corners) = compute_detection_geometry(&h, result.rotation, family);
 
-            dets.push(Detection {
+            out.push(Detection {
                 family_id: result.family_id,
                 id: result.id,
                 hamming: result.hamming,
@@ -340,7 +371,6 @@ fn decode_quad_to_detections(
             });
         }
     }
-    dets
 }
 
 /// Compute center and rotation-corrected corner positions.
@@ -639,19 +669,28 @@ mod tests {
         connected::connected_components(&threshed, &mut uf);
 
         // Stage 4: Gradient clustering
-        let mut clusters =
-            cluster::gradient_clusters(&threshed, &mut uf, 5, &mut cluster::ClusterMap::new());
+        let mut clusters = Vec::new();
+        cluster::gradient_clusters(
+            &threshed,
+            &mut uf,
+            5,
+            &mut cluster::ClusterMap::new(),
+            &mut clusters,
+        );
         // should find clusters
         assert!(!clusters.is_empty());
 
         // Stage 5: Quad fitting
-        let quads = quad::fit_quads(
+        let mut quads = Vec::new();
+        quad::fit_quads(
             &mut clusters,
             200,
             200,
             &quad::QuadThreshParams::default(),
             true,
             true,
+            &mut quads,
+            &mut quad::QuadFitBufs::new(),
         );
         // should find quads from clusters
         assert!(!quads.is_empty());
