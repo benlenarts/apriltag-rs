@@ -1,5 +1,6 @@
 use super::detector::Detection;
 use super::homography::Homography;
+use super::mat3::{Mat3, Vec3};
 
 /// A 3D pose estimate (rotation + translation).
 #[derive(Debug, Clone)]
@@ -20,73 +21,17 @@ pub struct PoseParams {
     pub cy: f64,
 }
 
-// ── 3x3 matrix helpers ──
-
-use super::mat3;
-
-fn mat_mul(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
-    let mut c = [[0.0; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
-            c[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
-        }
-    }
-    c
-}
-
-fn mat_vec(m: &[[f64; 3]; 3], v: &[f64; 3]) -> [f64; 3] {
-    [
-        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
-        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
-        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
-    ]
-}
-
-fn mat_transpose(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
-    [
-        [m[0][0], m[1][0], m[2][0]],
-        [m[0][1], m[1][1], m[2][1]],
-        [m[0][2], m[1][2], m[2][2]],
-    ]
-}
-
-fn vec_norm(v: &[f64; 3]) -> f64 {
-    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
-}
-
-fn cross(a: &[f64; 3], b: &[f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-}
-
-fn outer(a: &[f64; 3], b: &[f64; 3]) -> [[f64; 3]; 3] {
-    [
-        [a[0] * b[0], a[0] * b[1], a[0] * b[2]],
-        [a[1] * b[0], a[1] * b[1], a[1] * b[2]],
-        [a[2] * b[0], a[2] * b[1], a[2] * b[2]],
-    ]
-}
-
-fn dot(a: &[f64; 3], b: &[f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-
 // ── SVD for 3x3 (Jacobi iteration) ──
 
 /// Compute SVD of a 3x3 matrix: M = U * diag(S) * V^T.
 /// Returns (U, S, V) where S is [s0, s1, s2] in decreasing order.
-fn svd_3x3(m: &[[f64; 3]; 3]) -> ([[f64; 3]; 3], [f64; 3], [[f64; 3]; 3]) {
+fn svd_3x3(m: &Mat3) -> (Mat3, [f64; 3], Mat3) {
     // Compute M^T * M
-    let mt = mat_transpose(m);
-    let mut ata = mat_mul(&mt, m);
+    let mt = m.transpose();
+    let mut ata = mt * *m;
 
     // Jacobi eigendecomposition of A^T A → V, eigenvalues
-    let mut v = IDENTITY;
+    let mut v = Mat3::IDENTITY;
 
     for _ in 0..100 {
         // Find largest off-diagonal element
@@ -95,8 +40,8 @@ fn svd_3x3(m: &[[f64; 3]; 3]) -> ([[f64; 3]; 3], [f64; 3], [[f64; 3]; 3]) {
         let mut q = 1;
         for i in 0..3 {
             for j in (i + 1)..3 {
-                if ata[i][j].abs() > max_val {
-                    max_val = ata[i][j].abs();
+                if ata.0[i][j].abs() > max_val {
+                    max_val = ata.0[i][j].abs();
                     p = i;
                     q = j;
                 }
@@ -107,34 +52,34 @@ fn svd_3x3(m: &[[f64; 3]; 3]) -> ([[f64; 3]; 3], [f64; 3], [[f64; 3]; 3]) {
         }
 
         // Compute Jacobi rotation angle
-        let theta = 0.5 * f64::atan2(2.0 * ata[p][q], ata[p][p] - ata[q][q]);
+        let theta = 0.5 * f64::atan2(2.0 * ata.0[p][q], ata.0[p][p] - ata.0[q][q]);
         let c = theta.cos();
         let s = theta.sin();
 
         // Apply rotation to ata: ata = G^T * ata * G
         let mut new_ata = ata;
         for i in 0..3 {
-            new_ata[i][p] = c * ata[i][p] + s * ata[i][q];
-            new_ata[i][q] = -s * ata[i][p] + c * ata[i][q];
+            new_ata.0[i][p] = c * ata.0[i][p] + s * ata.0[i][q];
+            new_ata.0[i][q] = -s * ata.0[i][p] + c * ata.0[i][q];
         }
         let tmp = new_ata;
         for j in 0..3 {
-            new_ata[p][j] = c * tmp[p][j] + s * tmp[q][j];
-            new_ata[q][j] = -s * tmp[p][j] + c * tmp[q][j];
+            new_ata.0[p][j] = c * tmp.0[p][j] + s * tmp.0[q][j];
+            new_ata.0[q][j] = -s * tmp.0[p][j] + c * tmp.0[q][j];
         }
         ata = new_ata;
 
         // Accumulate V
         let mut new_v = v;
         for i in 0..3 {
-            new_v[i][p] = c * v[i][p] + s * v[i][q];
-            new_v[i][q] = -s * v[i][p] + c * v[i][q];
+            new_v.0[i][p] = c * v.0[i][p] + s * v.0[i][q];
+            new_v.0[i][q] = -s * v.0[i][p] + c * v.0[i][q];
         }
         v = new_v;
     }
 
     // Eigenvalues are diagonal of ata; singular values are sqrt
-    let eigenvalues = [ata[0][0], ata[1][1], ata[2][2]];
+    let eigenvalues = [ata.0[0][0], ata.0[1][1], ata.0[2][2]];
 
     // Sort by decreasing eigenvalue
     let mut order = [0usize, 1, 2];
@@ -155,56 +100,56 @@ fn svd_3x3(m: &[[f64; 3]; 3]) -> ([[f64; 3]; 3], [f64; 3], [[f64; 3]; 3]) {
     ];
 
     // Reorder V columns
-    let mut v_sorted = [[0.0; 3]; 3];
+    let mut v_sorted = Mat3([[0.0; 3]; 3]);
     for i in 0..3 {
         for j in 0..3 {
-            v_sorted[i][j] = v[i][order[j]];
+            v_sorted.0[i][j] = v.0[i][order[j]];
         }
     }
 
     // Ensure det(V) = +1 (we want V to be a proper rotation)
-    if mat3::det(&v_sorted) < 0.0 {
+    if v_sorted.det() < 0.0 {
         for i in 0..3 {
-            v_sorted[i][2] = -v_sorted[i][2];
+            v_sorted.0[i][2] = -v_sorted.0[i][2];
         }
     }
 
     // Compute U = M * V * Sigma^{-1}
-    let mv = mat_mul(m, &v_sorted);
-    let mut u = [[0.0f64; 3]; 3];
+    let mv = *m * v_sorted;
+    let mut u = Mat3([[0.0f64; 3]; 3]);
     for j in 0..3 {
         if sigma[j] > 1e-10 {
             for i in 0..3 {
-                u[i][j] = mv[i][j] / sigma[j];
+                u.0[i][j] = mv.0[i][j] / sigma[j];
             }
         }
     }
 
     // Fill in missing U columns if needed (rank-deficient case)
     if sigma[2] < 1e-10 {
-        let u0 = [u[0][0], u[1][0], u[2][0]];
-        let u1 = [u[0][1], u[1][1], u[2][1]];
+        let u0 = Vec3::new(u.0[0][0], u.0[1][0], u.0[2][0]);
+        let u1 = Vec3::new(u.0[0][1], u.0[1][1], u.0[2][1]);
         if sigma[1] < 1e-10 {
             // Rank <= 1
             let perp = if u0[0].abs() < 0.9 {
-                [1.0, 0.0, 0.0]
+                Vec3::new(1.0, 0.0, 0.0)
             } else {
-                [0.0, 1.0, 0.0]
+                Vec3::new(0.0, 1.0, 0.0)
             };
-            let u1_raw = cross(&u0, &perp);
-            let n1 = vec_norm(&u1_raw);
+            let u1_raw = u0.cross(perp);
+            let n1 = u1_raw.norm();
             if n1 > 1e-10 {
-                let u1 = [u1_raw[0] / n1, u1_raw[1] / n1, u1_raw[2] / n1];
-                let u2 = cross(&u0, &u1);
+                let u1 = u1_raw / n1;
+                let u2 = u0.cross(u1);
                 for i in 0..3 {
-                    u[i][1] = u1[i];
-                    u[i][2] = u2[i];
+                    u.0[i][1] = u1[i];
+                    u.0[i][2] = u2[i];
                 }
             }
         } else {
-            let u2 = cross(&u0, &u1);
+            let u2 = u0.cross(u1);
             for i in 0..3 {
-                u[i][2] = u2[i];
+                u.0[i][2] = u2[i];
             }
         }
     }
@@ -213,17 +158,17 @@ fn svd_3x3(m: &[[f64; 3]; 3]) -> ([[f64; 3]; 3], [f64; 3], [[f64; 3]; 3]) {
 }
 
 /// Project a matrix onto SO(3) via SVD: R = U * V^T, with sign correction.
-fn project_to_so3(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+fn project_to_so3(m: &Mat3) -> Mat3 {
     let (u, _s, v) = svd_3x3(m);
-    let vt = mat_transpose(&v);
-    let mut r = mat_mul(&u, &vt);
-    if mat3::det(&r) < 0.0 {
+    let vt = v.transpose();
+    let mut r = u * vt;
+    if r.det() < 0.0 {
         // Negate third column of U and recompute
         let mut u_fixed = u;
         for i in 0..3 {
-            u_fixed[i][2] = -u_fixed[i][2];
+            u_fixed.0[i][2] = -u_fixed.0[i][2];
         }
-        r = mat_mul(&u_fixed, &vt);
+        r = u_fixed * vt;
     }
     r
 }
@@ -237,56 +182,49 @@ fn homography_to_pose(h: &Homography, params: &PoseParams) -> Pose {
     let cx = params.cx;
     let cy = params.cy;
 
-    // K^{-1} = [[1/fx, 0, -cx/fx], [0, 1/fy, -cy/fy], [0, 0, 1]]
+    // K^{-1} * H columns
     let hd = &h.data;
 
-    // K^{-1} * H columns
-    let mut c0 = [
+    let mut c0 = Vec3::new(
         (hd[0][0] - cx * hd[2][0]) / fx,
         (hd[1][0] - cy * hd[2][0]) / fy,
         hd[2][0],
-    ];
-    let mut c1 = [
+    );
+    let mut c1 = Vec3::new(
         (hd[0][1] - cx * hd[2][1]) / fx,
         (hd[1][1] - cy * hd[2][1]) / fy,
         hd[2][1],
-    ];
-    let mut c2 = [
+    );
+    let mut c2 = Vec3::new(
         (hd[0][2] - cx * hd[2][2]) / fx,
         (hd[1][2] - cy * hd[2][2]) / fy,
         hd[2][2],
-    ];
+    );
 
     // Normalize scale
-    let scale = (vec_norm(&c0) + vec_norm(&c1)) / 2.0;
-    for i in 0..3 {
-        c0[i] /= scale;
-        c1[i] /= scale;
-        c2[i] /= scale;
-    }
+    let scale = (c0.norm() + c1.norm()) / 2.0;
+    c0 = c0 / scale;
+    c1 = c1 / scale;
+    c2 = c2 / scale;
 
     // Negate c1: tag parameter ty maps to -s*ty in 3D tag frame
     // so column 1 of K^{-1}*H has an embedded sign flip
     let r0 = c0;
-    let r1 = [-c1[0], -c1[1], -c1[2]];
-    let r2 = cross(&r0, &r1);
+    let r1 = -c1;
+    let r2 = r0.cross(r1);
 
     // Assemble R (columns are r0, r1, r2) and project onto SO(3)
-    let r_raw = [
+    let r_raw = Mat3([
         [r0[0], r1[0], r2[0]],
         [r0[1], r1[1], r2[1]],
         [r0[2], r1[2], r2[2]],
-    ];
+    ]);
     let r = project_to_so3(&r_raw);
 
     // Scale translation by tagsize/2
-    let t = [
-        c2[0] * params.tagsize / 2.0,
-        c2[1] * params.tagsize / 2.0,
-        c2[2] * params.tagsize / 2.0,
-    ];
+    let t = c2 * (params.tagsize / 2.0);
 
-    Pose { r, t }
+    Pose { r: r.0, t: t.0 }
 }
 
 /// Estimate the pose of a detected tag.
@@ -300,7 +238,7 @@ pub fn estimate_tag_pose(det: &Detection, params: &PoseParams) -> (Pose, f64, Op
         None => {
             return (
                 Pose {
-                    r: IDENTITY,
+                    r: Mat3::IDENTITY.0,
                     t: [0.0, 0.0, 1.0],
                 },
                 f64::MAX,
@@ -312,23 +250,30 @@ pub fn estimate_tag_pose(det: &Detection, params: &PoseParams) -> (Pose, f64, Op
 
     // Object points in tag frame (z=0 plane)
     let s = params.tagsize / 2.0;
-    let tag_pts: [[f64; 3]; 4] = [[-s, s, 0.0], [s, s, 0.0], [s, -s, 0.0], [-s, -s, 0.0]];
+    let tag_pts: [Vec3; 4] = [
+        Vec3::new(-s, s, 0.0),
+        Vec3::new(s, s, 0.0),
+        Vec3::new(s, -s, 0.0),
+        Vec3::new(-s, -s, 0.0),
+    ];
 
     // Image rays (normalized coordinates)
-    let mut v = [[0.0f64; 3]; 4];
+    let mut v = [Vec3::new(0.0, 0.0, 0.0); 4];
     for i in 0..4 {
-        v[i] = [
+        v[i] = Vec3::new(
             (det.corners[i][0] - params.cx) / params.fx,
             (det.corners[i][1] - params.cy) / params.fy,
             1.0,
-        ];
+        );
     }
 
     // Initial pose from homography decomposition
     let initial = homography_to_pose(&h, params);
 
     // Run orthogonal iteration from initial estimate
-    let (pose1, err1) = orthogonal_iteration(&v, &tag_pts, &initial.r, &initial.t, 50);
+    let r_init = Mat3(initial.r);
+    let t_init = Vec3(initial.t);
+    let (pose1, err1) = orthogonal_iteration(&v, &tag_pts, &r_init, &t_init, 50);
 
     // Try to find a second local minimum
     let (pose2, err2) = find_second_minimum(&v, &tag_pts, &pose1);
@@ -343,112 +288,73 @@ pub fn estimate_tag_pose(det: &Detection, params: &PoseParams) -> (Pose, f64, Op
 
 /// Orthogonal iteration (Lu et al. 2000).
 fn orthogonal_iteration(
-    image_rays: &[[f64; 3]; 4],
-    tag_pts: &[[f64; 3]; 4],
-    r_init: &[[f64; 3]; 3],
-    t_init: &[f64; 3],
+    image_rays: &[Vec3; 4],
+    tag_pts: &[Vec3; 4],
+    r_init: &Mat3,
+    t_init: &Vec3,
     n_iters: u32,
 ) -> (Pose, f64) {
     let n = 4;
 
     // Precompute projection operators F[i] = v*v' / (v'*v)
-    let mut f_ops = [[[0.0f64; 3]; 3]; 4];
+    let mut f_ops = [Mat3([[0.0f64; 3]; 3]); 4];
     for i in 0..n {
-        let vv = dot(&image_rays[i], &image_rays[i]);
-        f_ops[i] = outer(&image_rays[i], &image_rays[i]);
-        for r in 0..3 {
-            for c in 0..3 {
-                f_ops[i][r][c] /= vv;
-            }
-        }
+        let vv = image_rays[i].dot(image_rays[i]);
+        f_ops[i] = image_rays[i].outer(image_rays[i]) / vv;
     }
 
     // Mean of object points
-    let mut p_mean = [0.0; 3];
+    let mut p_mean = Vec3::new(0.0, 0.0, 0.0);
     for i in 0..n {
-        for j in 0..3 {
-            p_mean[j] += tag_pts[i][j];
-        }
+        p_mean = p_mean + tag_pts[i];
     }
-    for j in 0..3 {
-        p_mean[j] /= n as f64;
-    }
+    p_mean = p_mean / n as f64;
 
     // Residuals
-    let mut p_res = [[0.0f64; 3]; 4];
+    let mut p_res = [Vec3::new(0.0, 0.0, 0.0); 4];
     for i in 0..n {
-        for j in 0..3 {
-            p_res[i][j] = tag_pts[i][j] - p_mean[j];
-        }
+        p_res[i] = tag_pts[i] - p_mean;
     }
 
     // M1_inv = (I - mean(F))^{-1}
-    let mut f_mean = [[0.0f64; 3]; 3];
+    let mut f_mean = Mat3([[0.0f64; 3]; 3]);
     for i in 0..n {
-        for r in 0..3 {
-            for c in 0..3 {
-                f_mean[r][c] += f_ops[i][r][c];
-            }
-        }
+        f_mean += f_ops[i];
     }
-    for r in 0..3 {
-        for c in 0..3 {
-            f_mean[r][c] /= n as f64;
-        }
-    }
-    let mut i_minus_fmean = IDENTITY;
-    for r in 0..3 {
-        for c in 0..3 {
-            i_minus_fmean[r][c] -= f_mean[r][c];
-        }
-    }
-    let m1_inv = mat3::inv(&i_minus_fmean).unwrap_or(IDENTITY);
+    f_mean = f_mean / n as f64;
+    let i_minus_fmean = Mat3::IDENTITY - f_mean;
+    let m1_inv = i_minus_fmean.inv().unwrap_or(Mat3::IDENTITY);
 
     let mut r = *r_init;
     let mut t = *t_init;
 
     for _ in 0..n_iters {
         // Update translation: t = M1_inv * (1/n) * sum((F[i] - I) * R * p[i])
-        let mut m2 = [0.0f64; 3];
+        let mut m2 = Vec3::new(0.0, 0.0, 0.0);
         for i in 0..n {
-            let rp = mat_vec(&r, &tag_pts[i]);
-            let f_rp = mat_vec(&f_ops[i], &rp);
-            for j in 0..3 {
-                m2[j] += (f_rp[j] - rp[j]) / n as f64;
-            }
+            let rp = r * tag_pts[i];
+            let f_rp = f_ops[i] * rp;
+            m2 = m2 + (f_rp - rp) / n as f64;
         }
-        t = mat_vec(&m1_inv, &m2);
+        t = m1_inv * m2;
 
         // Update rotation via SVD projection
         // q[i] = F[i] * (R * p[i] + t)
-        let mut q = [[0.0f64; 3]; 4];
-        let mut q_mean = [0.0f64; 3];
+        let mut q = [Vec3::new(0.0, 0.0, 0.0); 4];
+        let mut q_mean = Vec3::new(0.0, 0.0, 0.0);
         for i in 0..n {
-            let rp = mat_vec(&r, &tag_pts[i]);
-            let rp_t = [rp[0] + t[0], rp[1] + t[1], rp[2] + t[2]];
-            q[i] = mat_vec(&f_ops[i], &rp_t);
-            for j in 0..3 {
-                q_mean[j] += q[i][j];
-            }
+            let rp = r * tag_pts[i];
+            let rp_t = rp + t;
+            q[i] = f_ops[i] * rp_t;
+            q_mean = q_mean + q[i];
         }
-        for j in 0..3 {
-            q_mean[j] /= n as f64;
-        }
+        q_mean = q_mean / n as f64;
 
         // M3 = sum((q[i] - q_mean) * p_res[i]')
-        let mut m3 = [[0.0f64; 3]; 3];
+        let mut m3 = Mat3([[0.0f64; 3]; 3]);
         for i in 0..n {
-            let q_res = [
-                q[i][0] - q_mean[0],
-                q[i][1] - q_mean[1],
-                q[i][2] - q_mean[2],
-            ];
-            let op = outer(&q_res, &p_res[i]);
-            for a in 0..3 {
-                for b in 0..3 {
-                    m3[a][b] += op[a][b];
-                }
-            }
+            let q_res = q[i] - q_mean;
+            m3 += q_res.outer(p_res[i]);
         }
 
         r = project_to_so3(&m3);
@@ -457,65 +363,49 @@ fn orthogonal_iteration(
     // Compute object-space error
     let err = compute_error(&f_ops, &r, &t, tag_pts);
 
-    (Pose { r, t }, err)
+    (Pose { r: r.0, t: t.0 }, err)
 }
 
 /// Compute object-space reprojection error.
-fn compute_error(
-    f_ops: &[[[f64; 3]; 3]; 4],
-    r: &[[f64; 3]; 3],
-    t: &[f64; 3],
-    tag_pts: &[[f64; 3]; 4],
-) -> f64 {
+fn compute_error(f_ops: &[Mat3; 4], r: &Mat3, t: &Vec3, tag_pts: &[Vec3; 4]) -> f64 {
     let mut err = 0.0;
     for i in 0..4 {
-        let rp = mat_vec(r, &tag_pts[i]);
-        let rp_t = [rp[0] + t[0], rp[1] + t[1], rp[2] + t[2]];
-        let f_rp_t = mat_vec(&f_ops[i], &rp_t);
+        let rp = *r * tag_pts[i];
+        let rp_t = rp + *t;
+        let f_rp_t = f_ops[i] * rp_t;
         // (I - F[i]) * (R*p[i] + t)
-        for j in 0..3 {
-            let diff = rp_t[j] - f_rp_t[j];
-            err += diff * diff;
-        }
+        let diff = rp_t - f_rp_t;
+        err += diff.dot(diff);
     }
     err
 }
 
 /// Search for a second local minimum (Schweighofer & Pinz 2006).
 fn find_second_minimum(
-    image_rays: &[[f64; 3]; 4],
-    tag_pts: &[[f64; 3]; 4],
+    image_rays: &[Vec3; 4],
+    tag_pts: &[Vec3; 4],
     pose1: &Pose,
 ) -> (Option<Pose>, f64) {
-    // The second minimum lies at a rotation of ~180 degrees around the
-    // axis connecting the camera to the tag center.
-    //
-    // We construct the alternative initial rotation by reflecting the
-    // rotation matrix across the viewing direction.
-    let t_dir = [pose1.t[0], pose1.t[1], pose1.t[2]];
-    let t_norm = vec_norm(&t_dir);
+    let t_dir = Vec3(pose1.t);
+    let t_norm = t_dir.norm();
     if t_norm < 1e-10 {
         return (None, f64::MAX);
     }
-    let n = [t_dir[0] / t_norm, t_dir[1] / t_norm, t_dir[2] / t_norm];
+    let n = t_dir / t_norm;
 
     // Reflect R: R2 = (2*n*n' - I) * R
-    // This is equivalent to a 180-degree rotation about the viewing axis
-    let nn = outer(&n, &n);
-    let mut reflect = [[0.0f64; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
-            reflect[i][j] = 2.0 * nn[i][j] - IDENTITY[i][j];
-        }
-    }
-    let r2 = mat_mul(&reflect, &pose1.r);
+    let nn = n.outer(n);
+    let reflect = nn * 2.0 - Mat3::IDENTITY;
+    let r1 = Mat3(pose1.r);
+    let r2 = reflect * r1;
 
     // Note: the angle between R and R2 = (2nn'-I)*R is always π because
     // trace(R^T*(2nn'-I)*R) = trace(2nn'-I) = -1, giving acos(-1) = π.
     // A previous "small angle" early-return was dead code and has been removed.
 
     // Run orthogonal iteration from the alternative starting point
-    let (pose2, err2) = orthogonal_iteration(image_rays, tag_pts, &r2, &pose1.t, 50);
+    let t1 = Vec3(pose1.t);
+    let (pose2, err2) = orthogonal_iteration(image_rays, tag_pts, &r2, &t1, 50);
 
     (Some(pose2), err2)
 }
@@ -526,62 +416,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mat_mul_identity() {
-        let a = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]];
-        let result = mat_mul(&IDENTITY, &a);
-        for i in 0..3 {
-            for j in 0..3 {
-                assert!((result[i][j] - a[i][j]).abs() < 1e-10);
-            }
-        }
-    }
-
-    #[test]
     fn mat3_inv_identity() {
-        let inv = mat3::inv(&IDENTITY).unwrap();
-        for i in 0..3 {
-            for j in 0..3 {
-                assert!((inv[i][j] - IDENTITY[i][j]).abs() < 1e-10);
-            }
-        }
+        let inv = Mat3::IDENTITY.inv().unwrap();
+        assert_eq!(inv, Mat3::IDENTITY);
     }
 
     #[test]
     fn mat3_inv_roundtrip() {
-        let m = [[2.0, 1.0, 0.0], [0.0, 3.0, 1.0], [1.0, 0.0, 2.0]];
-        let inv = mat3::inv(&m).unwrap();
-        let prod = mat_mul(&m, &inv);
+        let m = Mat3([[2.0, 1.0, 0.0], [0.0, 3.0, 1.0], [1.0, 0.0, 2.0]]);
+        let inv = m.inv().unwrap();
+        let prod = m * inv;
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
                 // M * M^-1 should be identity
-                assert!((prod[i][j] - expected).abs() < 1e-10);
+                assert!((prod.0[i][j] - expected).abs() < 1e-10);
             }
         }
     }
 
     #[test]
     fn svd_identity() {
-        let (u, s, v) = svd_3x3(&IDENTITY);
+        let (u, s, v) = svd_3x3(&Mat3::IDENTITY);
         for i in 0..3 {
             // each singular value should be 1
             assert!((s[i] - 1.0).abs() < 1e-10);
         }
         // U*V^T should be identity
-        let vt = mat_transpose(&v);
-        let r = mat_mul(&u, &vt);
+        let r = u * v.transpose();
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                // U*V^T should be identity for identity input
-                assert!((r[i][j] - expected).abs() < 1e-10);
+                assert!((r.0[i][j] - expected).abs() < 1e-10);
             }
         }
     }
 
     #[test]
     fn svd_diagonal() {
-        let m = [[3.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 1.0]];
+        let m = Mat3([[3.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 1.0]]);
         let (_u, s, _v) = svd_3x3(&m);
         assert!((s[0] - 3.0).abs() < 1e-10);
         assert!((s[1] - 2.0).abs() < 1e-10);
@@ -590,71 +463,62 @@ mod tests {
 
     #[test]
     fn svd_reconstructs_matrix() {
-        let m = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 10.0]];
+        let m = Mat3([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 10.0]]);
         let (u, s, v) = svd_3x3(&m);
         // Reconstruct: U * diag(S) * V^T
-        let mut us = [[0.0; 3]; 3];
+        let mut us = Mat3([[0.0; 3]; 3]);
         for i in 0..3 {
             for j in 0..3 {
-                us[i][j] = u[i][j] * s[j];
+                us.0[i][j] = u.0[i][j] * s[j];
             }
         }
-        let vt = mat_transpose(&v);
-        let recon = mat_mul(&us, &vt);
+        let recon = us * v.transpose();
         for i in 0..3 {
             for j in 0..3 {
-                // U*diag(S)*V^T should reconstruct M
-                assert!((recon[i][j] - m[i][j]).abs() < 1e-8);
+                assert!((recon.0[i][j] - m.0[i][j]).abs() < 1e-8);
             }
         }
     }
 
     #[test]
     fn project_to_so3_rotation() {
-        // A proper rotation should remain unchanged
         let angle: f64 = 0.3;
-        let r = [
+        let r = Mat3([
             [angle.cos(), -angle.sin(), 0.0],
             [angle.sin(), angle.cos(), 0.0],
             [0.0, 0.0, 1.0],
-        ];
+        ]);
         let proj = project_to_so3(&r);
         for i in 0..3 {
             for j in 0..3 {
-                // proper rotation should be unchanged by SO(3) projection
-                assert!((proj[i][j] - r[i][j]).abs() < 1e-10);
+                assert!((proj.0[i][j] - r.0[i][j]).abs() < 1e-10);
             }
         }
     }
 
     #[test]
     fn project_to_so3_noisy() {
-        // A nearly-rotation matrix should project correctly
         let angle: f64 = 0.5;
-        let mut r = [
+        let mut r = Mat3([
             [angle.cos(), -angle.sin(), 0.0],
             [angle.sin(), angle.cos(), 0.0],
             [0.0, 0.0, 1.0],
-        ];
-        // Add noise
-        r[0][0] += 0.05;
-        r[1][1] -= 0.03;
+        ]);
+        r.0[0][0] += 0.05;
+        r.0[1][1] -= 0.03;
         let proj = project_to_so3(&r);
-        // Should be orthogonal
-        let rrt = mat_mul(&proj, &mat_transpose(&proj));
+        let rrt = proj * proj.transpose();
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                // R*R^T should be identity
-                assert!((rrt[i][j] - expected).abs() < 1e-10);
+                assert!((rrt.0[i][j] - expected).abs() < 1e-10);
             }
         }
-        assert!((mat3::det(&proj) - 1.0).abs() < 1e-10);
+        assert!((proj.det() - 1.0).abs() < 1e-10);
     }
 
     #[test]
     fn pose_frontal_tag() {
-        // Simulate a frontal tag at z=5, centered at image center
         let params = PoseParams {
             tagsize: 0.1,
             fx: 500.0,
@@ -663,16 +527,9 @@ mod tests {
             cy: 240.0,
         };
 
-        // Tag at z=5 → projects to:
-        // corner i at (cx + fx * tag_x / z, cy + fy * tag_y / z)
         let s = params.tagsize / 2.0;
         let z = 5.0;
-        let tag_corners_3d = [
-            [-s, s, 0.0],  // (-s, +s)
-            [s, s, 0.0],   // (+s, +s)
-            [s, -s, 0.0],  // (+s, -s)
-            [-s, -s, 0.0], // (-s, -s)
-        ];
+        let tag_corners_3d = [[-s, s, 0.0], [s, s, 0.0], [s, -s, 0.0], [-s, -s, 0.0]];
 
         let mut corners = [[0.0f64; 2]; 4];
         for i in 0..4 {
@@ -691,28 +548,21 @@ mod tests {
 
         let (pose, err, _, _) = estimate_tag_pose(&det, &params);
 
-        // R should be close to identity
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                // R should be close to identity
                 assert!((pose.r[i][j] - expected).abs() < 0.1);
             }
         }
 
-        // t should be ~[0, 0, 5]
-        // t should be ~[0, 0, z]
         assert!(pose.t[0].abs() < 0.1);
         assert!(pose.t[1].abs() < 0.1);
         assert!((pose.t[2] - z).abs() < 0.5);
-
-        // error should be small
         assert!(err < 1e-4);
     }
 
     #[test]
     fn pose_offset_tag() {
-        // Tag at z=3, shifted to the right by 1 meter
         let params = PoseParams {
             tagsize: 0.2,
             fx: 500.0,
@@ -747,9 +597,6 @@ mod tests {
         };
 
         let (pose, err, _, _) = estimate_tag_pose(&det, &params);
-
-        // t should be ~[1, 0, 3]
-        // t should be ~[tx_world, 0, z]
         assert!((pose.t[0] - tx_world).abs() < 0.2);
         assert!((pose.t[2] - z).abs() < 0.5);
         assert!(err < 1e-4);
@@ -757,58 +604,48 @@ mod tests {
 
     #[test]
     fn mat3_inv_singular_returns_none() {
-        let m = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]; // det = 0
-        assert!(mat3::inv(&m).is_none());
+        let m = Mat3([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]);
+        assert!(m.inv().is_none());
     }
 
     #[test]
     fn svd_rank_deficient() {
-        // Rank-1 matrix: only one nonzero singular value
-        let m = [[1.0, 2.0, 3.0], [2.0, 4.0, 6.0], [3.0, 6.0, 9.0]];
+        let m = Mat3([[1.0, 2.0, 3.0], [2.0, 4.0, 6.0], [3.0, 6.0, 9.0]]);
         let (u, s, v) = svd_3x3(&m);
-        // Only first singular value should be nonzero
-        // only first singular value should be nonzero
         assert!(s[0] > 1.0);
         assert!(s[1] < 1e-8);
         assert!(s[2] < 1e-8);
 
-        // Reconstruct
-        let mut us = [[0.0; 3]; 3];
+        let mut us = Mat3([[0.0; 3]; 3]);
         for i in 0..3 {
             for j in 0..3 {
-                us[i][j] = u[i][j] * s[j];
+                us.0[i][j] = u.0[i][j] * s[j];
             }
         }
-        let vt = mat_transpose(&v);
-        let recon = mat_mul(&us, &vt);
+        let recon = us * v.transpose();
         for i in 0..3 {
             for j in 0..3 {
-                // recon[i][j] should match m[i][j] within tolerance
-                assert!((recon[i][j] - m[i][j]).abs() < 1e-6);
+                assert!((recon.0[i][j] - m.0[i][j]).abs() < 1e-6);
             }
         }
     }
 
     #[test]
     fn project_to_so3_negative_det() {
-        // A matrix with negative determinant should still project to SO(3)
-        let m = [[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let m = Mat3([[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
         let r = project_to_so3(&m);
-        let rrt = mat_mul(&r, &mat_transpose(&r));
+        let rrt = r * r.transpose();
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                // R*R^T should be identity
-                assert!((rrt[i][j] - expected).abs() < 1e-10);
+                assert!((rrt.0[i][j] - expected).abs() < 1e-10);
             }
         }
-        // det(R) should be 1
-        assert!((mat3::det(&r) - 1.0).abs() < 1e-10);
+        assert!((r.det() - 1.0).abs() < 1e-10);
     }
 
     #[test]
     fn pose_degenerate_detection() {
-        // All corners at the same point → degenerate homography
         let params = PoseParams {
             tagsize: 0.1,
             fx: 500.0,
@@ -831,7 +668,6 @@ mod tests {
 
     #[test]
     fn pose_oblique_tag_finds_two_solutions() {
-        // Tag at an oblique angle — should find two pose solutions
         let params = PoseParams {
             tagsize: 0.2,
             fx: 500.0,
@@ -843,17 +679,14 @@ mod tests {
         let s = params.tagsize / 2.0;
         let z = 3.0;
 
-        // Rotate tag 45 degrees around Y axis
         let angle: f64 = 0.7;
         let ca = angle.cos();
         let sa = angle.sin();
-        // R_y(angle) = [[cos, 0, sin], [0, 1, 0], [-sin, 0, cos]]
         let tag_corners_3d: [[f64; 3]; 4] =
             [[-s, s, 0.0], [s, s, 0.0], [s, -s, 0.0], [-s, -s, 0.0]];
 
         let mut corners = [[0.0f64; 2]; 4];
         for i in 0..4 {
-            // Apply rotation around Y
             let rx = ca * tag_corners_3d[i][0] + sa * tag_corners_3d[i][2];
             let ry = tag_corners_3d[i][1];
             let rz = -sa * tag_corners_3d[i][0] + ca * tag_corners_3d[i][2] + z;
@@ -872,52 +705,42 @@ mod tests {
         };
 
         let (pose, err, alt, _) = estimate_tag_pose(&det, &params);
-        // Should find a pose with reasonable error
         assert!(err < 1.0);
-        // oblique tag should produce two solutions
         assert!(alt.is_some());
-        // The best pose should place the tag at approximately z=3
-        // best pose should place the tag at approximately z=3
         assert!((pose.t[2] - z).abs() < 1.0);
     }
 
     #[test]
     fn svd_rank1_dominant_x() {
-        // Rank-1 matrix where leading singular vector has u0[0].abs() >= 0.9
-        // This hits the `[0.0, 1.0, 0.0]` perpendicular vector branch (line 221)
-        let m = [[5.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]];
+        let m = Mat3([[5.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]);
         let (u, s, v) = svd_3x3(&m);
         assert!(s[0] > 1.0);
         assert!(s[1] < 1e-8);
         assert!(s[2] < 1e-8);
-        // U should still form a valid orthogonal basis
-        let uut = mat_mul(&u, &mat_transpose(&u));
+        let uut = u * u.transpose();
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!((uut[i][j] - expected).abs() < 1e-8);
+                assert!((uut.0[i][j] - expected).abs() < 1e-8);
             }
         }
-        // Reconstruction should still work for the nonzero part
-        let mut us = [[0.0; 3]; 3];
+        let mut us = Mat3([[0.0; 3]; 3]);
         for i in 0..3 {
             for j in 0..3 {
-                us[i][j] = u[i][j] * s[j];
+                us.0[i][j] = u.0[i][j] * s[j];
             }
         }
-        let vt = mat_transpose(&v);
-        let recon = mat_mul(&us, &vt);
+        let recon = us * v.transpose();
         for i in 0..3 {
             for j in 0..3 {
-                assert!((recon[i][j] - m[i][j]).abs() < 1e-6);
+                assert!((recon.0[i][j] - m.0[i][j]).abs() < 1e-6);
             }
         }
     }
 
     #[test]
     fn svd_zero_matrix() {
-        // All-zero matrix: all singular values < 1e-10, n1 will be 0 (line 232)
-        let m = [[0.0; 3]; 3];
+        let m = Mat3([[0.0; 3]; 3]);
         let (_u, s, _v) = svd_3x3(&m);
         for i in 0..3 {
             assert!(s[i] < 1e-10);
@@ -926,8 +749,6 @@ mod tests {
 
     #[test]
     fn pose_oblique_sweep() {
-        // Sweep oblique angles with combined X+Y rotations and offsets to exercise
-        // all estimate_tag_pose branches including err2 < err1.
         let params = PoseParams {
             tagsize: 0.2,
             fx: 500.0,
@@ -940,14 +761,12 @@ mod tests {
         let tag_corners_3d: [[f64; 3]; 4] =
             [[-s, s, 0.0], [s, s, 0.0], [s, -s, 0.0], [-s, -s, 0.0]];
 
-        // Include z=0.15 with extreme angles to exercise the pz <= 0.01 skip path
         for z in [0.15, 1.0, 1.5, 2.0, 3.0, 5.0] {
             for tx in [0.0, 0.3, -0.5] {
                 for angle_y_deg in (20..=85).step_by(5) {
                     for angle_x_deg in [0, 15, 30, 60, 80] {
                         let ay = (angle_y_deg as f64).to_radians();
                         let ax = (angle_x_deg as f64).to_radians();
-                        // R = Rx(ax) * Ry(ay)
                         let (cy_, sy) = (ay.cos(), ay.sin());
                         let (cx_, sx) = (ax.cos(), ax.sin());
                         let r = [
@@ -998,7 +817,6 @@ mod tests {
                         };
 
                         let (pose, err, _alt, _alt_err) = estimate_tag_pose(&det, &params);
-                        // Verify finite results for non-degenerate cases
                         if err < f64::MAX {
                             assert!(pose.t[2].is_finite());
                         }
@@ -1010,18 +828,21 @@ mod tests {
 
     #[test]
     fn find_second_minimum_near_zero_translation() {
-        // Pose with near-zero translation → early return (line 528)
         let s = 0.05;
-        let tag_pts: [[f64; 3]; 4] = [[-s, s, 0.0], [s, s, 0.0], [s, -s, 0.0], [-s, -s, 0.0]];
-        let image_rays: [[f64; 3]; 4] = [
-            [-0.01, 0.01, 1.0],
-            [0.01, 0.01, 1.0],
-            [0.01, -0.01, 1.0],
-            [-0.01, -0.01, 1.0],
+        let tag_pts: [Vec3; 4] = [
+            Vec3::new(-s, s, 0.0),
+            Vec3::new(s, s, 0.0),
+            Vec3::new(s, -s, 0.0),
+            Vec3::new(-s, -s, 0.0),
         ];
-        // Pose with near-zero translation
+        let image_rays: [Vec3; 4] = [
+            Vec3::new(-0.01, 0.01, 1.0),
+            Vec3::new(0.01, 0.01, 1.0),
+            Vec3::new(0.01, -0.01, 1.0),
+            Vec3::new(-0.01, -0.01, 1.0),
+        ];
         let pose = Pose {
-            r: IDENTITY,
+            r: Mat3::IDENTITY.0,
             t: [0.0, 0.0, 1e-15],
         };
         let (alt, err) = find_second_minimum(&image_rays, &tag_pts, &pose);
@@ -1031,11 +852,8 @@ mod tests {
 
     #[test]
     fn svd_eigenvalue_ordering() {
-        // Matrix whose eigenvalues of M^T*M need re-sorting
-        let m = [[0.0, 0.0, 5.0], [0.0, 3.0, 0.0], [1.0, 0.0, 0.0]];
+        let m = Mat3([[0.0, 0.0, 5.0], [0.0, 3.0, 0.0], [1.0, 0.0, 0.0]]);
         let (_u, s, _v) = svd_3x3(&m);
-        // Singular values should be in decreasing order
-        // singular values should be in decreasing order: 5, 3, 1
         assert!(s[0] >= s[1]);
         assert!(s[1] >= s[2]);
         assert!((s[0] - 5.0).abs() < 1e-8);

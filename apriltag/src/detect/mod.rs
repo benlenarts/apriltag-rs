@@ -16,7 +16,6 @@ pub mod image;
 #[doc(hidden)]
 pub mod mat3;
 pub use image::{GrayImage, ImageRef};
-#[allow(clippy::needless_range_loop)]
 pub mod pose;
 #[doc(hidden)]
 #[allow(clippy::needless_range_loop)]
