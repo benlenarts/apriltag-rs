@@ -167,15 +167,8 @@ mod tests {
         (a - b).abs() < EPSILON
     }
 
-    fn assert_point_approx(actual: (f64, f64), expected: (f64, f64), msg: &str) {
-        assert!(
-            approx_eq(actual.0, expected.0) && approx_eq(actual.1, expected.1),
-            "{msg}: expected ({}, {}), got ({}, {})",
-            expected.0,
-            expected.1,
-            actual.0,
-            actual.1,
-        );
+    fn assert_point_approx(actual: (f64, f64), expected: (f64, f64)) {
+        assert!(approx_eq(actual.0, expected.0) && approx_eq(actual.1, expected.1));
     }
 
     #[test]
@@ -188,11 +181,11 @@ mod tests {
             theta: 0.0,
         };
 
-        assert_point_approx(t.project(-1.0, -1.0), (50.0, 50.0), "TL");
-        assert_point_approx(t.project(1.0, -1.0), (150.0, 50.0), "TR");
-        assert_point_approx(t.project(1.0, 1.0), (150.0, 150.0), "BR");
-        assert_point_approx(t.project(-1.0, 1.0), (50.0, 150.0), "BL");
-        assert_point_approx(t.project(0.0, 0.0), (100.0, 100.0), "center");
+        assert_point_approx(t.project(-1.0, -1.0), (50.0, 50.0));
+        assert_point_approx(t.project(1.0, -1.0), (150.0, 50.0));
+        assert_point_approx(t.project(1.0, 1.0), (150.0, 150.0));
+        assert_point_approx(t.project(-1.0, 1.0), (50.0, 150.0));
+        assert_point_approx(t.project(0.0, 0.0), (100.0, 100.0));
     }
 
     #[test]
@@ -207,9 +200,9 @@ mod tests {
 
         // After 90° rotation: TL(-1,-1) → center + scale*(cos90*(-1)-sin90*(-1), sin90*(-1)+cos90*(-1))
         //                                = center + scale*(0+1, -1+0) = center + (50, -50) = (150, 50)
-        assert_point_approx(t.project(-1.0, -1.0), (150.0, 50.0), "TL rotated 90°");
+        assert_point_approx(t.project(-1.0, -1.0), (150.0, 50.0));
         // TR(1,-1) → center + scale*(0+1, 1+0) = center + (50, 50) = (150, 150)
-        assert_point_approx(t.project(1.0, -1.0), (150.0, 150.0), "TR rotated 90°");
+        assert_point_approx(t.project(1.0, -1.0), (150.0, 150.0));
     }
 
     #[test]
@@ -222,22 +215,14 @@ mod tests {
         };
         let corners = t.ground_truth_corners();
 
-        assert!(
-            approx_eq(corners[0][0], 170.0) && approx_eq(corners[0][1], 170.0),
-            "TL"
-        );
-        assert!(
-            approx_eq(corners[1][0], 230.0) && approx_eq(corners[1][1], 170.0),
-            "TR"
-        );
-        assert!(
-            approx_eq(corners[2][0], 230.0) && approx_eq(corners[2][1], 230.0),
-            "BR"
-        );
-        assert!(
-            approx_eq(corners[3][0], 170.0) && approx_eq(corners[3][1], 230.0),
-            "BL"
-        );
+        // TL
+        assert!(approx_eq(corners[0][0], 170.0) && approx_eq(corners[0][1], 170.0));
+        // TR
+        assert!(approx_eq(corners[1][0], 230.0) && approx_eq(corners[1][1], 170.0));
+        // BR
+        assert!(approx_eq(corners[2][0], 230.0) && approx_eq(corners[2][1], 230.0));
+        // BL
+        assert!(approx_eq(corners[3][0], 170.0) && approx_eq(corners[3][1], 230.0));
     }
 
     #[test]
@@ -246,9 +231,9 @@ mod tests {
         let t = Transform::Perspective {
             h: [50.0, 0.0, 100.0, 0.0, 50.0, 100.0, 0.0, 0.0, 1.0],
         };
-        assert_point_approx(t.project(-1.0, -1.0), (50.0, 50.0), "TL");
-        assert_point_approx(t.project(1.0, 1.0), (150.0, 150.0), "BR");
-        assert_point_approx(t.project(0.0, 0.0), (100.0, 100.0), "center");
+        assert_point_approx(t.project(-1.0, -1.0), (50.0, 50.0));
+        assert_point_approx(t.project(1.0, 1.0), (150.0, 150.0));
+        assert_point_approx(t.project(0.0, 0.0), (100.0, 100.0));
     }
 
     #[test]
@@ -264,22 +249,14 @@ mod tests {
 
         let corners = t.ground_truth_corners();
         // half = 50, R = identity, H = [[50, 0, 100], [0, 50, 100], [0, 0, 1]]
-        assert!(
-            approx_eq(corners[0][0], 50.0) && approx_eq(corners[0][1], 50.0),
-            "TL"
-        );
-        assert!(
-            approx_eq(corners[1][0], 150.0) && approx_eq(corners[1][1], 50.0),
-            "TR"
-        );
-        assert!(
-            approx_eq(corners[2][0], 150.0) && approx_eq(corners[2][1], 150.0),
-            "BR"
-        );
-        assert!(
-            approx_eq(corners[3][0], 50.0) && approx_eq(corners[3][1], 150.0),
-            "BL"
-        );
+        // TL
+        assert!(approx_eq(corners[0][0], 50.0) && approx_eq(corners[0][1], 50.0));
+        // TR
+        assert!(approx_eq(corners[1][0], 150.0) && approx_eq(corners[1][1], 50.0));
+        // BR
+        assert!(approx_eq(corners[2][0], 150.0) && approx_eq(corners[2][1], 150.0));
+        // BL
+        assert!(approx_eq(corners[3][0], 50.0) && approx_eq(corners[3][1], 150.0));
     }
 
     #[test]
@@ -294,10 +271,7 @@ mod tests {
         };
 
         let (cx, cy) = t.project(0.0, 0.0);
-        assert!(
-            approx_eq(cx, 320.0) && approx_eq(cy, 240.0),
-            "center should map to ({cx}, {cy}), expected (320, 240)"
-        );
+        assert!(approx_eq(cx, 320.0) && approx_eq(cy, 240.0));
     }
 
     #[test]
@@ -318,10 +292,7 @@ mod tests {
         let right_height = (corners[2][1] - corners[1][1]).abs();
 
         // The two sides should differ (perspective effect)
-        assert!(
-            (left_height - right_height).abs() > 0.1,
-            "tilt should create perspective: left_h={left_height}, right_h={right_height}"
-        );
+        assert!((left_height - right_height).abs() > 0.1);
     }
 
     #[test]
@@ -345,12 +316,9 @@ mod tests {
         let c0 = t_no_roll.ground_truth_corners();
         let c1 = t_rolled.ground_truth_corners();
 
-        // After 90° roll, TL should go where TR was (approximately)
+        // After 90° roll, TL should go where TR was
         // TL(-1,-1) with roll=0: (160,160). With roll=90°: should be (240,160)
-        assert!(
-            approx_eq(c1[0][0], c0[1][0]) && approx_eq(c1[0][1], c0[1][1]),
-            "TL after 90° roll should be at original TR position"
-        );
+        assert!(approx_eq(c1[0][0], c0[1][0]) && approx_eq(c1[0][1], c0[1][1]));
     }
 
     #[test]
@@ -368,12 +336,8 @@ mod tests {
 
         for (i, [tx, ty]) in tag_corners.iter().enumerate() {
             let (ix, iy) = t.project(*tx, *ty);
-            assert!(
-                approx_eq(corners[i][0], ix) && approx_eq(corners[i][1], iy),
-                "corner {i}: ground_truth_corners() ({}, {}) != project() ({ix}, {iy})",
-                corners[i][0],
-                corners[i][1]
-            );
+            // ground_truth_corners() must agree with project() for each corner
+            assert!(approx_eq(corners[i][0], ix) && approx_eq(corners[i][1], iy));
         }
     }
 }

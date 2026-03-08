@@ -271,6 +271,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn decimate_factor_1_with_stride() {
+        // Exercise the stride != width path in decimate(f=1)
+        use crate::detect::image::ImageRef;
+
+        // Create image with stride > width: 4px wide, stride of 8
+        let mut buf = vec![0u8; 8 * 3]; // 3 rows, stride 8
+                                        // Row 0: pixels [10, 20, 30, 40, pad, pad, pad, pad]
+        buf[0] = 10;
+        buf[1] = 20;
+        buf[2] = 30;
+        buf[3] = 40;
+        // Row 1
+        buf[8] = 50;
+        buf[9] = 60;
+        let img = ImageRef::new(4, 3, 8, &buf);
+
+        let mut out = ImageU8::new(0, 0);
+        decimate(&img, 1, &mut out);
+        assert_eq!(out.width, 4);
+        assert_eq!(out.height, 3);
+        // Stride padding should not appear in output (output stride == width)
+        assert_eq!(out.get(0, 0), 10);
+        assert_eq!(out.get(3, 0), 40);
+        assert_eq!(out.get(0, 1), 50);
+        assert_eq!(out.get(1, 1), 60);
+    }
+
+    #[test]
     fn decimate_factor_1_returns_clone() {
         let mut img = ImageU8::new(4, 4);
         img.set(0, 0, 100);

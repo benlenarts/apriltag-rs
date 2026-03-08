@@ -256,10 +256,8 @@ mod tests {
             .flat_map(|y| (0..50).map(move |x| (x, y)))
             .filter(|&(x, y)| img.get(x, y) != 128)
             .count();
-        assert!(
-            changed > 100,
-            "expected noise to change pixels, changed={changed}"
-        );
+        // Noise should change a significant number of pixels
+        assert!(changed > 100);
     }
 
     #[test]
@@ -290,8 +288,9 @@ mod tests {
             .filter(|&(x, y)| img.get(x, y) == 255)
             .count();
 
-        assert!(zeros > 100, "expected salt pixels, got {zeros}");
-        assert!(ones > 100, "expected pepper pixels, got {ones}");
+        // Should produce both salt (255) and pepper (0) pixels
+        assert!(zeros > 100);
+        assert!(ones > 100);
     }
 
     #[test]
@@ -307,11 +306,9 @@ mod tests {
         apply_gaussian_blur(&mut img, 5.0);
 
         // After blur, the edge should be gradual
+        // After blur, the edge should be gradual (not a sharp 0/255 boundary)
         let at_edge = img.get(50, 5);
-        assert!(
-            at_edge > 10 && at_edge < 245,
-            "blur should smooth edge, got {at_edge}"
-        );
+        assert!(at_edge > 10 && at_edge < 245);
     }
 
     #[test]
@@ -337,12 +334,8 @@ mod tests {
         // After reducing contrast, range should be halved around mean
         let v0 = img.get(0, 0);
         let v1 = img.get(9, 0);
-        assert!(
-            (v1 as i16 - v0 as i16).abs() < 120,
-            "contrast should be reduced: {} vs {}",
-            v0,
-            v1
-        );
+        // After reducing contrast, range should be halved around mean
+        assert!((v1 as i16 - v0 as i16).abs() < 120);
     }
 
     #[test]
@@ -366,10 +359,8 @@ mod tests {
 
         let left = img.get(0, 5);
         let right = img.get(99, 5);
-        assert!(
-            left < right,
-            "gradient L→R: left={left} should be darker than right={right}"
-        );
+        // Left should be darker than right with L→R gradient
+        assert!(left < right);
     }
 
     #[test]
@@ -379,10 +370,8 @@ mod tests {
 
         let center = img.get(50, 50);
         let corner = img.get(0, 0);
-        assert!(
-            corner < center,
-            "vignette: corner={corner} should be darker than center={center}"
-        );
+        // Vignette should darken corners relative to center
+        assert!(corner < center);
     }
 
     #[test]
@@ -392,6 +381,31 @@ mod tests {
 
         assert_eq!(img.get(15, 15), 0); // inside rect
         assert_eq!(img.get(5, 5), 200); // outside rect
+    }
+
+    #[test]
+    fn apply_salt_pepper_via_apply() {
+        // Exercise the SaltPepper arm of apply_one through the public apply() fn
+        let mut img = uniform_image(50, 50, 128);
+        apply(
+            &mut img,
+            &[Distortion::SaltPepper {
+                density: 0.5,
+                seed: 7,
+            }],
+        );
+        let has_zero = (0..50)
+            .flat_map(|y| (0..50).map(move |x| (x, y)))
+            .any(|(x, y)| img.get(x, y) == 0);
+        assert!(has_zero);
+    }
+
+    #[test]
+    fn gaussian_blur_sigma_zero_is_noop() {
+        // sigma <= 0.0 should return immediately without modifying the image
+        let mut img = uniform_image(10, 10, 42);
+        apply_gaussian_blur(&mut img, 0.0);
+        assert_eq!(img.get(5, 5), 42);
     }
 
     #[test]
@@ -414,6 +428,7 @@ mod tests {
             .map(|(x, y)| img.get(x, y) as f64)
             .sum::<f64>()
             / 2500.0;
-        assert!((mean - 148.0).abs() < 10.0, "mean after chain: {mean}");
+        // After brightness shift of +20 and noise, mean should be roughly 148
+        assert!((mean - 148.0).abs() < 10.0);
     }
 }

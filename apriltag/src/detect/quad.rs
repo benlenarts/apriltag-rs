@@ -201,6 +201,7 @@ fn sort_by_angle(points: &mut [Pt]) {
         points.iter().map(|p| p.y).min(),
         points.iter().map(|p| p.y).max(),
     ) else {
+        // COVERAGE: empty points slice — callers always filter empty clusters
         return;
     };
     let (xmin, xmax, ymin, ymax) = (xmin as f64, xmax as f64, ymin as f64, ymax as f64);

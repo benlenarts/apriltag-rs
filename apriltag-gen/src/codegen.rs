@@ -340,11 +340,7 @@ mod tests {
             for &q in &queries {
                 let naive = codes.iter().any(|&c| hamming_distance(c, q) < threshold);
                 let result = set.has_any_closer_than(q, threshold);
-                assert_eq!(
-                    result, naive,
-                    "mismatch for query={:#x} threshold={}: got={} naive={}",
-                    q, threshold, result, naive
-                );
+                assert_eq!(result, naive);
             }
         }
     }
@@ -367,11 +363,7 @@ mod tests {
             for &q in &queries {
                 let naive = codes.iter().any(|&c| hamming_distance(c, q) < threshold);
                 let result = set.has_any_closer_than(q, threshold);
-                assert_eq!(
-                    result, naive,
-                    "mismatch for query={:#x} threshold={}: got={} naive={}",
-                    q, threshold, result, naive
-                );
+                assert_eq!(result, naive);
             }
         }
     }

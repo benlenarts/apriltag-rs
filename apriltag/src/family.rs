@@ -439,4 +439,35 @@ mod tests {
         assert_eq!(f.bit_locations[0].x, 1);
         assert_eq!(f.bit_locations[0].y, -2);
     }
+
+    #[test]
+    fn family_id_new_and_deref() {
+        // Exercise FamilyId::new() and Deref<Target=str>
+        let id = FamilyId::new("test-family");
+        assert_eq!(&*id, "test-family");
+        // Deref allows str methods
+        assert_eq!(id.len(), 11);
+    }
+
+    #[test]
+    fn family_id_as_ref_str() {
+        // Exercise AsRef<str> impl
+        let id = FamilyId::new("tag36h11");
+        let s: &str = id.as_ref();
+        assert_eq!(s, "tag36h11");
+    }
+
+    #[test]
+    fn family_id_serialize() {
+        // Exercise the Serialize impl on FamilyId
+        #[derive(serde::Serialize)]
+        struct Wrap {
+            name: FamilyId,
+        }
+        let w = Wrap {
+            name: FamilyId::new("my-tag"),
+        };
+        let s = toml::to_string(&w).unwrap();
+        assert!(s.contains("my-tag"));
+    }
 }

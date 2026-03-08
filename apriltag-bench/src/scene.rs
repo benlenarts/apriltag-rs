@@ -214,6 +214,7 @@ fn composite_tag(
             let py = iy as f64 + 0.5;
 
             let w = inv[6] * px + inv[7] * py + inv[8];
+            // COVERAGE: degenerate homography pixel — requires near-singular perspective
             if w.abs() < 1e-12 {
                 continue;
             }
@@ -236,6 +237,7 @@ fn composite_tag(
             match pixel {
                 Pixel::Black => img.set(ix, iy, 0),
                 Pixel::White => img.set(ix, iy, 255),
+                // COVERAGE: only fires with custom families that have transparent cells
                 Pixel::Transparent => {} // leave background
             }
         }
@@ -380,12 +382,7 @@ mod tests {
         let id = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let inv = invert_3x3(&id);
         for i in 0..9 {
-            assert!(
-                (inv[i] - id[i]).abs() < 1e-10,
-                "element {i}: {} != {}",
-                inv[i],
-                id[i]
-            );
+            assert!((inv[i] - id[i]).abs() < 1e-10);
         }
     }
 
@@ -398,8 +395,9 @@ mod tests {
         let py = 100.0;
         let tx = inv[0] * px + inv[1] * py + inv[2];
         let ty = inv[3] * px + inv[4] * py + inv[5];
-        assert!((tx - 1.0).abs() < 1e-10, "tx = {tx}");
-        assert!((ty - 0.0).abs() < 1e-10, "ty = {ty}");
+        // inv should map (150, 100) → tag-space (1, 0)
+        assert!((tx - 1.0).abs() < 1e-10);
+        assert!((ty - 0.0).abs() < 1e-10);
     }
 
     #[test]
@@ -451,11 +449,9 @@ mod tests {
             .build();
 
         // The center of the tag should be black or white (part of the tag), not 128
+        // The center of the tag should be black or white (part of the tag), not background
         let center_val = scene.image.get(100, 100);
-        assert!(
-            center_val == 0 || center_val == 255,
-            "center pixel should be tag pixel, got {center_val}"
-        );
+        assert!(center_val == 0 || center_val == 255);
 
         // A corner far from the tag should still be background
         assert_eq!(scene.image.get(0, 0), 128);
@@ -485,18 +481,10 @@ mod tests {
             .build();
 
         // White border pixel: should be at ~55, inside the white border region
-        assert_eq!(
-            scene.image.get(55, 55),
-            255,
-            "outer border pixel should be white"
-        );
-
-        // Black border pixel: just inside the border region, ~65
-        assert_eq!(
-            scene.image.get(65, 65),
-            0,
-            "inner border pixel should be black"
-        );
+        // Outer border pixel should be white
+        assert_eq!(scene.image.get(55, 55), 255);
+        // Inner border pixel should be black
+        assert_eq!(scene.image.get(65, 65), 0);
     }
 
     #[test]
@@ -534,5 +522,33 @@ mod tests {
         let c1 = scene.image.get(300, 100);
         assert!(c0 == 0 || c0 == 255);
         assert!(c1 == 0 || c1 == 255);
+    }
+
+    #[test]
+    fn gradient_background_height_1() {
+        // Edge case: height=1 uses the t=0.0 branch
+        let img = fill_background(
+            5,
+            1,
+            &Background::Gradient {
+                top: 100,
+                bottom: 200,
+            },
+        );
+        // With height=1, t=0.0 so all pixels equal top value
+        assert_eq!(img.get(0, 0), 100);
+    }
+
+    #[test]
+    fn perspective_homography_accessor() {
+        // Exercise the Transform::Perspective arm of transform_to_homography
+        let h = [50.0, 0.0, 100.0, 0.0, 50.0, 100.0, 0.0, 0.0, 1.0];
+        let t = Transform::Perspective { h };
+        let inv = inverse_homography(&t);
+        // inv of a scale+translate: (100,100) → (0,0)
+        let tx = inv[0] * 100.0 + inv[1] * 100.0 + inv[2];
+        let ty = inv[3] * 100.0 + inv[4] * 100.0 + inv[5];
+        assert!((tx).abs() < 1e-10);
+        assert!((ty).abs() < 1e-10);
     }
 }

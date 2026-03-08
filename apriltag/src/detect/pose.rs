@@ -365,6 +365,7 @@ pub fn estimate_tag_pose(det: &Detection, params: &PoseParams) -> (Pose, f64, Op
     match pose2 {
         Some(p2) if err2 < err1 => (p2, err2, Some(pose1), err1),
         Some(p2) => (pose1, err1, Some(p2), err2),
+        // COVERAGE: None requires a perfectly frontal tag (no second minimum)
         None => (pose1, err1, None, f64::MAX),
     }
 }
