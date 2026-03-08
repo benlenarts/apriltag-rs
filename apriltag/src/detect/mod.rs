@@ -20,7 +20,6 @@ pub mod pose;
 #[doc(hidden)]
 #[allow(clippy::needless_range_loop)]
 pub mod preprocess;
-#[allow(clippy::needless_range_loop)]
 pub mod quad;
 #[doc(hidden)]
 #[allow(clippy::needless_range_loop)]
