@@ -3,20 +3,27 @@ setup:
     cargo install cargo-llvm-cov wasm-pack cargo-asm
     rustup target add wasm32-unknown-unknown
 
+# Common cargo args: all crates, all CI-safe features (excludes apriltag-bench/reference which needs a C checkout)
+_ws := "--workspace --features parallel"
+
 # Run all tests
 test:
-    cargo test
+    cargo test {{ _ws }}
 
 # Run clippy lints
 lint:
-    cargo clippy -- -D warnings
+    cargo clippy {{ _ws }} -- -D warnings
 
 # Check formatting
 fmt-check:
     cargo fmt --all -- --check
 
+# Cargo check (fast compilation check)
+check:
+    cargo check {{ _ws }}
+
 # Full local CI suite
-ci: test lint fmt-check wasm-check verify-func
+ci: check test lint fmt-check wasm-check verify-func verify-coverage
 
 # Detection quality regression gate (exit 1 on failure)
 verify-func:
@@ -26,17 +33,20 @@ verify-func:
 verify-coverage:
     ./scripts/check-coverage-comments.sh "apriltag/src/"
 
-# Coverage summary (excludes CLI crate)
+# Crates excluded from coverage (CLIs, WASM bindings, bench harness entry points)
+_cov-exclude := "--ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\\.rs|report\\.rs))'"
+
+# Coverage summary
 coverage:
-    cargo llvm-cov --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|report\.rs))'
+    cargo llvm-cov {{ _cov-exclude }}
 
 # Coverage with per-line detail
 coverage-text:
-    cargo llvm-cov --text --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|report\.rs))'
+    cargo llvm-cov --text {{ _cov-exclude }}
 
 # Coverage as HTML report (opens in browser)
 coverage-html:
-    cargo llvm-cov --html --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|report\.rs))' && open target/llvm-cov/html/index.html
+    cargo llvm-cov --html {{ _cov-exclude }} && open target/llvm-cov/html/index.html
 
 # Run Criterion microbenchmarks
 bench *ARGS:
