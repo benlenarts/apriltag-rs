@@ -14,6 +14,8 @@ pub mod homography;
 #[allow(clippy::needless_range_loop)]
 pub mod image;
 #[doc(hidden)]
+pub(crate) mod linear_solve;
+#[doc(hidden)]
 pub mod mat3;
 pub use image::{GrayImage, ImageRef};
 pub mod pose;
