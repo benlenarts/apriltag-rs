@@ -23,7 +23,7 @@ check:
     cargo check {{ _ws }}
 
 # Full local CI suite
-ci: check test lint fmt-check wasm-check verify-func
+ci: check test lint fmt-check wasm-check verify-func verify-coverage
 
 # Detection quality regression gate (exit 1 on failure)
 verify-func:
