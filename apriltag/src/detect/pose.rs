@@ -183,7 +183,7 @@ fn homography_to_pose(h: &Homography, params: &PoseParams) -> Pose {
     let cy = params.cy;
 
     // K^{-1} * H columns
-    let hd = &h.data;
+    let hd = &h.data.0;
 
     let mut c0 = Vec3::new(
         (hd[0][0] - cx * hd[2][0]) / fx,

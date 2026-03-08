@@ -1,7 +1,9 @@
+use super::mat3::Mat3;
+
 /// A 3x3 homography matrix.
 #[derive(Debug, Clone, Copy)]
 pub struct Homography {
-    pub data: [[f64; 3]; 3],
+    pub data: Mat3,
 }
 
 impl Homography {
@@ -80,13 +82,13 @@ impl Homography {
         }
 
         Some(Homography {
-            data: [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], h[8]]],
+            data: Mat3([[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], h[8]]]),
         })
     }
 
     /// Project a point from tag-space to pixel-space.
     pub fn project(&self, x: f64, y: f64) -> (f64, f64) {
-        let h = &self.data;
+        let h = &self.data.0;
         let xx = h[0][0] * x + h[0][1] * y + h[0][2];
         let yy = h[1][0] * x + h[1][1] * y + h[1][2];
         let zz = h[2][0] * x + h[2][1] * y + h[2][2];
@@ -95,7 +97,7 @@ impl Homography {
 
     /// Compute the inverse homography.
     pub fn inverse(&self) -> Option<Self> {
-        super::mat3::inv(&self.data).map(|data| Homography { data })
+        self.data.inv().map(|data| Homography { data })
     }
 }
 
@@ -106,7 +108,6 @@ mod tests {
 
     #[test]
     fn identity_homography_unit_square() {
-        // Quad corners map tag (-1,-1)..(1,1) to pixel (-1,-1)..(1,1) → identity
         let corners = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
         let h = Homography::from_quad_corners(&corners).unwrap();
         let (px, py) = h.project(0.0, 0.0);
@@ -120,7 +121,6 @@ mod tests {
 
     #[test]
     fn scaling_homography() {
-        // Map tag [-1,1] to pixel [0, 100]
         let corners = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]];
         let h = Homography::from_quad_corners(&corners).unwrap();
         let (px, py) = h.project(0.0, 0.0);
@@ -140,7 +140,6 @@ mod tests {
         let tag_pts = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
         for i in 0..4 {
             let (px, py) = h.project(tag_pts[i][0], tag_pts[i][1]);
-            // projected tag corner should match pixel corner
             assert!((px - corners[i][0]).abs() < 1e-4 && (py - corners[i][1]).abs() < 1e-4);
         }
     }
@@ -151,7 +150,6 @@ mod tests {
         let h = Homography::from_quad_corners(&corners).unwrap();
         let hinv = h.inverse().unwrap();
 
-        // Project a point forward then backward
         let (px, py) = h.project(0.5, -0.3);
         let (tx, ty) = hinv.project(px, py);
         assert!((tx - 0.5).abs() < 1e-6, "tx={tx}");
@@ -160,16 +158,14 @@ mod tests {
 
     #[test]
     fn degenerate_returns_none() {
-        // All corners at the same point → degenerate
         let corners = [[5.0, 5.0], [5.0, 5.0], [5.0, 5.0], [5.0, 5.0]];
         assert!(Homography::from_quad_corners(&corners).is_none());
     }
 
     #[test]
     fn inverse_singular_matrix() {
-        // Construct a Homography with det=0 matrix → inverse returns None
         let h = Homography {
-            data: [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            data: Mat3([[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]),
         };
         assert!(h.inverse().is_none());
     }
