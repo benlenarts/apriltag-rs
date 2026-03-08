@@ -53,7 +53,7 @@ jobs:
       - run: just fmt-check
 
   coverage-comments:
-    name: Coverage comments
+    name: Coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
