@@ -19,22 +19,11 @@ jobs:
           targets: wasm32-unknown-unknown
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Get reference detection commit hash
-        id: ref-hash
-        run: echo "sha=$(git ls-remote https://github.com/AprilRobotics/apriltag.git HEAD | cut -f1)" >> "$GITHUB_OUTPUT"
-      - name: Cache reference detection
-        id: cache-ref
-        uses: actions/cache@v4
-        with:
-          path: docs/reference-detection
-          key: reference-detection-${{ steps.ref-hash.outputs.sha }}
-      - name: Fetch reference detection
-        if: steps.cache-ref.outputs.cache-hit != 'true'
-        run: git clone --depth 1 https://github.com/AprilRobotics/apriltag.git docs/reference-detection
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-features -- -D warnings
-      - run: cargo test --workspace --all-features
-      - run: cargo build --target wasm32-unknown-unknown -p apriltag -p apriltag-gen
+      - uses: extractions/setup-just@v2
+      - run: just fmt-check
+      - run: just lint
+      - run: just test
+      - run: just wasm-check
 
   release:
     name: GitHub Release
