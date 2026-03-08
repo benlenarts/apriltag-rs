@@ -561,7 +561,6 @@ fn cmd_benchmark_inner(
         let ref_config = ReferenceConfig {
             quad_decimate: s.quad_decimate.unwrap_or(2.0),
             nthreads: threads as i32,
-            ..Default::default()
         };
         let ref_detector = if families.len() == 1 {
             PersistentReferenceDetector::new(families[0], &ref_config)
