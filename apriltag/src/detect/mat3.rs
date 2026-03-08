@@ -343,6 +343,13 @@ mod tests {
     }
 
     #[test]
+    fn vec3_index_mut() {
+        let mut v = Vec3::new(1.0, 2.0, 3.0);
+        v[1] = 10.0;
+        assert!((v[1] - 10.0).abs() < 1e-10);
+    }
+
+    #[test]
     fn vec3_mul_div() {
         let v = Vec3::new(2.0, 4.0, 6.0);
         let scaled = v * 3.0;
