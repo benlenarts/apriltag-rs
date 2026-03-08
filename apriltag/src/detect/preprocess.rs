@@ -33,19 +33,25 @@ pub fn decimate(img: &impl GrayImage, f: u32, buf: Vec<u8>) -> ImageU8 {
 /// Overflow safety: the blur accumulates `255 * 32768 * ksz` in a `u32`.
 /// This fits for `ksz <= 514` (sigma <= 128). Practical sigma values (0-2)
 /// yield `ksz` in the range 3-9.
-fn gaussian_kernel(sigma: f32, ksz: usize) -> Vec<u16> {
+/// Maximum kernel size supported. Covers sigma up to ~4.25 (ksz = 4*4.25 = 17).
+const MAX_KSZ: usize = 17;
+
+fn gaussian_kernel(sigma: f32, ksz: usize) -> ([u16; MAX_KSZ], usize) {
+    debug_assert!(ksz <= MAX_KSZ);
     let half = ksz as i32 / 2;
-    let mut raw = Vec::with_capacity(ksz);
+    let mut raw = [0.0f32; MAX_KSZ];
     let mut sum = 0.0f32;
     for i in 0..ksz as i32 {
         let x = (i - half) as f32;
         let v = (-x * x / (2.0 * sigma * sigma)).exp();
-        raw.push(v);
+        raw[i as usize] = v;
         sum += v;
     }
-    raw.iter()
-        .map(|&v| ((v / sum) * 32768.0 + 0.5) as u16)
-        .collect()
+    let mut kernel = [0u16; MAX_KSZ];
+    for i in 0..ksz {
+        kernel[i] = ((raw[i] / sum) * 32768.0 + 0.5) as u16;
+    }
+    (kernel, ksz)
 }
 
 /// Apply separable Gaussian blur with the given sigma and kernel size.
@@ -65,7 +71,8 @@ fn gaussian_blur(
     tmp_buf: Vec<u8>,
     out_buf: Vec<u8>,
 ) -> (ImageU8, Vec<u8>) {
-    let kernel = gaussian_kernel(sigma, ksz);
+    let (kernel_arr, kernel_len) = gaussian_kernel(sigma, ksz);
+    let kernel = &kernel_arr[..kernel_len];
     let half = ksz as i32 / 2;
     let w = img.width as i32;
     let h = img.height as i32;
@@ -318,7 +325,8 @@ mod tests {
 
     #[test]
     fn gaussian_kernel_sums_to_one() {
-        let k = gaussian_kernel(1.0, 5);
+        let (arr, len) = gaussian_kernel(1.0, 5);
+        let k = &arr[..len];
         assert_eq!(k.len(), 5);
         let sum: u32 = k.iter().map(|&v| v as u32).sum();
         // Fixed-point sum should be close to 1 << 15 = 32768 (within ±1 rounding)
@@ -328,7 +336,8 @@ mod tests {
 
     #[test]
     fn gaussian_kernel_is_symmetric() {
-        let k = gaussian_kernel(1.0, 5);
+        let (arr, len) = gaussian_kernel(1.0, 5);
+        let k = &arr[..len];
         assert_eq!(k[0], k[4]);
         assert_eq!(k[1], k[3]);
     }
