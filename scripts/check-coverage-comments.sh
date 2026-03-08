@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Check that every uncovered line has a nearby COVERAGE: comment explaining
-# why it is acceptable. Intended for use in CI / `just check-coverage`.
+# why it is acceptable. Intended for use in CI / `just verify-coverage`.
 #
-# Usage: ./check-coverage-comments.sh [scope]
+# Usage: cargo llvm-cov --show-missing-lines | ./check-coverage-comments.sh [scope]
 #   scope — optional path substring to filter files (e.g. "apriltag/src/")
 #
+# Reads cargo llvm-cov --show-missing-lines output from stdin.
 # Exit 0 if all uncovered lines are documented, 1 otherwise.
 
 set -euo pipefail
@@ -14,15 +15,11 @@ set -euo pipefail
 LOOKBACK=10
 
 # Optional scope filter: only check files whose path contains this string.
-# Pass as first argument, e.g. ./check-coverage-comments.sh "apriltag/src/"
 SCOPE="${1:-}"
 
-# Run coverage and extract "Uncovered Lines:" section.
+# Read coverage output from stdin, extract lines starting with "/" (file entries).
 # Format: /path/to/file.rs: 10, 20, 30
-raw=$(cargo llvm-cov \
-  --ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\.rs|bin/|report\.rs))' \
-  --show-missing-lines 2>&1 \
-  | grep "^/" || true)
+raw=$(grep "^/" || true)
 
 if [ -n "$SCOPE" ]; then
   uncovered=$(echo "$raw" | grep "$SCOPE" || true)
