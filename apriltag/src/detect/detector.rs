@@ -5,7 +5,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use super::cluster::gradient_clusters;
 use super::connected::connected_components;
-use super::decode::{decode_quad, QuickDecode};
+use super::decode::{decode_quad, DecodeBufs, QuickDecode};
 use super::dedup::deduplicate;
 use super::homography::Homography;
 use super::image::GrayImage;
@@ -116,6 +116,7 @@ pub struct DetectorBuffers {
     uf: UnionFind,
     refine_vals: Vec<f64>,
     cluster_map: super::cluster::ClusterMap,
+    decode_bufs: DecodeBufs,
 }
 
 impl DetectorBuffers {
@@ -131,6 +132,7 @@ impl DetectorBuffers {
             refine_vals: Vec::new(),
             uf: UnionFind::empty(),
             cluster_map: super::cluster::ClusterMap::new(),
+            decode_bufs: DecodeBufs::new(),
         }
     }
 }
@@ -262,49 +264,92 @@ impl Detector {
         }
 
         // Stages 7-8: Homography + Decode
-        let decode_one = |quad: &super::quad::Quad| -> Vec<Detection> {
-            // COVERAGE: None branch requires a degenerate quad (all corners collinear)
-            // surviving all prior pipeline stages — not reachable in practice.
-            let h = match Homography::from_quad_corners(&quad.corners) {
-                Some(h) => h,
-                None => return Vec::new(),
-            };
-
-            let mut dets = Vec::new();
-            for (family, qd) in &self.families {
-                if quad.reversed_border != family.layout.reversed_border {
-                    continue;
-                }
-
-                if let Some(result) = decode_quad(
-                    img,
-                    family,
-                    qd,
-                    &h,
-                    quad.reversed_border,
-                    self.config.decode_sharpening,
-                ) {
-                    let (center, corners) = compute_detection_geometry(&h, result.rotation, family);
-
-                    dets.push(Detection {
-                        family_id: result.family_id,
-                        id: result.id,
-                        hamming: result.hamming,
-                        decision_margin: result.decision_margin,
-                        corners,
-                        center,
-                    });
-                }
-            }
-            dets
-        };
-
         // COVERAGE: parallel feature block — only compiled with --features parallel
         #[cfg(feature = "parallel")]
-        let mut detections: Vec<Detection> = quads.par_iter().flat_map(decode_one).collect();
+        let mut detections: Vec<Detection> = {
+            let decode_one = |quad: &super::quad::Quad| -> Vec<Detection> {
+                // COVERAGE: None branch requires a degenerate quad (all corners collinear)
+                // surviving all prior pipeline stages — not reachable in practice.
+                let h = match Homography::from_quad_corners(&quad.corners) {
+                    Some(h) => h,
+                    None => return Vec::new(),
+                };
+
+                let mut bufs = DecodeBufs::new();
+                let mut dets = Vec::new();
+                for (family, qd) in &self.families {
+                    if quad.reversed_border != family.layout.reversed_border {
+                        continue;
+                    }
+
+                    if let Some(result) = decode_quad(
+                        img,
+                        family,
+                        qd,
+                        &h,
+                        quad.reversed_border,
+                        self.config.decode_sharpening,
+                        &mut bufs,
+                    ) {
+                        let (center, corners) =
+                            compute_detection_geometry(&h, result.rotation, family);
+
+                        dets.push(Detection {
+                            family_id: result.family_id,
+                            id: result.id,
+                            hamming: result.hamming,
+                            decision_margin: result.decision_margin,
+                            corners,
+                            center,
+                        });
+                    }
+                }
+                dets
+            };
+            quads.par_iter().flat_map(decode_one).collect()
+        };
 
         #[cfg(not(feature = "parallel"))]
-        let mut detections: Vec<Detection> = quads.iter().flat_map(decode_one).collect();
+        let mut detections: Vec<Detection> = {
+            let mut detections = Vec::new();
+            let decode_bufs = &mut buffers.decode_bufs;
+            for quad in &quads {
+                // COVERAGE: None branch requires a degenerate quad (all corners collinear)
+                // surviving all prior pipeline stages — not reachable in practice.
+                let Some(h) = Homography::from_quad_corners(&quad.corners) else {
+                    continue;
+                };
+
+                for (family, qd) in &self.families {
+                    if quad.reversed_border != family.layout.reversed_border {
+                        continue;
+                    }
+
+                    if let Some(result) = decode_quad(
+                        img,
+                        family,
+                        qd,
+                        &h,
+                        quad.reversed_border,
+                        self.config.decode_sharpening,
+                        decode_bufs,
+                    ) {
+                        let (center, corners) =
+                            compute_detection_geometry(&h, result.rotation, family);
+
+                        detections.push(Detection {
+                            family_id: result.family_id,
+                            id: result.id,
+                            hamming: result.hamming,
+                            decision_margin: result.decision_margin,
+                            corners,
+                            center,
+                        });
+                    }
+                }
+            }
+            detections
+        };
 
         // Stage 9: Deduplication
         deduplicate(&mut detections);
