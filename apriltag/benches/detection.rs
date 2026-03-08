@@ -4,7 +4,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use apriltag::detect::cluster::gradient_clusters;
 use apriltag::detect::connected::connected_components;
-use apriltag::detect::decode::{decode_quad, QuickDecode};
+use apriltag::detect::decode::{decode_quad, DecodeBufs, QuickDecode};
 use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
 use apriltag::detect::homography::Homography;
 use apriltag::detect::image::ImageU8;
@@ -326,13 +326,32 @@ fn bench_decode(c: &mut Criterion) {
             }
             let h = Homography::from_quad_corners(&corners)?;
             // Verify this quad actually decodes
-            decode_quad(&img, &fam, &qd, &h, q.reversed_border, 0.25)?;
+            decode_quad(
+                &img,
+                &fam,
+                &qd,
+                &h,
+                q.reversed_border,
+                0.25,
+                &mut DecodeBufs::new(),
+            )?;
             Some((h, q.reversed_border))
         })
         .expect("bench image should produce at least one decodable quad");
 
     c.bench_function("decode", |b| {
-        b.iter(|| decode_quad(black_box(&img), &fam, &qd, black_box(&h), reversed, 0.25))
+        let mut bufs = DecodeBufs::new();
+        b.iter(|| {
+            decode_quad(
+                black_box(&img),
+                &fam,
+                &qd,
+                black_box(&h),
+                reversed,
+                0.25,
+                &mut bufs,
+            )
+        })
     });
 }
 
