@@ -2,126 +2,79 @@
 
 WASM-compatible, pure Rust implementation of the AprilTag detection pipeline, including tag family and bitmap generation.
 
-## Project Tenets
+## Tenets
 
-1. **100% test coverage** — measured with `cargo-llvm-cov`; uncovered lines get tests before moving on
-2. **Red-green-refactor** — strict TDD discipline; write a failing test, make it pass, then clean up
-3. **Many atomic commits on short-lived branches** — small, focused changes; merge early and often; Claude does this autonomously
-4. **Detection robustness** — match or exceed the reference C implementation's detection quality
-5. **Performance parity** — benchmark against the reference implementation; no unnecessary allocations
-6. **Modular design** — clean separation between tag families, image processing, quad detection, decoding, and pose estimation
-7. **WASM compatibility** — no_std-friendly where possible; no platform-specific dependencies in core logic
+1. **100% test coverage** — `cargo-llvm-cov`; uncovered lines get tests before moving on
+2. **Red-green-refactor** — strict TDD; failing test → make it pass → clean up
+3. **Atomic commits** — small, focused changes; Claude commits autonomously after each passing test
+4. **Detection robustness** — match or exceed the reference C implementation
+5. **Performance parity** — benchmark against reference; no unnecessary allocations
+6. **Modular design** — clean separation between pipeline stages
+7. **WASM compatibility** — no_std-friendly; no platform-specific deps in core
 
 ## Architecture
 
-The detection pipeline follows the reference AprilTag implementation:
+**Pipeline:** grayscale/decimation/blur → gradients → union-find clustering → quad detection → homography & decoding → pose estimation
 
-1. **Image preprocessing** — grayscale conversion, decimation, gaussian blur
-2. **Gradient computation** — compute gradient magnitude and direction
-3. **Segmentation / clustering** — union-find on gradient edges
-4. **Quad detection** — fit quadrilaterals from clustered edge segments
-5. **Homography & decoding** — sample tag bits via homography, match against tag families
-6. **Pose estimation** — compute camera-relative pose from known tag geometry
+### Crates
 
-### Crate Structure
+- **`apriltag/`** — core types, families (`.toml`+`.bin` in `families/`), rendering, detection
+- **`apriltag-gen/`** — code generation (`codegen.rs`, `upgrade.rs`). Re-exports `apriltag::*`
+- **`apriltag-gen-cli/`** — CLI for tag generation
+- **`apriltag-detect-cli/`** — CLI for detection (JSON output, optional pose estimation)
+- **`apriltag-bench/`** — test harness + benchmarks. WASM-compatible library; CLI for batch tests + C reference comparison (`reference` feature). Web UI in `ui/`
+- **`apriltag-bench-wasm/`**, **`apriltag-wasm/`** — WASM bindings for bench and detection
 
-- **`apriltag/`** — core types, families, and rendering (42 tests). Contains `TagFamily`, `Layout`, `BitLocation`, `hamming`, `render`, and built-in family data (`.toml` + `.bin` in `apriltag/families/`).
-- **`apriltag-gen/`** — generation-only code (5 tests). Re-exports `apriltag::*` plus `codegen` and `upgrade` modules.
-- **`apriltag-gen-cli/`** — CLI for tag generation and rendering. Depends on `apriltag-gen`.
-- **`apriltag-detect-cli/`** — CLI for detecting AprilTags in PNG/JPEG images. Wraps the core `apriltag` detector with options for tag family selection, image preprocessing (decimation, blur, sharpening), and optional 6-DOF pose estimation. Outputs JSON to stdout.
-- **`apriltag-bench/`** — detection test harness and benchmark suite. Library core (scene generation, transforms, distortions, metrics) is WASM-compatible. CLI binary provides batch testing, regression checks, and C reference comparison (behind `reference` feature). Web UI in `ui/` for interactive exploration.
-- **`apriltag-bench-wasm/`** — thin WASM wrapper for `apriltag-bench` scene generation, used by the web UI.
-- **`apriltag-wasm/`** — WASM bindings for AprilTag detection. Used by the web UI alongside `apriltag-bench-wasm`.
+**Tag-space convention:** transforms map tag-space [-1, 1] to the border region (`[border_start, grid_size - border_start]`). White border extends beyond [-1, 1]. Ground-truth corners at ±1 align with detected quad corners.
 
-### Detection Test Harness (`apriltag-bench/`)
+**Tag families:** Classic (tag16h5, tag25h9, tag36h11) use `upgrade.rs` from Java source — cannot be regenerated. Era 2 (Standard, Circle, Custom) use `codegen.rs` with LCG seed `nbits*10000 + minhamming*100 + min_complexity`.
 
-- **Web UI** (`apriltag-bench/ui/`) — interactive WASM exploration with sliders for distortion, perspective, noise.
-- **CLI** — batch test runs, regression checks, C reference comparison via FFI. Machine-readable output (JSON, HTML).
+## Workflow
 
-Scene generation is shared between CLI and web UI (identical Rust, WASM-compatible). C reference comparison is native-only (behind `reference` feature flag).
+- **TDD**: Every feature starts with a failing test. No production code without a test.
+- **Commits**: **You MUST commit early and often — do not wait for the user to ask.** After each small unit of progress, run `cargo test` and commit if passing. Multiple commits per request. Never batch unrelated changes.
+- **Changelog**: Update `CHANGELOG.md` `[Unreleased]` just before creating/updating a PR (Added/Changed/Fixed/etc.).
 
-**Tag-space convention:** transforms map tag-space [-1, 1] to the border region (`[border_start, grid_size - border_start]` in grid coordinates), matching the detector's homography. The white border extends beyond [-1, 1]. Ground-truth corners at tag-space ±1 align with detected quad corners.
+## Reference Materials
 
-### Tag Families
+- `docs/detection-spec.md`, `docs/generation-spec.md` — pipeline and generation specs
+- `docs/papers/` — academic papers; `docs/reference-detection/` — C ref; `docs/reference-generation/` — Java ref
+- Run `just fetch-references` to download (required for `--features reference`)
 
-**Two eras of code generation** — classic families (tag16h5, tag25h9, tag36h11) use `upgrade.rs` to convert old row-major codes from the Java source; they cannot be regenerated from scratch. Era 2 families (Standard, Circle, Custom) use `codegen.rs` with LCG seed `nbits*10000 + minhamming*100 + min_complexity`. Note: the Java source on GitHub has `+7` but the reference families were generated with per-family `+min_complexity`.
+## Coverage
 
-## Development Workflow
-
-- **TDD**: Every feature starts with a failing test. No production code without a test driving it.
-- **Branches**: Work on short-lived feature/fix branches off `main`. PR and merge promptly.
-- **Commits**: **You MUST commit early and often — do not wait for the user to ask.** After every small, meaningful unit of progress (a passing test, a new function, a refactor, a bug fix), immediately run `cargo test` and, if tests pass, create a commit. A single user request should typically produce multiple commits, not one large one. Err on the side of committing too often rather than too rarely. Never batch up unrelated changes into a single commit.
-- **Testing**: `cargo test` must pass before every commit. Use `cargo test -- --nocapture` for debug output.
-- **Changelog**: Update `CHANGELOG.md` under the `[Unreleased]` section just before creating or updating a PR — this ensures the changelog is always current when code is reviewed. Use the appropriate category: Added, Changed, Deprecated, Removed, Fixed, or Security.
-
-## Reference Materials (`docs/`)
-
-- `docs/detection-spec.md` — language-agnostic spec for the full detection pipeline
-- `docs/generation-spec.md` — language-agnostic spec for tag family generation
-- `docs/papers/` — academic papers (Olson 2011, Wang 2016, Krogius 2019, etc.)
-- `docs/reference-detection/` — reference C implementation (apriltag3) for detection
-- `docs/reference-generation/` — reference Java implementation for tag family generation
-
-Run `just fetch-references` to download papers and clone reference repos. This is required before building with the `reference` feature flag (`cargo check -p apriltag-bench --features reference`).
-
-## Coverage Policy
-
-**Target: 100% test coverage.** TDD is the primary strategy — code written to pass a test is covered by definition. When a coverage gap appears, ask whether the uncovered code is reachable. If it isn't, delete it; unreachable code is a design problem, not a testing problem. If it is reachable, test it through the public API with a realistic scenario (bad input, boundary condition, corrupt data). Never write a test that exists only to hit a line — every test must assert meaningful behavior.
+**Target: 100%.** Unreachable code → delete it. Reachable gaps → test through public API with realistic scenarios. Every test asserts meaningful behavior.
 
 ```bash
-just coverage        # quick summary
-just coverage-text   # per-line detail (show uncovered lines)
-just coverage-html   # HTML report (opens in browser)
+just coverage        # summary
+just coverage-text   # per-line (show uncovered lines)
+just coverage-html   # HTML report
 ```
 
-After completing any feature or fix, run `just coverage-text` and inspect for uncovered lines. If coverage is below 100%, add targeted tests before moving on. Each new test is its own atomic commit.
+Run `just coverage-text` after every feature/fix. Each new test is its own commit.
 
-## Benchmarking Policy
+## Benchmarking
 
-**Every change must be benchmarked before merging.** Performance parity with the reference C implementation is a project tenet — regressions are bugs.
+**Benchmark before and after every change.** Run `just verify-func` — any regression must be fixed before committing. Regressions in detection quality, latency, or memory are bugs.
 
-### When to benchmark
-
-- **Before and after every change** — any measurable regression must be investigated and resolved before committing.
-- **Detection-affecting changes** — image processing, gradient computation, segmentation, quad detection, homography, or decoding must run the full suite.
-- **Refactors and "safe" changes** — even seemingly neutral refactors can affect performance. Benchmark them.
-
-Run `just verify-func` before and after your change. If any scenario regresses, fix it before committing. For large changes, generate a full HTML report (`just sim-ref compare --format html`) and review manually.
-
-### Regression criteria
-
-- **Detection quality** — detection rate, false positive rate, and decode accuracy must not decrease.
-- **Performance (time)** — no measurable latency regression without justification and approval.
-- **Performance (space)** — no unexpected memory growth. WASM targets are memory-constrained.
-- **CI gate** — `just verify-func` must pass before any PR is merged.
-
-### Assembly inspection
-
-When optimizing hot paths, inspect generated assembly — benchmarks tell you *whether* something is fast, assembly tells you *why*. Look for: auto-vectorization vs scalar fallback, unnecessary bounds checks, redundant loads/stores, missed inlining.
-
-**Workflow:** identify hot function via benchmarking → inspect assembly with `cargo asm` → optimize → re-inspect to verify effect → benchmark to confirm improvement.
+For hot-path optimization: benchmark → `cargo asm` → optimize → re-inspect → re-benchmark.
 
 ## Commands
-
-Run `just --list` for available recipes. Key commands:
 
 ```bash
 just test            # run all tests
 just coverage-text   # per-line coverage
 just lint            # clippy lints
-just wasm-check      # verify WASM compatibility
-just verify-func     # detection quality regression gate
+just wasm-check      # WASM compatibility
+just verify-func     # detection quality gate
 just bench           # Criterion microbenchmarks
-just ci              # full local CI suite (test + lint + fmt-check + wasm-check + verify-func)
+just ci              # full CI (test + lint + fmt + wasm + verify-func)
 ```
 
 ## Code Style
 
-- **No `unsafe` code** — `unsafe` is completely disallowed in this project. No `unsafe` blocks, `unsafe fn`, `unsafe impl`, or `unsafe trait`. Find safe alternatives instead.
-- Idiomatic Rust with a preference for pattern matching and 'functional' iteration
-- Follow standard `rustfmt` formatting
-- Use `clippy` with default lints: `just lint`
-- Prefer `&[T]` over `&Vec<T>`, iterators over index loops where natural
-- Use `thiserror` or similar for error types; avoid `.unwrap()` in library code
-- Document public APIs with doc comments
-- Keep modules focused — one concept per module
+- **No `unsafe` code** — completely disallowed. No `unsafe` blocks, fn, impl, or trait.
+- Idiomatic Rust: pattern matching, functional iteration, `&[T]` over `&Vec<T>`
+- `rustfmt` + `clippy` (`just lint`)
+- `thiserror` for errors; no `.unwrap()` in library code
+- Document public APIs; one concept per module
