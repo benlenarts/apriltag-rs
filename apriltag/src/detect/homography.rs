@@ -95,29 +95,7 @@ impl Homography {
 
     /// Compute the inverse homography.
     pub fn inverse(&self) -> Option<Self> {
-        let m = &self.data;
-        let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-            - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-            + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-
-        if det.abs() < 1e-10 {
-            return None;
-        }
-
-        let inv_det = 1.0 / det;
-        let mut inv = [[0.0f64; 3]; 3];
-
-        inv[0][0] = (m[1][1] * m[2][2] - m[1][2] * m[2][1]) * inv_det;
-        inv[0][1] = (m[0][2] * m[2][1] - m[0][1] * m[2][2]) * inv_det;
-        inv[0][2] = (m[0][1] * m[1][2] - m[0][2] * m[1][1]) * inv_det;
-        inv[1][0] = (m[1][2] * m[2][0] - m[1][0] * m[2][2]) * inv_det;
-        inv[1][1] = (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * inv_det;
-        inv[1][2] = (m[0][2] * m[1][0] - m[0][0] * m[1][2]) * inv_det;
-        inv[2][0] = (m[1][0] * m[2][1] - m[1][1] * m[2][0]) * inv_det;
-        inv[2][1] = (m[0][1] * m[2][0] - m[0][0] * m[2][1]) * inv_det;
-        inv[2][2] = (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * inv_det;
-
-        Some(Homography { data: inv })
+        super::mat3::inv(&self.data).map(|data| Homography { data })
     }
 }
 

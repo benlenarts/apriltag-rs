@@ -22,6 +22,8 @@ pub struct PoseParams {
 
 // ── 3x3 matrix helpers ──
 
+use super::mat3;
+
 fn mat_mul(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
     let mut c = [[0.0; 3]; 3];
     for i in 0..3 {
@@ -46,37 +48,6 @@ fn mat_transpose(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
         [m[0][1], m[1][1], m[2][1]],
         [m[0][2], m[1][2], m[2][2]],
     ]
-}
-
-fn mat_det(m: &[[f64; 3]; 3]) -> f64 {
-    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
-}
-
-fn mat_inv(m: &[[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
-    let det = mat_det(m);
-    if det.abs() < 1e-10 {
-        return None;
-    }
-    let inv_det = 1.0 / det;
-    Some([
-        [
-            (m[1][1] * m[2][2] - m[1][2] * m[2][1]) * inv_det,
-            (m[0][2] * m[2][1] - m[0][1] * m[2][2]) * inv_det,
-            (m[0][1] * m[1][2] - m[0][2] * m[1][1]) * inv_det,
-        ],
-        [
-            (m[1][2] * m[2][0] - m[1][0] * m[2][2]) * inv_det,
-            (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * inv_det,
-            (m[0][2] * m[1][0] - m[0][0] * m[1][2]) * inv_det,
-        ],
-        [
-            (m[1][0] * m[2][1] - m[1][1] * m[2][0]) * inv_det,
-            (m[0][1] * m[2][0] - m[0][0] * m[2][1]) * inv_det,
-            (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * inv_det,
-        ],
-    ])
 }
 
 fn vec_norm(v: &[f64; 3]) -> f64 {
@@ -192,7 +163,7 @@ fn svd_3x3(m: &[[f64; 3]; 3]) -> ([[f64; 3]; 3], [f64; 3], [[f64; 3]; 3]) {
     }
 
     // Ensure det(V) = +1 (we want V to be a proper rotation)
-    if mat_det(&v_sorted) < 0.0 {
+    if mat3::det(&v_sorted) < 0.0 {
         for i in 0..3 {
             v_sorted[i][2] = -v_sorted[i][2];
         }
@@ -246,7 +217,7 @@ fn project_to_so3(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
     let (u, _s, v) = svd_3x3(m);
     let vt = mat_transpose(&v);
     let mut r = mat_mul(&u, &vt);
-    if mat_det(&r) < 0.0 {
+    if mat3::det(&r) < 0.0 {
         // Negate third column of U and recompute
         let mut u_fixed = u;
         for i in 0..3 {
@@ -431,7 +402,7 @@ fn orthogonal_iteration(
             i_minus_fmean[r][c] -= f_mean[r][c];
         }
     }
-    let m1_inv = mat_inv(&i_minus_fmean).unwrap_or(IDENTITY);
+    let m1_inv = mat3::inv(&i_minus_fmean).unwrap_or(IDENTITY);
 
     let mut r = *r_init;
     let mut t = *t_init;
@@ -566,8 +537,8 @@ mod tests {
     }
 
     #[test]
-    fn mat_inv_identity() {
-        let inv = mat_inv(&IDENTITY).unwrap();
+    fn mat3_inv_identity() {
+        let inv = mat3::inv(&IDENTITY).unwrap();
         for i in 0..3 {
             for j in 0..3 {
                 assert!((inv[i][j] - IDENTITY[i][j]).abs() < 1e-10);
@@ -576,9 +547,9 @@ mod tests {
     }
 
     #[test]
-    fn mat_inv_roundtrip() {
+    fn mat3_inv_roundtrip() {
         let m = [[2.0, 1.0, 0.0], [0.0, 3.0, 1.0], [1.0, 0.0, 2.0]];
-        let inv = mat_inv(&m).unwrap();
+        let inv = mat3::inv(&m).unwrap();
         let prod = mat_mul(&m, &inv);
         for i in 0..3 {
             for j in 0..3 {
@@ -678,7 +649,7 @@ mod tests {
                 assert!((rrt[i][j] - expected).abs() < 1e-10);
             }
         }
-        assert!((mat_det(&proj) - 1.0).abs() < 1e-10);
+        assert!((mat3::det(&proj) - 1.0).abs() < 1e-10);
     }
 
     #[test]
@@ -785,9 +756,9 @@ mod tests {
     }
 
     #[test]
-    fn mat_inv_singular_returns_none() {
+    fn mat3_inv_singular_returns_none() {
         let m = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]; // det = 0
-        assert!(mat_inv(&m).is_none());
+        assert!(mat3::inv(&m).is_none());
     }
 
     #[test]
@@ -832,7 +803,7 @@ mod tests {
             }
         }
         // det(R) should be 1
-        assert!((mat_det(&r) - 1.0).abs() < 1e-10);
+        assert!((mat3::det(&r) - 1.0).abs() < 1e-10);
     }
 
     #[test]
