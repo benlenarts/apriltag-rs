@@ -258,6 +258,16 @@ impl ImageU8 {
         }
     }
 
+    /// Reconfigure for new dimensions, reusing the allocation. Clears pixel data.
+    pub fn reshape(&mut self, width: u32, height: u32) {
+        let len = (width * height) as usize;
+        self.buf.clear();
+        self.buf.resize(len, 0);
+        self.width = width;
+        self.height = height;
+        self.stride = width;
+    }
+
     /// Consume the image and return the backing buffer for reuse.
     pub fn into_buf(self) -> Vec<u8> {
         self.buf
@@ -457,6 +467,27 @@ mod tests {
         let buf = vec![42u8; 200];
         let img = ImageU8::new_reuse(10, 8, buf);
         assert!(img.buf.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn reshape_reconfigures_dimensions() {
+        let mut img = ImageU8::new(10, 8);
+        img.set(0, 0, 42);
+        img.reshape(5, 5);
+        assert_eq!(img.width, 5);
+        assert_eq!(img.height, 5);
+        assert_eq!(img.stride, 5);
+        assert_eq!(img.buf.len(), 25);
+        assert!(img.buf.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn reshape_reuses_capacity() {
+        let mut img = ImageU8::new(0, 0);
+        img.buf = Vec::with_capacity(1024);
+        img.reshape(10, 8);
+        assert_eq!(img.buf.len(), 80);
+        assert!(img.buf.capacity() >= 1024);
     }
 
     #[test]

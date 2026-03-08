@@ -76,22 +76,22 @@ impl ThresholdBuffers {
 /// Uses tile-based adaptive thresholding with min/max dilation to handle
 /// spatially varying illumination.
 ///
-/// Pass a pre-allocated `buf` to reuse memory across calls. Use `Vec::new()`
-/// for one-shot usage.
+/// Writes the result into `out`, reusing its allocation.
 pub fn threshold(
     img: &ImageU8,
     min_white_black_diff: i32,
     deglitch: bool,
-    buf: Vec<u8>,
+    out: &mut ImageU8,
     tile_bufs: &mut ThresholdBuffers,
-) -> ImageU8 {
+) {
     let w = img.width;
     let h = img.height;
     let tw = w / TILESZ;
     let th = h / TILESZ;
 
     if tw == 0 || th == 0 {
-        return ImageU8::new(w, h);
+        out.reshape(w, h);
+        return;
     }
 
     // Compute per-tile min/max with 1-element padding border.
@@ -152,7 +152,7 @@ pub fn threshold(
 
     // Binarize each pixel, processing tile-by-tile to load lo/hi once per tile.
     // Remainder pixels (beyond tile-aligned region) use the last tile's values.
-    let mut out = ImageU8::new_reuse(w, h, buf);
+    out.reshape(w, h);
 
     for ty in 0..th {
         let y_start = (ty * TILESZ) as usize;
@@ -236,10 +236,8 @@ pub fn threshold(
     }
 
     if deglitch {
-        deglitch_image(&mut out, &mut tile_bufs.morph_a, &mut tile_bufs.morph_b);
+        deglitch_image(out, &mut tile_bufs.morph_a, &mut tile_bufs.morph_b);
     }
-
-    out
 }
 
 /// Morphological close (dilate then erode) with 3x3 structuring element.
@@ -294,8 +292,9 @@ mod tests {
                 img.set(x, y, if x < 4 { 0 } else { 255 });
             }
         }
-        let buf = Vec::with_capacity(1024);
-        let out = threshold(&img, 5, false, buf, &mut ThresholdBuffers::new());
+        let mut out = ImageU8::new(0, 0);
+        out.buf = Vec::with_capacity(1024);
+        threshold(&img, 5, false, &mut out, &mut ThresholdBuffers::new());
         assert!(out.buf.capacity() >= 1024);
     }
 
@@ -308,7 +307,8 @@ mod tests {
                 img.set(x, y, 200);
             }
         }
-        let out = threshold(&img, 5, false, Vec::new(), &mut ThresholdBuffers::new());
+        let mut out = ImageU8::new(0, 0);
+        threshold(&img, 5, false, &mut out, &mut ThresholdBuffers::new());
         for y in 0..8 {
             for x in 0..8 {
                 assert_eq!(out.get(x, y), 127, "({x}, {y})");
@@ -328,7 +328,8 @@ mod tests {
                 img.set(x, y, 255);
             }
         }
-        let out = threshold(&img, 5, false, Vec::new(), &mut ThresholdBuffers::new());
+        let mut out = ImageU8::new(0, 0);
+        threshold(&img, 5, false, &mut out, &mut ThresholdBuffers::new());
         // Tile (0,0) spans x=[0,3], all 0. Tile (1,0) spans x=[4,7], all 255.
         // After dilation, tile (0,0) has min=0, max=255 (from neighbor tile (1,0))
         // thresh = 0 + 255/2 = 127
@@ -340,7 +341,8 @@ mod tests {
     #[test]
     fn threshold_small_image_no_panic() {
         let img = ImageU8::new(2, 2);
-        let out = threshold(&img, 5, false, Vec::new(), &mut ThresholdBuffers::new());
+        let mut out = ImageU8::new(0, 0);
+        threshold(&img, 5, false, &mut out, &mut ThresholdBuffers::new());
         assert_eq!(out.width, 2);
         assert_eq!(out.height, 2);
     }
@@ -356,7 +358,8 @@ mod tests {
         }
         img.set(4, 4, 255); // single bright pixel
                             // With deglitch, the single pixel noise should be removed by close operation
-        let out = threshold(&img, 5, true, Vec::new(), &mut ThresholdBuffers::new());
+        let mut out = ImageU8::new(0, 0);
+        threshold(&img, 5, true, &mut out, &mut ThresholdBuffers::new());
         // The close operation (dilate then erode) should remove or smooth isolated changes
         assert_eq!(out.width, 8);
     }
@@ -370,7 +373,8 @@ mod tests {
                 img.set(x, y, if x < 5 { 0 } else { 255 });
             }
         }
-        let out = threshold(&img, 5, false, Vec::new(), &mut ThresholdBuffers::new());
+        let mut out = ImageU8::new(0, 0);
+        threshold(&img, 5, false, &mut out, &mut ThresholdBuffers::new());
         // Pixel at x=8 should use tile tx=min(8/4, tw-1) = min(2, 1) = 1
         assert_eq!(out.get(8, 0), 255);
     }

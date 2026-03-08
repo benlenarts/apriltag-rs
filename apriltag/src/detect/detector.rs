@@ -8,7 +8,7 @@ use super::connected::connected_components;
 use super::decode::{decode_quad, DecodeBufs, QuickDecode};
 use super::dedup::deduplicate;
 use super::homography::Homography;
-use super::image::GrayImage;
+use super::image::{GrayImage, ImageU8};
 use super::preprocess::{apply_sigma, decimate};
 #[cfg(not(feature = "parallel"))]
 use super::quad::QuadFitBufs;
@@ -109,11 +109,10 @@ impl Default for DetectorConfig {
 /// }
 /// ```
 pub struct DetectorBuffers {
-    decimated_buf: Vec<u8>,
-    filtered_buf: Vec<u8>,
-    blur_tmp_buf: Vec<u8>,
-    unsharp_buf: Vec<u8>,
-    threshed_buf: Vec<u8>,
+    decimated: ImageU8,
+    filtered: ImageU8,
+    blur_tmp: ImageU8,
+    threshed: ImageU8,
     threshold_bufs: ThresholdBuffers,
     uf: UnionFind,
     refine_vals: Vec<f64>,
@@ -130,11 +129,10 @@ impl DetectorBuffers {
     /// Create new empty buffers with no pre-allocated memory.
     pub fn new() -> Self {
         Self {
-            decimated_buf: Vec::new(),
-            filtered_buf: Vec::new(),
-            blur_tmp_buf: Vec::new(),
-            unsharp_buf: Vec::new(),
-            threshed_buf: Vec::new(),
+            decimated: ImageU8::new(0, 0),
+            filtered: ImageU8::new(0, 0),
+            blur_tmp: ImageU8::new(0, 0),
+            threshed: ImageU8::new(0, 0),
             threshold_bufs: ThresholdBuffers::new(),
             refine_vals: Vec::new(),
             uf: UnionFind::empty(),
@@ -199,38 +197,33 @@ impl Detector {
         let f = self.config.quad_decimate as u32;
 
         // Stage 1: Preprocess
-        let decimated = decimate(img, f, std::mem::take(&mut buffers.decimated_buf));
-        let (filtered, blur_tmp, unsharp) = apply_sigma(
-            &decimated,
+        decimate(img, f, &mut buffers.decimated);
+        apply_sigma(
+            &buffers.decimated,
             self.config.quad_sigma,
-            std::mem::take(&mut buffers.filtered_buf),
-            std::mem::take(&mut buffers.blur_tmp_buf),
-            std::mem::take(&mut buffers.unsharp_buf),
+            &mut buffers.filtered,
+            &mut buffers.blur_tmp,
         );
-        buffers.decimated_buf = decimated.into_buf();
-        buffers.blur_tmp_buf = blur_tmp;
-        buffers.unsharp_buf = unsharp;
 
-        // Save filtered dimensions before consuming the image
-        let filtered_w = filtered.width;
-        let filtered_h = filtered.height;
+        // Save filtered dimensions
+        let filtered_w = buffers.filtered.width;
+        let filtered_h = buffers.filtered.height;
 
         // Stage 2: Threshold
-        let threshed = threshold(
-            &filtered,
+        threshold(
+            &buffers.filtered,
             self.config.qtp.min_white_black_diff,
             self.config.qtp.deglitch,
-            std::mem::take(&mut buffers.threshed_buf),
+            &mut buffers.threshed,
             &mut buffers.threshold_bufs,
         );
-        buffers.filtered_buf = filtered.into_buf();
 
         // Stage 3: Connected components
-        connected_components(&threshed, &mut buffers.uf);
+        connected_components(&buffers.threshed, &mut buffers.uf);
 
         // Stage 4: Gradient clustering
         gradient_clusters(
-            &threshed,
+            &buffers.threshed,
             &mut buffers.uf,
             self.config.qtp.min_cluster_pixels as u32,
             &mut buffers.cluster_map,
@@ -240,9 +233,6 @@ impl Detector {
         // Determine border orientations needed
         let has_normal = self.families.iter().any(|(f, _)| !f.layout.reversed_border);
         let has_reversed = self.families.iter().any(|(f, _)| f.layout.reversed_border);
-
-        // Reclaim threshed buffer (no longer needed after clustering)
-        buffers.threshed_buf = threshed.into_buf();
 
         // Stage 5: Quad fitting
         fit_quads(
@@ -642,11 +632,12 @@ mod tests {
         let (img, _family) = build_synthetic_tag_image();
 
         // Stage 2: Threshold
-        let threshed = threshold::threshold(
+        let mut threshed = ImageU8::new(0, 0);
+        threshold::threshold(
             &img,
             5,
             false,
-            Vec::new(),
+            &mut threshed,
             &mut threshold::ThresholdBuffers::new(),
         );
         let mut black_count = 0;
@@ -723,13 +714,13 @@ mod tests {
     #[test]
     fn detector_buffers_default() {
         let buffers = DetectorBuffers::new();
-        assert!(buffers.decimated_buf.is_empty());
-        assert!(buffers.filtered_buf.is_empty());
-        assert!(buffers.blur_tmp_buf.is_empty());
-        assert!(buffers.threshed_buf.is_empty());
+        assert!(buffers.decimated.buf.is_empty());
+        assert!(buffers.filtered.buf.is_empty());
+        assert!(buffers.blur_tmp.buf.is_empty());
+        assert!(buffers.threshed.buf.is_empty());
 
         let buffers2 = DetectorBuffers::default();
-        assert!(buffers2.decimated_buf.is_empty());
+        assert!(buffers2.decimated.buf.is_empty());
     }
 
     #[test]
@@ -774,17 +765,17 @@ mod tests {
         // First call populates buffers
         let _ = det.detect(&img, &mut buffers);
         let cap_after_first = (
-            buffers.decimated_buf.capacity(),
-            buffers.filtered_buf.capacity(),
-            buffers.threshed_buf.capacity(),
+            buffers.decimated.buf.capacity(),
+            buffers.filtered.buf.capacity(),
+            buffers.threshed.buf.capacity(),
         );
 
         // Second call should not grow
         let _ = det.detect(&img, &mut buffers);
         let cap_after_second = (
-            buffers.decimated_buf.capacity(),
-            buffers.filtered_buf.capacity(),
-            buffers.threshed_buf.capacity(),
+            buffers.decimated.buf.capacity(),
+            buffers.filtered.buf.capacity(),
+            buffers.threshed.buf.capacity(),
         );
 
         assert_eq!(cap_after_first, cap_after_second);
