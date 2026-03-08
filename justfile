@@ -31,7 +31,7 @@ verify-func:
 
 # Check that all uncovered lines have a COVERAGE: comment
 verify-coverage:
-    ./scripts/check-coverage-comments.sh "apriltag/src/"
+    cargo llvm-cov {{ _cov-exclude }} --show-missing-lines 2>&1 | ./scripts/check-coverage-comments.sh "apriltag/src/"
 
 # Crates excluded from coverage (CLIs, WASM bindings, bench harness entry points)
 _cov-exclude := "--ignore-filename-regex '(apriltag-gen-cli/|apriltag-detect-cli/|apriltag-wasm/|apriltag-bench-wasm/|apriltag-bench/src/(main\\.rs|report\\.rs))'"
