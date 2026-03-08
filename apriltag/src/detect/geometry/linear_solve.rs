@@ -46,10 +46,6 @@ mod tests {
 
     #[test]
     fn forward_eliminate_3x4() {
-        // Solve: x=1, y=2, z=3
-        // x + 2y + 3z = 14
-        // 2x + 5y + 3z = 21
-        // x + 0y + 8z = 25
         let mut a = [
             [1.0, 2.0, 3.0, 14.0],
             [2.0, 5.0, 3.0, 21.0],
@@ -57,7 +53,6 @@ mod tests {
         ];
         assert!(forward_eliminate::<3, 4>(&mut a, 1e-10).is_some());
 
-        // Back-substitute
         let mut x = [0.0; 3];
         for row in (0..3).rev() {
             let mut sum = a[row][3];
@@ -73,7 +68,6 @@ mod tests {
 
     #[test]
     fn forward_eliminate_8x9() {
-        // Identity-like 8x8 system with RHS = row index + 1
         let mut a = [[0.0f64; 9]; 8];
         for i in 0..8 {
             a[i][i] = 1.0;

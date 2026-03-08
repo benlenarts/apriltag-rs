@@ -3,8 +3,8 @@ mod svd;
 use svd::project_to_so3;
 
 use super::detector::Detection;
+use super::geometry::{Mat3, Vec3};
 use super::homography::Homography;
-use super::mat3::{Mat3, Vec3};
 
 /// A 3D pose estimate (rotation + translation).
 #[derive(Debug, Clone)]

@@ -1,9 +1,9 @@
 use crate::family::{FamilyId, TagFamily};
 use crate::hamming;
 
+use super::geometry::forward_eliminate;
 use super::homography::Homography;
 use super::image::GrayImage;
-use super::linear_solve::forward_eliminate;
 
 /// Result of decoding a tag from a quad.
 #[derive(Debug, Clone)]

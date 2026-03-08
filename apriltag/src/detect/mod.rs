@@ -8,15 +8,12 @@ pub mod decode;
 #[doc(hidden)]
 pub mod dedup;
 pub mod detector;
+pub mod geometry;
 #[doc(hidden)]
 #[allow(clippy::needless_range_loop)]
 pub mod homography;
 #[allow(clippy::needless_range_loop)]
 pub mod image;
-#[doc(hidden)]
-pub(crate) mod linear_solve;
-#[doc(hidden)]
-pub mod mat3;
 pub use image::{GrayImage, ImageRef};
 pub mod pose;
 #[doc(hidden)]

@@ -1,5 +1,4 @@
-use super::linear_solve::forward_eliminate;
-use super::mat3::Mat3;
+use super::geometry::{forward_eliminate, Mat3};
 
 /// A 3x3 homography matrix.
 #[derive(Debug, Clone, Copy)]
