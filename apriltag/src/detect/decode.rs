@@ -88,12 +88,12 @@ pub struct QuickDecode {
     shifts: [u32; 4],
     chunk_offsets: [Vec<u16>; 4],
     chunk_ids: [Vec<u16>; 4],
-    maxhamming: u32,
+    max_hamming: u32,
 }
 
 impl QuickDecode {
     /// Build a quick decode table from a tag family.
-    pub fn new(family: &TagFamily, maxhamming: u32) -> Self {
+    pub fn new(family: &TagFamily, max_hamming: u32) -> Self {
         let nbits = family.layout.nbits as u32;
         let chunk_size = nbits.div_ceil(4);
         let capacity = 1u32 << chunk_size;
@@ -143,13 +143,13 @@ impl QuickDecode {
             shifts,
             chunk_offsets,
             chunk_ids,
-            maxhamming,
+            max_hamming,
         }
     }
 
     /// Look up a code in the quick decode table.
     ///
-    /// Returns a [`QuickDecodeMatch`] or `None` if no match within `maxhamming`.
+    /// Returns a [`QuickDecodeMatch`] or `None` if no match within `max_hamming`.
     pub(crate) fn decode(&self, family: &TagFamily, rcode: u64) -> Option<QuickDecodeMatch> {
         let mut rcode = rcode;
         let nbits = self.nbits;
@@ -163,7 +163,7 @@ impl QuickDecode {
                 for k in start..end {
                     let id = self.chunk_ids[j][k] as usize;
                     let h = (family.codes[id] ^ rcode).count_ones();
-                    if h <= self.maxhamming {
+                    if h <= self.max_hamming {
                         return Some(QuickDecodeMatch {
                             id: id as i32,
                             hamming: h as i32,
@@ -584,7 +584,7 @@ mod tests {
         // Use a code very far from all valid codes
         let corrupted = 0xAAAAAAAAA_u64; // arbitrary pattern
         let result = qd.decode(&family, corrupted);
-        // With maxhamming 1, an arbitrary code shouldn't match
+        // With max_hamming 1, an arbitrary code shouldn't match
         assert!(result.is_none());
     }
 

@@ -177,8 +177,8 @@ impl Detector {
     }
 
     /// Add a tag family to the detector with the given maximum Hamming distance.
-    pub fn add_family(&mut self, family: TagFamily, maxhamming: u32) {
-        let qd = QuickDecode::new(&family, maxhamming);
+    pub fn add_family(&mut self, family: TagFamily, max_hamming: u32) {
+        let qd = QuickDecode::new(&family, max_hamming);
         self.families.push((family, qd));
     }
 

@@ -142,7 +142,7 @@ quick_decode:
   shifts:         [i32; 4]
   chunk_offsets:  [[u16]; 4]    // maps chunk value → range in chunk_ids
   chunk_ids:      [[u16]; 4]   // indices into codes array
-  maxhamming:     i32
+  max_hamming:     i32
   ncodes:         i32
 
 // Gray model (spatially-varying intensity)
@@ -796,7 +796,7 @@ quick_decode_codeword(family, rcode, result):
       For each candidate in chunk_offsets[j][val]..chunk_offsets[j][val+1]:
         id = chunk_ids[j][candidate]
         hamming = popcount(codes[id] XOR rcode)
-        if hamming ≤ maxhamming:
+        if hamming ≤ max_hamming:
           result = { id, hamming, rotation=r }
           return
 
@@ -808,7 +808,7 @@ quick_decode_codeword(family, rcode, result):
 The rotation function `rotate90` cyclically shifts the 4 bit-quadrants (see
 `generation-spec.md` §4.4).
 
-**Default `maxhamming = 2`**. Values ≥ 3 are supported but increase false
+**Default `max_hamming = 2`**. Values ≥ 3 are supported but increase false
 positive rate and memory usage significantly.
 
 ---
