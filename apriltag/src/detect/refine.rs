@@ -1,3 +1,4 @@
+use super::geometry::Vec2;
 use super::image::GrayImage;
 use super::quad::Quad;
 
@@ -140,7 +141,7 @@ pub fn refine_edges(
     for i in 0..4 {
         let j = (i + 1) % 4;
         if let Some((cx, cy)) = intersect_lines_raw(&lines[i], &lines[j]) {
-            quad.corners[j] = [cx, cy];
+            quad.corners[j] = Vec2::new(cx, cy);
         }
     }
 }
@@ -174,6 +175,10 @@ mod tests {
     use super::super::image::ImageU8;
     use super::*;
 
+    fn vc(corners: [[f64; 2]; 4]) -> [Vec2; 4] {
+        corners.map(Vec2::from)
+    }
+
     #[test]
     fn intersect_lines_raw_perpendicular() {
         let l0 = [5.0, 0.0, 0.0, 1.0]; // horizontal through (5,0)
@@ -194,7 +199,7 @@ mod tests {
     fn refine_edges_no_crash_on_uniform_image() {
         let img = ImageU8::new(100, 100);
         let mut quad = Quad {
-            corners: [[20.0, 20.0], [80.0, 20.0], [80.0, 80.0], [20.0, 80.0]],
+            corners: vc([[20.0, 20.0], [80.0, 20.0], [80.0, 80.0], [20.0, 80.0]]),
             reversed_border: false,
         };
         refine_edges(&mut quad, &img, 2.0, &mut Vec::new());
@@ -216,7 +221,7 @@ mod tests {
         }
 
         let mut quad = Quad {
-            corners: [[45.0, 20.0], [55.0, 20.0], [55.0, 80.0], [45.0, 80.0]],
+            corners: vc([[45.0, 20.0], [55.0, 20.0], [55.0, 80.0], [45.0, 80.0]]),
             reversed_border: false,
         };
         refine_edges(&mut quad, &img, 2.0, &mut Vec::new());
@@ -250,21 +255,21 @@ mod tests {
         }
 
         // Expected corners (CCW): bottom-left, bottom-right, top-right, top-left
-        let expected: [[f64; 2]; 4] = [
+        let expected: [Vec2; 4] = vc([
             [rx0 as f64, ry1 as f64], // corner 0: bottom-left
             [rx1 as f64, ry1 as f64], // corner 1: bottom-right
             [rx1 as f64, ry0 as f64], // corner 2: top-right
             [rx0 as f64, ry0 as f64], // corner 3: top-left
-        ];
+        ]);
 
         // Start with corners close to expected (as the initial quad detection would produce)
         let mut quad = Quad {
-            corners: [
+            corners: vc([
                 [rx0 as f64 + 1.0, ry1 as f64 - 1.0],
                 [rx1 as f64 - 1.0, ry1 as f64 - 1.0],
                 [rx1 as f64 - 1.0, ry0 as f64 + 1.0],
                 [rx0 as f64 + 1.0, ry0 as f64 + 1.0],
-            ],
+            ]),
             reversed_border: false,
         };
 
@@ -295,7 +300,7 @@ mod tests {
             }
         }
         let mut quad = Quad {
-            corners: [[0.0, 1.0], [48.0, 1.0], [48.0, 48.0], [0.0, 48.0]],
+            corners: vc([[0.0, 1.0], [48.0, 1.0], [48.0, 48.0], [0.0, 48.0]]),
             reversed_border: false,
         };
         refine_edges(&mut quad, &img, 2.0, &mut Vec::new());
@@ -325,7 +330,7 @@ mod tests {
 
         // Interior quad (will use fast/SIMD path)
         let mut quad_fast = Quad {
-            corners: [[90.0, 50.0], [110.0, 50.0], [110.0, 150.0], [90.0, 150.0]],
+            corners: vc([[90.0, 50.0], [110.0, 50.0], [110.0, 150.0], [90.0, 150.0]]),
             reversed_border: false,
         };
         refine_edges(&mut quad_fast, &img, 2.0, &mut Vec::new());
@@ -363,7 +368,7 @@ mod tests {
     fn refine_edges_reversed_border() {
         let img = ImageU8::new(100, 100);
         let mut quad = Quad {
-            corners: [[20.0, 20.0], [80.0, 20.0], [80.0, 80.0], [20.0, 80.0]],
+            corners: vc([[20.0, 20.0], [80.0, 20.0], [80.0, 80.0], [20.0, 80.0]]),
             reversed_border: true,
         };
         refine_edges(&mut quad, &img, 1.0, &mut Vec::new());

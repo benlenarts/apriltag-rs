@@ -363,6 +363,7 @@ pub fn decode_quad(
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
+    use super::super::geometry::Vec2;
     use super::super::image::ImageU8;
     use super::*;
 
@@ -419,7 +420,8 @@ mod tests {
             [tag_end_x, tag_start_y],
             [tag_end_x, tag_end_y],
             [tag_start_x, tag_end_y],
-        ];
+        ]
+        .map(Vec2::from);
         let h = Homography::from_quad_corners(&corners).unwrap();
 
         (img, h)
@@ -499,7 +501,7 @@ mod tests {
         }
 
         // Quad corners at the very image boundary
-        let corners = [[0.0, 0.0], [19.0, 0.0], [19.0, 19.0], [0.0, 19.0]];
+        let corners = [[0.0, 0.0], [19.0, 0.0], [19.0, 19.0], [0.0, 19.0]].map(Vec2::from);
         let h = Homography::from_quad_corners(&corners).unwrap();
 
         // Border samples extend beyond [-1,1] tag-space. With corners at

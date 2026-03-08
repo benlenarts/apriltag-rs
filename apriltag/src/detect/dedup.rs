@@ -1,4 +1,5 @@
 use super::detector::Detection;
+use super::geometry::Vec2;
 
 /// Remove duplicate detections of the same tag, keeping the best one.
 ///
@@ -48,7 +49,7 @@ fn is_better(a: &Detection, b: &Detection) -> bool {
 }
 
 /// Test if two convex quadrilaterals overlap using the separating axis theorem.
-fn polygons_overlap(p: &[[f64; 2]; 4], q: &[[f64; 2]; 4]) -> bool {
+fn polygons_overlap(p: &[Vec2; 4], q: &[Vec2; 4]) -> bool {
     // Check all 8 potential separating axes (4 edge normals per polygon)
     for poly in [p, q] {
         for i in 0..4 {
@@ -74,7 +75,7 @@ fn polygons_overlap(p: &[[f64; 2]; 4], q: &[[f64; 2]; 4]) -> bool {
 }
 
 /// Project a polygon onto an axis and return (min, max) projections.
-fn project_polygon(poly: &[[f64; 2]; 4], nx: f64, ny: f64) -> (f64, f64) {
+fn project_polygon(poly: &[Vec2; 4], nx: f64, ny: f64) -> (f64, f64) {
     let mut min = f64::MAX;
     let mut max = f64::MIN;
     for pt in poly {
@@ -96,28 +97,28 @@ mod tests {
             id,
             hamming,
             decision_margin: margin,
-            corners,
-            center: [0.0, 0.0],
+            corners: corners.map(Vec2::from),
+            center: Vec2::new(0.0, 0.0),
         }
     }
 
     #[test]
     fn polygons_overlap_identical() {
-        let p = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        let p = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]].map(Vec2::from);
         assert!(polygons_overlap(&p, &p));
     }
 
     #[test]
     fn polygons_overlap_separated() {
-        let p = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
-        let q = [[20.0, 0.0], [30.0, 0.0], [30.0, 10.0], [20.0, 10.0]];
+        let p = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]].map(Vec2::from);
+        let q = [[20.0, 0.0], [30.0, 0.0], [30.0, 10.0], [20.0, 10.0]].map(Vec2::from);
         assert!(!polygons_overlap(&p, &q));
     }
 
     #[test]
     fn polygons_overlap_partial() {
-        let p = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
-        let q = [[5.0, 5.0], [15.0, 5.0], [15.0, 15.0], [5.0, 15.0]];
+        let p = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]].map(Vec2::from);
+        let q = [[5.0, 5.0], [15.0, 5.0], [15.0, 15.0], [5.0, 15.0]].map(Vec2::from);
         assert!(polygons_overlap(&p, &q));
     }
 

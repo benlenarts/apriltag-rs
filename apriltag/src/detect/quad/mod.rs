@@ -7,6 +7,7 @@ use geometry::{compute_quad_corners, validate_quad};
 use line_fitting::build_line_fit_pts;
 
 use super::cluster::{Cluster, Pt};
+use super::geometry::Vec2;
 
 #[cfg(feature = "parallel")]
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
@@ -15,7 +16,7 @@ use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 #[derive(Debug, Clone)]
 pub struct Quad {
     /// Four corner positions in pixel coords (counter-clockwise winding).
-    pub corners: [[f64; 2]; 4],
+    pub corners: [Vec2; 4],
     /// Whether the black border is inside the white border (reversed).
     pub reversed_border: bool,
 }

@@ -7,6 +7,7 @@ use super::cluster::{gradient_clusters, Cluster};
 use super::connected::connected_components;
 use super::decode::{decode_quad, DecodeBufs, QuickDecode};
 use super::dedup::deduplicate;
+use super::geometry::Vec2;
 use super::homography::Homography;
 use super::image::{GrayImage, ImageU8};
 use super::preprocess::{apply_sigma, decimate};
@@ -61,8 +62,8 @@ pub struct Detection {
     pub id: i32,
     pub hamming: i32,
     pub decision_margin: f32,
-    pub corners: [[f64; 2]; 4],
-    pub center: [f64; 2],
+    pub corners: [Vec2; 4],
+    pub center: Vec2,
 }
 
 /// Detector configuration.
@@ -368,19 +369,19 @@ fn compute_detection_geometry(
     h: &Homography,
     rotation: i32,
     _family: &TagFamily,
-) -> ([f64; 2], [[f64; 2]; 4]) {
+) -> (Vec2, [Vec2; 4]) {
     let (cx, cy) = h.project(0.0, 0.0);
 
     // Tag corners in canonical order, rotated by the detected rotation
     let base_corners = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
-    let mut corners = [[0.0f64; 2]; 4];
+    let mut corners = [Vec2::new(0.0, 0.0); 4];
     for i in 0..4 {
         let src = &base_corners[(i + rotation as usize) % 4];
         let (px, py) = h.project(src[0], src[1]);
-        corners[i] = [px, py];
+        corners[i] = Vec2::new(px, py);
     }
 
-    ([cx, cy], corners)
+    (Vec2::new(cx, cy), corners)
 }
 
 #[cfg(test)]
@@ -471,7 +472,7 @@ mod tests {
     #[test]
     #[cfg(feature = "family-tag16h5")]
     fn compute_detection_geometry_identity() {
-        let corners = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
+        let corners = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]].map(Vec2::from);
         let h = Homography::from_quad_corners(&corners).unwrap();
         let family = family::tag16h5();
         let (center, det_corners) = compute_detection_geometry(&h, 0, &family);

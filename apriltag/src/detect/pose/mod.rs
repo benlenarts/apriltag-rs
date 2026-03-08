@@ -267,6 +267,7 @@ fn find_second_minimum(
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
+    use super::super::geometry::Vec2;
     use super::*;
 
     #[test]
@@ -319,8 +320,8 @@ mod tests {
             id: 0,
             hamming: 0,
             decision_margin: 100.0,
-            corners,
-            center: [params.cx, params.cy],
+            corners: corners.map(Vec2::from),
+            center: Vec2::new(params.cx, params.cy),
         };
 
         let (pose, err, _, _) = estimate_tag_pose(&det, &params);
@@ -369,8 +370,8 @@ mod tests {
             id: 0,
             hamming: 0,
             decision_margin: 100.0,
-            corners,
-            center: [params.cx + params.fx * tx_world / z, params.cy],
+            corners: corners.map(Vec2::from),
+            center: Vec2::new(params.cx + params.fx * tx_world / z, params.cy),
         };
 
         let (pose, err, _, _) = estimate_tag_pose(&det, &params);
@@ -393,8 +394,8 @@ mod tests {
             id: 0,
             hamming: 0,
             decision_margin: 100.0,
-            corners: [[320.0, 240.0]; 4],
-            center: [320.0, 240.0],
+            corners: [Vec2::new(320.0, 240.0); 4],
+            center: Vec2::new(320.0, 240.0),
         };
         let (_pose, err, alt, _) = estimate_tag_pose(&det, &params);
         assert_eq!(err, f64::MAX);
@@ -435,8 +436,8 @@ mod tests {
             id: 0,
             hamming: 0,
             decision_margin: 100.0,
-            corners,
-            center: [params.cx, params.cy],
+            corners: corners.map(Vec2::from),
+            center: Vec2::new(params.cx, params.cy),
         };
 
         let (pose, err, alt, _) = estimate_tag_pose(&det, &params);
@@ -502,16 +503,17 @@ mod tests {
                             continue;
                         }
 
+                        let center = Vec2::new(
+                            corners.iter().map(|c| c[0]).sum::<f64>() / 4.0,
+                            corners.iter().map(|c| c[1]).sum::<f64>() / 4.0,
+                        );
                         let det = Detection {
                             family_id: crate::family::FamilyId::from("test"),
                             id: 0,
                             hamming: 0,
                             decision_margin: 100.0,
-                            corners,
-                            center: [
-                                corners.iter().map(|c| c[0]).sum::<f64>() / 4.0,
-                                corners.iter().map(|c| c[1]).sum::<f64>() / 4.0,
-                            ],
+                            corners: corners.map(Vec2::from),
+                            center,
                         };
 
                         let (pose, err, _alt, _alt_err) = estimate_tag_pose(&det, &params);

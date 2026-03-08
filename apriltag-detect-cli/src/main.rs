@@ -203,8 +203,8 @@ fn main() -> Result<()> {
                     id: det.id,
                     hamming: det.hamming,
                     decision_margin: det.decision_margin,
-                    center: det.center,
-                    corners: det.corners,
+                    center: det.center.into(),
+                    corners: det.corners.map(Into::into),
                     pose,
                 }
             })

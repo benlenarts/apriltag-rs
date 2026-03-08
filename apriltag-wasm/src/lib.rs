@@ -219,8 +219,8 @@ impl Detector {
             id: detection.id,
             hamming: detection.hamming,
             decision_margin: detection.decision_margin,
-            corners: detection.corners,
-            center: detection.center,
+            corners: detection.corners.map(Into::into),
+            center: detection.center.into(),
         };
 
         let params = PoseParams {
@@ -253,8 +253,8 @@ fn detection_to_wasm(det: &CoreDetection) -> WasmDetection {
         id: det.id,
         hamming: det.hamming,
         decision_margin: det.decision_margin,
-        center: det.center,
-        corners: det.corners,
+        center: det.center.into(),
+        corners: det.corners.map(Into::into),
     }
 }
 

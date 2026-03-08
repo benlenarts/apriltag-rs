@@ -1,4 +1,4 @@
-use super::geometry::{forward_eliminate, Mat3};
+use super::geometry::{forward_eliminate, Mat3, Vec2};
 
 /// A 3x3 homography matrix.
 #[derive(Debug, Clone, Copy)]
@@ -11,7 +11,7 @@ impl Homography {
     ///
     /// Tag-space corners: (-1,-1), (1,-1), (1,1), (-1,1)
     /// Pixel corners: the 4 quad corners.
-    pub fn from_quad_corners(corners: &[[f64; 2]; 4]) -> Option<Self> {
+    pub fn from_quad_corners(corners: &[Vec2; 4]) -> Option<Self> {
         // tag coords in order
         let tag_pts = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
 
@@ -78,9 +78,13 @@ impl Homography {
 mod tests {
     use super::*;
 
+    fn v(corners: [[f64; 2]; 4]) -> [Vec2; 4] {
+        corners.map(Vec2::from)
+    }
+
     #[test]
     fn identity_homography_unit_square() {
-        let corners = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
+        let corners = v([[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]]);
         let h = Homography::from_quad_corners(&corners).unwrap();
         let (px, py) = h.project(0.0, 0.0);
         assert!((px - 0.0).abs() < 1e-6);
@@ -93,7 +97,7 @@ mod tests {
 
     #[test]
     fn scaling_homography() {
-        let corners = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]];
+        let corners = v([[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]]);
         let h = Homography::from_quad_corners(&corners).unwrap();
         let (px, py) = h.project(0.0, 0.0);
         assert!((px - 50.0).abs() < 1e-6);
@@ -106,7 +110,7 @@ mod tests {
 
     #[test]
     fn project_all_corners_match() {
-        let corners = [[10.0, 20.0], [90.0, 15.0], [95.0, 85.0], [5.0, 90.0]];
+        let corners = v([[10.0, 20.0], [90.0, 15.0], [95.0, 85.0], [5.0, 90.0]]);
         let h = Homography::from_quad_corners(&corners).unwrap();
 
         let tag_pts = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
@@ -118,7 +122,7 @@ mod tests {
 
     #[test]
     fn inverse_roundtrip() {
-        let corners = [[10.0, 20.0], [90.0, 15.0], [95.0, 85.0], [5.0, 90.0]];
+        let corners = v([[10.0, 20.0], [90.0, 15.0], [95.0, 85.0], [5.0, 90.0]]);
         let h = Homography::from_quad_corners(&corners).unwrap();
         let hinv = h.inverse().unwrap();
 
@@ -130,7 +134,7 @@ mod tests {
 
     #[test]
     fn degenerate_returns_none() {
-        let corners = [[5.0, 5.0], [5.0, 5.0], [5.0, 5.0], [5.0, 5.0]];
+        let corners = v([[5.0, 5.0], [5.0, 5.0], [5.0, 5.0], [5.0, 5.0]]);
         assert!(Homography::from_quad_corners(&corners).is_none());
     }
 

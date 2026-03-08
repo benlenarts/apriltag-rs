@@ -1,12 +1,13 @@
 use super::line_fitting::{fit_line, range_moments, FittedLine, LineFitPt};
 use super::QuadThreshParams;
+use crate::detect::geometry::Vec2;
 
 /// Compute quad corner positions from line intersections.
 pub(super) fn compute_quad_corners(
     lfps: &[LineFitPt],
     indices: &[usize; 4],
     _sz: usize,
-) -> Option<[[f64; 2]; 4]> {
+) -> Option<[Vec2; 4]> {
     let mut lines = [FittedLine {
         px: 0.0,
         py: 0.0,
@@ -21,11 +22,11 @@ pub(super) fn compute_quad_corners(
         lines[seg] = line;
     }
 
-    let mut corners = [[0.0f64; 2]; 4];
+    let mut corners = [Vec2::new(0.0, 0.0); 4];
     for i in 0..4 {
         let j = (i + 1) % 4;
         let (cx, cy) = intersect_lines(&lines[i], &lines[j])?;
-        corners[i] = [cx, cy];
+        corners[i] = Vec2::new(cx, cy);
     }
 
     Some(corners)
@@ -54,7 +55,7 @@ pub(super) fn intersect_lines(l0: &FittedLine, l1: &FittedLine) -> Option<(f64, 
 }
 
 /// Validate that the quad has correct geometry.
-pub(super) fn validate_quad(corners: &[[f64; 2]; 4], _params: &QuadThreshParams) -> Option<()> {
+pub(super) fn validate_quad(corners: &[Vec2; 4], _params: &QuadThreshParams) -> Option<()> {
     // Check area (> 0 for valid winding)
     let area = quad_area(corners);
     if area < 0.0 {
@@ -76,7 +77,7 @@ pub(super) fn validate_quad(corners: &[[f64; 2]; 4], _params: &QuadThreshParams)
 }
 
 /// Compute area of a quad using the shoelace formula.
-pub(super) fn quad_area(corners: &[[f64; 2]; 4]) -> f64 {
+pub(super) fn quad_area(corners: &[Vec2; 4]) -> f64 {
     let mut area = 0.0;
     for i in 0..4 {
         let j = (i + 1) % 4;
@@ -126,36 +127,40 @@ mod tests {
         assert!(intersect_lines(&l0, &l1).is_none());
     }
 
+    fn v(corners: [[f64; 2]; 4]) -> [Vec2; 4] {
+        corners.map(Vec2::from)
+    }
+
     #[test]
     fn quad_area_unit_square() {
-        let corners = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+        let corners = v([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
         let area = quad_area(&corners);
         assert!((area - 1.0).abs() < 1e-10);
     }
 
     #[test]
     fn quad_area_ccw_positive() {
-        let corners = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        let corners = v([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]);
         assert!(quad_area(&corners) > 0.0);
     }
 
     #[test]
     fn validate_quad_convex_ccw_passes() {
-        let corners = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        let corners = v([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]);
         let params = QuadThreshParams::default();
         assert!(validate_quad(&corners, &params).is_some());
     }
 
     #[test]
     fn validate_quad_clockwise_fails() {
-        let corners = [[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [10.0, 0.0]];
+        let corners = v([[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [10.0, 0.0]]);
         let params = QuadThreshParams::default();
         assert!(validate_quad(&corners, &params).is_none());
     }
 
     #[test]
     fn validate_quad_non_convex_fails() {
-        let corners = [[0.0, 0.0], [10.0, 0.0], [5.0, 2.0], [0.0, 10.0]];
+        let corners = v([[0.0, 0.0], [10.0, 0.0], [5.0, 2.0], [0.0, 10.0]]);
         let params = QuadThreshParams::default();
         assert!(validate_quad(&corners, &params).is_none());
     }

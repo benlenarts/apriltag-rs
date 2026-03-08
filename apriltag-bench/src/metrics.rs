@@ -52,8 +52,8 @@ impl From<&Detection> for DetectionSummary {
             id: det.id,
             hamming: det.hamming,
             decision_margin: det.decision_margin,
-            corners: det.corners,
-            center: det.center,
+            corners: det.corners.map(Into::into),
+            center: det.center.into(),
         }
     }
 }
@@ -79,7 +79,8 @@ pub fn evaluate(
 
         if let Some((idx, det)) = matched {
             used[idx] = true;
-            let corner_errors = best_corner_errors(&gt.corners, &det.corners);
+            let det_corners: [[f64; 2]; 4] = det.corners.map(Into::into);
+            let corner_errors = best_corner_errors(&gt.corners, &det_corners);
             matches.push(DetectionMatch {
                 ground_truth: gt.clone(),
                 detection: Some(det.into()),
@@ -188,8 +189,8 @@ mod tests {
             id,
             hamming: 0,
             decision_margin: 100.0,
-            corners,
-            center: [cx, cy],
+            corners: corners.map(apriltag::detect::geometry::Vec2::from),
+            center: apriltag::detect::geometry::Vec2::new(cx, cy),
         }
     }
 

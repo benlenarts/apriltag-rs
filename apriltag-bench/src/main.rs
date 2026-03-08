@@ -1121,12 +1121,13 @@ fn cmd_compare(category: Option<String>, scenario: Option<String>, format: &str)
                     // ground truth uses [TL, TR, BR, BL] (tag-space (-1,-1),
                     // (1,-1), (1,1), (-1,1)). Reverse to match our convention.
                     let c = d.corners;
-                    let corners = [c[3], c[2], c[1], c[0]];
+                    let corners =
+                        [c[3], c[2], c[1], c[0]].map(apriltag::detect::geometry::Vec2::from);
                     all_ref_dets.push(apriltag::detect::detector::Detection {
                         id: d.id,
                         hamming: d.hamming,
                         decision_margin: d.decision_margin,
-                        center: d.center,
+                        center: apriltag::detect::geometry::Vec2::from(d.center),
                         corners,
                         family_id: apriltag::family::FamilyId::from(&**fam),
                     });
