@@ -643,13 +643,12 @@ mod tests {
         );
         let mut black_count = 0;
         let mut white_count = 0;
-        let mut unknown_count = 0;
         for y in 0..200 {
             for x in 0..200 {
                 match threshed.get(x, y) {
                     0 => black_count += 1,
                     255 => white_count += 1,
-                    _ => unknown_count += 1,
+                    _ => {}
                 }
             }
         }
