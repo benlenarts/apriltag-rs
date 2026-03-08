@@ -200,6 +200,7 @@ impl QuickDecode {
 }
 
 /// Reusable scratch buffers for decode, avoiding per-quad allocation.
+#[derive(Default)]
 pub struct DecodeBufs {
     values: Vec<f64>,
     sharp: Vec<f64>,
