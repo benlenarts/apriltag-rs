@@ -65,7 +65,6 @@ Detection performance is benchmarked against the [reference C implementation](ht
 
 The 59-scenario regression suite covers rotation, perspective, scale (16–200px tags), noise (sigma 5–40), contrast (10–50%), lighting gradients, blur, multi-tag, occlusion, decimation modes, and scaling benchmarks. Every scenario must pass on every commit.
 
-See [`docs/benchmark-results.md`](docs/benchmark-results.md) for detailed results.
 
 ### Streaming efficiency
 

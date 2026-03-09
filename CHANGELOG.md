@@ -15,7 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/generate-stats.sh` — generates badge JSON files from current project stats
 - `.github/workflows/stats.yml` — CI workflow that auto-updates badge data on push to main
 - Regression gate job in CI pipeline (`just verify-func` runs 59-scenario detection quality suite)
-- `docs/benchmark-results.md` — committed regression suite results with per-scenario tables
 - README "At a glance" table with key project metrics
 - README Safety section documenting `forbid(unsafe_code)` policy per crate
 - README Architecture diagram showing pipeline stages
