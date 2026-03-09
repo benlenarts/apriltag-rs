@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Infrastructure
+
+- Live auto-updated stats badges in README (tests, coverage, regression, unsafe) via shields.io endpoint badges
+- `scripts/generate-stats.sh` — generates badge JSON files from current project stats
+- `.github/workflows/stats.yml` — CI workflow that auto-updates badge data on push to main
+- Regression gate job in CI pipeline (`just verify-func` runs 59-scenario detection quality suite)
+- README "At a glance" table with key project metrics
+- README Safety section documenting `forbid(unsafe_code)` policy per crate
+- README Architecture diagram showing pipeline stages
+- README Streaming efficiency section documenting buffer reuse and allocation reduction
+
 ### Changed
 
 #### Core Detection Library (`apriltag`)

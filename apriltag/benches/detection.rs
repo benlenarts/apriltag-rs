@@ -6,6 +6,7 @@ use apriltag::detect::cluster::gradient_clusters;
 use apriltag::detect::connected::connected_components;
 use apriltag::detect::decode::{decode_quad, DecodeBufs, QuickDecode};
 use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
+use apriltag::detect::geometry::Vec2;
 use apriltag::detect::homography::Homography;
 use apriltag::detect::image::ImageU8;
 use apriltag::detect::preprocess::{apply_sigma, decimate};
@@ -268,7 +269,12 @@ fn bench_refine_edges(c: &mut Criterion) {
         let mut x = 40.0f64;
         while x + 60.0 < 600.0 {
             quads.push(Quad {
-                corners: [[x, y + 60.0], [x + 60.0, y + 60.0], [x + 60.0, y], [x, y]],
+                corners: [
+                    Vec2([x, y + 60.0]),
+                    Vec2([x + 60.0, y + 60.0]),
+                    Vec2([x + 60.0, y]),
+                    Vec2([x, y]),
+                ],
                 reversed_border: false,
             });
             x += 70.0;

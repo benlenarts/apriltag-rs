@@ -63,6 +63,16 @@ jobs:
       - uses: extractions/setup-just@v2
       - run: just verify-coverage
 
+  regression:
+    name: Regression gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: extractions/setup-just@v2
+      - run: just verify-func
+
   wasm:
     name: WASM build
     runs-on: ubuntu-latest
