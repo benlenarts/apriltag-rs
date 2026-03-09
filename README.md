@@ -2,6 +2,28 @@
 
 Pure Rust implementation of the [AprilTag](https://april.eecs.umich.edu/software/apriltag) visual fiducial system. No C dependencies. WASM-compatible.
 
+<!-- Badges auto-updated by CI on push to main (see .github/workflows/stats.yml) -->
+[![CI](https://github.com/benlenarts/apriltag-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/benlenarts/apriltag-rs/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/benlenarts/apriltag-rs/main/.github/badges/tests.json)](https://github.com/benlenarts/apriltag-rs/actions/workflows/ci.yml)
+[![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/benlenarts/apriltag-rs/main/.github/badges/coverage.json)](https://github.com/benlenarts/apriltag-rs/actions/workflows/stats.yml)
+[![regression](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/benlenarts/apriltag-rs/main/.github/badges/regression.json)](https://github.com/benlenarts/apriltag-rs/actions/workflows/stats.yml)
+[![unsafe](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/benlenarts/apriltag-rs/main/.github/badges/unsafe.json)](#safety)
+[![license](https://img.shields.io/badge/license-BSD--2--Clause-blue)](LICENSE)
+
+## At a glance
+
+| Metric | Value |
+|--------|-------|
+| **Performance** | 1.00× vs C reference on 4000×3000, 117-tag scene |
+| **Tests** | 377 unit + integration tests |
+| **Coverage** | 99.5% line coverage (cargo-llvm-cov) |
+| **Regression suite** | 59 scenarios, all passing |
+| **Safety** | `#![forbid(unsafe_code)]` in all production crates |
+| **Code** | ~18k lines of pure Rust, zero C dependencies |
+
+> All numbers above are auto-updated by CI on every push to main.
+> See [`.github/badges/`](.github/badges/) for the raw data.
+
 ## Features
 
 - **Pure Rust** — no FFI, no C toolchain required
@@ -10,6 +32,54 @@ Pure Rust implementation of the [AprilTag](https://april.eecs.umich.edu/software
 - **Full detection pipeline** — grayscale conversion, decimation, blur, gradient computation, quad detection, homography, decoding, and pose estimation
 - **Tag generation** — generate and render tag family bitmaps
 - **Optional parallelism** — multi-threaded detection via Rayon
+
+## Performance
+
+Detection performance matches the [reference C implementation](https://github.com/AprilRobotics/apriltag) (apriltag3). Benchmarked on a realistic 4000×3000 scene with 117 tags at varied rotations and perspective tilts, plus noise (sigma 15), lighting gradient, reduced contrast, and blur:
+
+| Scenario | Rust | C reference | Ratio |
+|----------|------|-------------|-------|
+| highres-4000×3000 (117 tags) | 142 ms | 142 ms | 1.00× |
+| 41-scenario suite (all conditions) | 17.4 ms | 17.2 ms | 1.01× |
+
+The 59-scenario regression suite covers rotation, perspective, scale (16–200px tags), noise (sigma 5–40), contrast (10–50%), lighting gradients, blur, multi-tag, occlusion, decimation modes, and scaling benchmarks. Every scenario must pass on every commit.
+
+See [`docs/benchmark-results.md`](docs/benchmark-results.md) for detailed results.
+
+### Streaming efficiency
+
+The detection API is designed for real-time use. `DetectorBuffers` pools all internal allocations across frames:
+
+- **69% allocation reduction** vs naive per-frame allocation
+- Threshold tile arrays, deglitch morph buffers, unsharp mask buffer, and edge refinement scratch space are all reused
+- WASM detector reuses buffers and grayscale conversion buffer across frames (~850 KB/frame allocation churn eliminated)
+- `ImageU8::new_reuse()` and `into_buf()` enable zero-copy buffer recycling
+
+Run the benchmarks yourself:
+
+```bash
+# Criterion micro-benchmarks (per-stage and end-to-end)
+cargo bench -p apriltag
+
+# Rust vs C reference comparison (requires scripts/fetch-references.sh first)
+just bench-ref benchmark
+```
+
+## Safety
+
+All production crates enforce `#![forbid(unsafe_code)]`:
+
+| Crate | Policy |
+|-------|--------|
+| `apriltag` | `forbid(unsafe_code)` |
+| `apriltag-gen` | `forbid(unsafe_code)` |
+| `apriltag-gen-cli` | `forbid(unsafe_code)` |
+| `apriltag-detect-cli` | `forbid(unsafe_code)` |
+| `apriltag-wasm` | `forbid(unsafe_code)` |
+| `apriltag-bench-wasm` | `forbid(unsafe_code)` |
+| `apriltag-bench` | `deny(unsafe_code)` (FFI bridge to C reference only) |
+
+The only `unsafe` code in the project is the optional C reference FFI bridge (`apriltag-bench/src/reference.rs`), used exclusively for benchmark comparison. It is never compiled unless the `reference` feature is explicitly enabled.
 
 ## Crates
 
@@ -82,26 +152,16 @@ Enable only the families you need to reduce binary size:
 apriltag = { version = "0.1", default-features = false, features = ["family-tag36h11"] }
 ```
 
-## Performance
+## Architecture
 
-Detection performance matches the [reference C implementation](https://github.com/AprilRobotics/apriltag) (apriltag3). Benchmarked on a realistic 4000×3000 scene with 117 tags at varied rotations and perspective tilts, plus noise (sigma 15), lighting gradient, reduced contrast, and blur:
-
-| Scenario | Rust | C reference | Ratio |
-|----------|------|-------------|-------|
-| highres-4000×3000 (117 tags) | 142 ms | 142 ms | 1.00× |
-| 41-scenario suite (all conditions) | 17.4 ms | 17.2 ms | 1.01× |
-
-The 41-scenario suite covers rotation, perspective, scale (16–200px tags), noise (sigma 5–40), contrast (10–50%), lighting gradients, blur, multi-tag, occlusion, and decimation modes.
-
-Run the benchmarks yourself:
-
-```bash
-# Criterion micro-benchmarks (per-stage and end-to-end)
-cargo bench -p apriltag
-
-# Rust vs C reference comparison (requires scripts/fetch-references.sh first)
-just bench-ref benchmark
 ```
+Image → Preprocessing → Gradients → Segmentation → Quads → Homography → Decode → Pose
+         (decimate,      (magnitude,  (union-find,   (line    (DLT +      (gray    (SVD +
+          blur)           direction)   clustering)    fitting, Gauss       model,   orthogonal
+                                                     corners) elimination) bits)   iteration)
+```
+
+Each stage is independently benchmarked and tested. With the `parallel` feature, all major stages run on Rayon's thread pool.
 
 ## References
 

@@ -1,0 +1,39 @@
+name: Stats
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  update-stats:
+    name: Update stats badges
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: extractions/setup-just@v2
+
+      - name: Generate stats
+        run: ./scripts/generate-stats.sh
+
+      - name: Commit badge updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/badges/*.json
+          if git diff --cached --quiet; then
+            echo "No badge changes to commit."
+          else
+            git commit -m "chore: update stats badges [skip ci]"
+            git push
+          fi
