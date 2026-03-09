@@ -1,3 +1,6 @@
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 use super::image::ImageU8;
 use super::unionfind::UnionFind;
 
@@ -106,6 +109,29 @@ impl ClusterMap {
         }
     }
 
+    /// Create a new ClusterMap pre-sized for `n_buckets`.
+    #[cfg(feature = "parallel")]
+    fn with_capacity(n_buckets: usize) -> Self {
+        Self {
+            buckets: vec![EMPTY; n_buckets],
+            entries: Vec::new(),
+            free_vecs: Vec::new(),
+        }
+    }
+
+    /// Collect clusters meeting the minimum size threshold, returning
+    /// `(key, points)` pairs so strips can be merged by key.
+    #[cfg(feature = "parallel")]
+    fn collect_keyed(&mut self, min_cluster_size: u32) -> Vec<(u64, Vec<Pt>)> {
+        let mut result = Vec::new();
+        for entry in &mut self.entries {
+            if entry.points.len() >= min_cluster_size as usize {
+                result.push((entry.key, std::mem::take(&mut entry.points)));
+            }
+        }
+        result
+    }
+
     /// Recycle point Vecs from consumed clusters back into the free pool.
     pub fn recycle_clusters(&mut self, clusters: &mut Vec<Cluster>) {
         for cluster in clusters.drain(..) {
@@ -123,78 +149,64 @@ impl ClusterMap {
     }
 }
 
-/// Extract boundary points between adjacent black/white components and group
-/// them into clusters keyed by the ordered pair of component representatives.
-///
-/// Each cluster represents a potential quad edge.
-///
-/// Points are inserted directly into a hash table during the scan (O(n) amortized),
-/// avoiding the O(n log n) sort that dominates on noisy images with many boundary points.
-pub fn gradient_clusters(
-    threshed: &ImageU8,
-    uf: &mut UnionFind,
-    min_cluster_size: u32,
-    cluster_map: &mut ClusterMap,
-    out: &mut Vec<Cluster>,
-) {
-    let w = threshed.width;
-    let h = threshed.height;
-    let min_component_size = 25u32;
-
-    // Size the hash table at ~20% of pixel count, matching C reference
-    let n_buckets = ((w as usize * h as usize) / 5).max(16);
-    cluster_map.reset(n_buckets);
-
-    let buf = &threshed.buf;
-    let stride = threshed.stride as usize;
-
-    // Check a neighbor offset and add a boundary point if valid.
-    // All accesses are guaranteed in-bounds because x ∈ [1, w-2] and y ∈ [1, h-2]
-    // with dx, dy ∈ {-1, 0, 1}.
-    // `rep0` is pre-computed by the caller to avoid redundant find() calls.
-    // Returns true when a boundary point was added.
-    macro_rules! do_conn {
-        ($map:expr, $uf:expr, $buf:expr, $stride:expr,
-         $x:expr, $y:expr, $rep0:expr, $v0:expr,
-         $dx:expr, $dy:expr, $w:expr, $min_component_size:expr) => {{
-            let nx = ($x as i32 + $dx) as usize;
-            let ny = ($y as i32 + $dy) as usize;
-            let v1 = $buf[ny * $stride + nx];
-            if $v0 as i32 + v1 as i32 == 255 {
-                let id1 = ny as u32 * $w + nx as u32;
-                let rep1_root = $uf.find(id1);
-                if $uf.root_size(rep1_root) >= $min_component_size {
-                    let rep0 = $rep0 as u64;
-                    let rep1 = rep1_root as u64;
-                    let key = if rep0 < rep1 {
-                        (rep0 << 32) | rep1
-                    } else {
-                        (rep1 << 32) | rep0
-                    };
-                    let gx = $dx as i16 * (v1 as i16 - $v0 as i16);
-                    let gy = $dy as i16 * (v1 as i16 - $v0 as i16);
-                    let pt = Pt {
-                        x: (2 * $x as i32 + $dx) as u16,
-                        y: (2 * $y as i32 + $dy) as u16,
-                        gx,
-                        gy,
-                        slope: 0,
-                    };
-                    $map.insert(key, pt);
-                    true
+// Check a neighbor offset and add a boundary point if valid.
+// All accesses are guaranteed in-bounds because x ∈ [1, w-2] and y ∈ [1, h-2]
+// with dx, dy ∈ {-1, 0, 1}.
+// `rep0` is pre-computed by the caller to avoid redundant find() calls.
+// Returns true when a boundary point was added.
+macro_rules! do_conn {
+    ($map:expr, $uf:expr, $buf:expr, $stride:expr,
+     $x:expr, $y:expr, $rep0:expr, $v0:expr,
+     $dx:expr, $dy:expr, $w:expr, $min_component_size:expr) => {{
+        let nx = ($x as i32 + $dx) as usize;
+        let ny = ($y as i32 + $dy) as usize;
+        let v1 = $buf[ny * $stride + nx];
+        if $v0 as i32 + v1 as i32 == 255 {
+            let id1 = ny as u32 * $w + nx as u32;
+            let rep1_root = $uf.find_flat(id1);
+            if $uf.root_size(rep1_root) >= $min_component_size {
+                let rep0 = $rep0 as u64;
+                let rep1 = rep1_root as u64;
+                let key = if rep0 < rep1 {
+                    (rep0 << 32) | rep1
                 } else {
-                    false
-                }
+                    (rep1 << 32) | rep0
+                };
+                let gx = $dx as i16 * (v1 as i16 - $v0 as i16);
+                let gy = $dy as i16 * (v1 as i16 - $v0 as i16);
+                let pt = Pt {
+                    x: (2 * $x as i32 + $dx) as u16,
+                    y: (2 * $y as i32 + $dy) as u16,
+                    gx,
+                    gy,
+                    slope: 0,
+                };
+                $map.insert(key, pt);
+                true
             } else {
                 false
             }
-        }};
-    }
+        } else {
+            false
+        }
+    }};
+}
 
-    // Loop over interior pixels only (skip border). All neighbor offsets
-    // (dx,dy) ∈ {-1,0,1} are guaranteed in-bounds, eliminating bounds checks.
-    // The C reference uses the same range restriction.
-    for y in 1..h.saturating_sub(1) {
+/// Scan rows `y0..y1` and insert boundary points into `cluster_map`.
+///
+/// Requires [`UnionFind::flatten`] to have been called so that
+/// [`find_flat`](UnionFind::find_flat) returns the correct root.
+fn scan_rows(
+    buf: &[u8],
+    stride: usize,
+    w: u32,
+    y0: u32,
+    y1: u32,
+    uf: &UnionFind,
+    cluster_map: &mut ClusterMap,
+) {
+    let min_component_size = 25u32;
+    for y in y0..y1 {
         let row_off = y as usize * stride;
         let mut connected_last = false;
         for x in 1..w.saturating_sub(1) {
@@ -204,8 +216,7 @@ pub fn gradient_clusters(
                 continue;
             }
 
-            // Compute rep0 once for this pixel, reuse across all do_conn! calls
-            let rep0 = uf.find(y * w + x);
+            let rep0 = uf.find_flat(y * w + x);
             if uf.root_size(rep0) < min_component_size {
                 connected_last = false;
                 continue;
@@ -241,10 +252,7 @@ pub fn gradient_clusters(
                 min_component_size
             );
 
-            // 8-connectivity with deduplication: checking (1,1) on the
-            // previous pixel and (-1,1) on the current pixel produces the
-            // same midpoint. Only check (-1,1) when the previous pixel
-            // did not connect via (1,1).
+            // 8-connectivity with deduplication
             if !connected_last {
                 do_conn!(
                     cluster_map,
@@ -277,19 +285,135 @@ pub fn gradient_clusters(
             );
         }
     }
+}
 
-    // Collect clusters that meet the minimum size threshold.
-    // Swap out the Vec<Pt> so the entry retains an empty Vec for recycling.
-    out.clear();
-    for entry in &mut cluster_map.entries {
-        if entry.points.len() >= min_cluster_size as usize {
-            let points = std::mem::take(&mut entry.points);
-            out.push(Cluster { points });
+/// Extract boundary points between adjacent black/white components and group
+/// them into clusters keyed by the ordered pair of component representatives.
+///
+/// Each cluster represents a potential quad edge.
+///
+/// Points are inserted directly into a hash table during the scan (O(n) amortized),
+/// avoiding the O(n log n) sort that dominates on noisy images with many boundary points.
+pub fn gradient_clusters(
+    threshed: &ImageU8,
+    uf: &mut UnionFind,
+    min_cluster_size: u32,
+    cluster_map: &mut ClusterMap,
+    out: &mut Vec<Cluster>,
+) {
+    let w = threshed.width;
+    let h = threshed.height;
+
+    // Flatten the union-find so find_flat() works in O(1)
+    uf.flatten();
+
+    let buf = &threshed.buf;
+    let stride = threshed.stride as usize;
+
+    let y_start = 1u32;
+    let y_end = h.saturating_sub(1);
+
+    // COVERAGE: parallel feature block — only compiled with --features parallel
+    #[cfg(feature = "parallel")]
+    {
+        let _ = cluster_map; // per-thread maps used instead
+                             // Split image into horizontal strips, one per rayon task.
+                             // Each strip gets its own ClusterMap, then we merge results.
+        let n_rows = y_end.saturating_sub(y_start) as usize;
+        if n_rows == 0 {
+            out.clear();
+            return;
+        }
+
+        // Use ~4 tasks per rayon thread, minimum 64 rows per chunk
+        let n_threads = rayon::current_num_threads();
+        let rows_per_chunk = (n_rows / (n_threads * 4)).max(64).min(n_rows);
+        let n_chunks = (n_rows + rows_per_chunk - 1) / rows_per_chunk;
+        let n_buckets = ((w as usize * rows_per_chunk) / 5).max(16);
+
+        // Parallel scan: each chunk produces keyed clusters (key, points)
+        let chunk_results: Vec<Vec<(u64, Vec<Pt>)>> = (0..n_chunks)
+            .into_par_iter()
+            .map_init(
+                || ClusterMap::with_capacity(n_buckets),
+                |local_map, chunk_idx| {
+                    let cy0 = y_start + (chunk_idx * rows_per_chunk) as u32;
+                    let cy1 = y_end.min(cy0 + rows_per_chunk as u32);
+                    local_map.reset(n_buckets);
+                    scan_rows(buf, stride, w, cy0, cy1, uf, local_map);
+                    // Collect all clusters (even small ones) so merging
+                    // can combine strips that individually are below threshold
+                    local_map.collect_keyed(1)
+                },
+            )
+            .collect();
+
+        // Merge clusters from different strips with the same key
+        merge_strip_clusters(chunk_results, min_cluster_size, out);
+    }
+
+    #[cfg(not(feature = "parallel"))]
+    {
+        let n_buckets = ((w as usize * h as usize) / 5).max(16);
+        cluster_map.reset(n_buckets);
+        scan_rows(buf, stride, w, y_start, y_end, uf, cluster_map);
+
+        // Collect clusters that meet the minimum size threshold.
+        out.clear();
+        for entry in &mut cluster_map.entries {
+            if entry.points.len() >= min_cluster_size as usize {
+                let points = std::mem::take(&mut entry.points);
+                out.push(Cluster { points });
+            }
         }
     }
 
     // Sort by descending size for determinism
     out.sort_by(|a, b| b.points.len().cmp(&a.points.len()));
+}
+
+/// Merge keyed clusters from multiple strips. Clusters with the same key
+/// (component-pair) across strips get their points concatenated, then
+/// the combined cluster is kept only if it meets `min_cluster_size`.
+#[cfg(feature = "parallel")]
+fn merge_strip_clusters(
+    chunk_results: Vec<Vec<(u64, Vec<Pt>)>>,
+    min_cluster_size: u32,
+    out: &mut Vec<Cluster>,
+) {
+    use std::collections::HashMap;
+
+    out.clear();
+
+    // Fast path: single chunk, no merging needed
+    if chunk_results.len() <= 1 {
+        if let Some(keyed) = chunk_results.into_iter().next() {
+            for (_, points) in keyed {
+                if points.len() >= min_cluster_size as usize {
+                    out.push(Cluster { points });
+                }
+            }
+        }
+        return;
+    }
+
+    // Merge by key: same component-pair boundary may appear in multiple strips
+    let total_entries: usize = chunk_results.iter().map(|v| v.len()).sum();
+    let mut map: HashMap<u64, Vec<Pt>> = HashMap::with_capacity(total_entries);
+
+    for keyed_clusters in chunk_results {
+        for (key, points) in keyed_clusters {
+            map.entry(key)
+                .and_modify(|existing| existing.extend_from_slice(&points))
+                .or_insert(points);
+        }
+    }
+
+    for (_, points) in map {
+        if points.len() >= min_cluster_size as usize {
+            out.push(Cluster { points });
+        }
+    }
 }
 
 #[cfg(test)]

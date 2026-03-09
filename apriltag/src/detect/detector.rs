@@ -116,6 +116,7 @@ pub struct DetectorBuffers {
     threshed: ImageU8,
     threshold_bufs: ThresholdBuffers,
     uf: UnionFind,
+    #[cfg(not(feature = "parallel"))]
     refine_vals: Vec<f64>,
     cluster_map: super::cluster::ClusterMap,
     clusters: Vec<Cluster>,
@@ -135,6 +136,7 @@ impl DetectorBuffers {
             blur_tmp: ImageU8::new(0, 0),
             threshed: ImageU8::new(0, 0),
             threshold_bufs: ThresholdBuffers::new(),
+            #[cfg(not(feature = "parallel"))]
             refine_vals: Vec::new(),
             uf: UnionFind::empty(),
             cluster_map: super::cluster::ClusterMap::new(),
