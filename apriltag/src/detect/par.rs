@@ -157,3 +157,66 @@ impl Par {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Par;
+
+    #[test]
+    fn chunks_mut_for_each_sequential() {
+        let mut buf = vec![0u8; 10];
+        Par::Sequential.chunks_mut_for_each(&mut buf, 3, |i, chunk| {
+            for v in chunk.iter_mut() {
+                *v = i as u8;
+            }
+        });
+        assert_eq!(buf, vec![0, 0, 0, 1, 1, 1, 2, 2, 2, 3]);
+    }
+
+    #[test]
+    fn map_init_collect_sequential() {
+        let mut items = vec![1, 2, 3, 4, 5];
+        let result = Par::Sequential.map_init_collect(
+            &mut items,
+            || 0usize, // running count
+            |count, item| {
+                *count += 1;
+                if *item % 2 == 0 {
+                    Some(*item * 10)
+                } else {
+                    None
+                }
+            },
+        );
+        assert_eq!(result, vec![20, 40]);
+    }
+
+    #[test]
+    fn for_each_init_sequential() {
+        let mut items = vec![1, 2, 3];
+        Par::Sequential.for_each_init(
+            &mut items,
+            || 10i32,
+            |base, item| {
+                *item += *base;
+            },
+        );
+        assert_eq!(items, vec![11, 12, 13]);
+    }
+
+    #[test]
+    fn flat_map_init_collect_sequential() {
+        let items = vec![1, 2, 3];
+        let result = Par::Sequential.flat_map_init_collect(
+            &items,
+            || (),
+            |_, &item, out| {
+                for i in 0..item {
+                    out.push(i);
+                }
+            },
+        );
+        // 1 -> [0], 2 -> [0,1], 3 -> [0,1,2]
+        assert_eq!(result, vec![0, 0, 1, 0, 1, 2]);
+    }
+}

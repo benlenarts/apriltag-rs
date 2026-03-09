@@ -443,6 +443,8 @@ pub fn gradient_clusters(
             // Split image into horizontal strips, one per rayon task.
             // Each strip gets its own ClusterMap, then we merge results.
             let n_rows = y_end.saturating_sub(y_start) as usize;
+            // COVERAGE: parallel feature block — n_rows == 0 requires a degenerate
+            // (zero-height) image which is filtered before reaching clustering.
             if n_rows == 0 {
                 out.clear();
                 return;
