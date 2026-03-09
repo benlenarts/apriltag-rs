@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+#### Core Detection Library (`apriltag`)
+
+- Parallelize all major pipeline stages with Rayon (behind `parallel` feature): preprocessing (decimation + blur), threshold binarization, gradient clustering, edge refinement. Previously only quad fitting and decode were parallelized. (#94)
+- Add `UnionFind::flatten()` and `find_flat()` for O(1) read-only concurrent access to component representatives
+
 ### Added
 
 #### Core Detection Library (`apriltag`)

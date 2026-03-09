@@ -1,3 +1,6 @@
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 use super::image::{GrayImage, ImageU8};
 use wide::{i32x8, u32x8};
 
@@ -8,7 +11,7 @@ use wide::{i32x8, u32x8};
 ///
 /// When `f <= 1`, copies `img` into `out`. Otherwise writes the decimated
 /// result into `out`, reusing its allocation.
-pub fn decimate(img: &impl GrayImage, f: u32, out: &mut ImageU8) {
+pub fn decimate(img: &(impl GrayImage + Sync), f: u32, out: &mut ImageU8) {
     if f <= 1 {
         let w = img.width();
         let h = img.height();
@@ -28,6 +31,21 @@ pub fn decimate(img: &impl GrayImage, f: u32, out: &mut ImageU8) {
     let out_h = img.height() / f;
     out.reshape(out_w, out_h);
 
+    // COVERAGE: parallel feature block — only compiled with --features parallel
+    #[cfg(feature = "parallel")]
+    {
+        let owu = out_w as usize;
+        out.buf[..out_h as usize * owu]
+            .par_chunks_mut(owu)
+            .enumerate()
+            .for_each(|(oy, row)| {
+                for ox in 0..out_w {
+                    row[ox as usize] = img.get(ox * f, oy as u32 * f);
+                }
+            });
+    }
+
+    #[cfg(not(feature = "parallel"))]
     for oy in 0..out_h {
         for ox in 0..out_w {
             out.set(ox, oy, img.get(ox * f, oy * f));
@@ -81,9 +99,10 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize, out: &mut ImageU8, tmp: 
     // Horizontal pass: SIMD for interior, scalar for edges
     tmp.reshape(img.width, img.height);
     let halfu = half as usize;
-    for y in 0..h {
+
+    // Horizontal pass body for a single output row.
+    let h_row = |y: i32, out_row: &mut [u8]| {
         let row = img.row(y as u32);
-        let out_off = y as usize * wu;
 
         // Left edge (scalar with clamping)
         for x in 0..halfu.min(wu) {
@@ -92,7 +111,7 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize, out: &mut ImageU8, tmp: 
                 let sx = (x as i32 + k - half).clamp(0, w - 1) as usize;
                 acc += row[sx] as u32 * kernel[k as usize] as u32;
             }
-            tmp.buf[out_off + x] = ((acc + (1 << 14)) >> 15) as u8;
+            out_row[x] = ((acc + (1 << 14)) >> 15) as u8;
         }
 
         // Interior (SIMD — no clamping needed)
@@ -116,9 +135,7 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize, out: &mut ImageU8, tmp: 
             }
             let rounded: u32x8 = (acc + u32x8::splat(1 << 14)) >> 15;
             let vals = rounded.to_array();
-            for i in 0..8 {
-                tmp.buf[out_off + x + i] = vals[i] as u8;
-            }
+            out_row[x..x + 8].copy_from_slice(&vals.map(|v| v as u8));
             x += 8;
         }
         // Interior remainder (scalar, no clamping)
@@ -127,7 +144,7 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize, out: &mut ImageU8, tmp: 
             for (ki, &kv) in kernel.iter().enumerate() {
                 acc += row[x + ki - halfu] as u32 * kv as u32;
             }
-            tmp.buf[out_off + x] = ((acc + (1 << 14)) >> 15) as u8;
+            out_row[x] = ((acc + (1 << 14)) >> 15) as u8;
             x += 1;
         }
 
@@ -138,17 +155,31 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize, out: &mut ImageU8, tmp: 
                 let sx = (x as i32 + k - half).clamp(0, w - 1) as usize;
                 acc += row[sx] as u32 * kernel[k as usize] as u32;
             }
-            tmp.buf[out_off + x] = ((acc + (1 << 14)) >> 15) as u8;
+            out_row[x] = ((acc + (1 << 14)) >> 15) as u8;
         }
+    };
+
+    // COVERAGE: parallel feature block — only compiled with --features parallel
+    #[cfg(feature = "parallel")]
+    tmp.buf[..h as usize * wu]
+        .par_chunks_mut(wu)
+        .enumerate()
+        .for_each(|(y, out_row)| h_row(y as i32, out_row));
+
+    #[cfg(not(feature = "parallel"))]
+    for y in 0..h {
+        let off = y as usize * wu;
+        h_row(y, &mut tmp.buf[off..off + wu]);
     }
 
     // Vertical pass: SIMD for 8-wide chunks, scalar remainder
     out.reshape(img.width, img.height);
-    let mut rows: Vec<&[u8]> = Vec::with_capacity(ksz);
-    for y in 0..h {
-        rows.clear();
-        rows.extend((0..ksz as i32).map(|k| tmp.row((y + k - half).clamp(0, h - 1) as u32)));
-        let out_off = y as usize * wu;
+
+    // Vertical pass body for a single output row.
+    let v_row = |y: i32, out_row: &mut [u8]| {
+        let rows: Vec<&[u8]> = (0..ksz as i32)
+            .map(|k| tmp.row((y + k - half).clamp(0, h - 1) as u32))
+            .collect();
 
         let mut x = 0usize;
         while x + 8 <= wu {
@@ -169,9 +200,7 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize, out: &mut ImageU8, tmp: 
             }
             let rounded: u32x8 = (acc + u32x8::splat(1 << 14)) >> 15;
             let vals = rounded.to_array();
-            for i in 0..8 {
-                out.buf[out_off + x + i] = vals[i] as u8;
-            }
+            out_row[x..x + 8].copy_from_slice(&vals.map(|v| v as u8));
             x += 8;
         }
         // Scalar remainder
@@ -180,9 +209,22 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize, out: &mut ImageU8, tmp: 
             for (k, &kv) in kernel.iter().enumerate() {
                 acc += rows[k][x] as u32 * kv as u32;
             }
-            out.buf[out_off + x] = ((acc + (1 << 14)) >> 15) as u8;
+            out_row[x] = ((acc + (1 << 14)) >> 15) as u8;
             x += 1;
         }
+    };
+
+    // COVERAGE: parallel feature block — only compiled with --features parallel
+    #[cfg(feature = "parallel")]
+    out.buf[..h as usize * wu]
+        .par_chunks_mut(wu)
+        .enumerate()
+        .for_each(|(y, out_row)| v_row(y as i32, out_row));
+
+    #[cfg(not(feature = "parallel"))]
+    for y in 0..h {
+        let off = y as usize * wu;
+        v_row(y, &mut out.buf[off..off + wu]);
     }
 }
 

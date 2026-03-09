@@ -1,7 +1,7 @@
 use crate::family::{FamilyId, TagFamily};
 
 #[cfg(feature = "parallel")]
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use super::cluster::{gradient_clusters, Cluster};
 use super::connected::connected_components;
@@ -116,6 +116,7 @@ pub struct DetectorBuffers {
     threshed: ImageU8,
     threshold_bufs: ThresholdBuffers,
     uf: UnionFind,
+    #[cfg(not(feature = "parallel"))]
     refine_vals: Vec<f64>,
     cluster_map: super::cluster::ClusterMap,
     clusters: Vec<Cluster>,
@@ -135,6 +136,7 @@ impl DetectorBuffers {
             blur_tmp: ImageU8::new(0, 0),
             threshed: ImageU8::new(0, 0),
             threshold_bufs: ThresholdBuffers::new(),
+            #[cfg(not(feature = "parallel"))]
             refine_vals: Vec::new(),
             uf: UnionFind::empty(),
             cluster_map: super::cluster::ClusterMap::new(),
@@ -263,6 +265,18 @@ impl Detector {
 
         // Stage 6: Edge refinement
         if self.config.refine_edges {
+            // COVERAGE: parallel feature block — only compiled with --features parallel
+            #[cfg(feature = "parallel")]
+            {
+                let quad_decimate = self.config.quad_decimate;
+                buffers
+                    .quads
+                    .par_iter_mut()
+                    .for_each_init(Vec::new, |vals, quad| {
+                        refine_edges(quad, img, quad_decimate, vals);
+                    });
+            }
+            #[cfg(not(feature = "parallel"))]
             for quad in &mut buffers.quads {
                 refine_edges(
                     quad,
