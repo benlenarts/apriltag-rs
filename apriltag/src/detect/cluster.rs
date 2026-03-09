@@ -199,7 +199,6 @@ macro_rules! do_conn {
 ///
 /// Uses `&mut UnionFind` with `find()` for path compression during the scan.
 /// This is the sequential path — no `flatten()` needed.
-#[cfg(not(feature = "parallel"))]
 fn scan_rows_mut(
     buf: &[u8],
     stride: usize,
@@ -422,43 +421,60 @@ pub fn gradient_clusters(
     // COVERAGE: parallel feature block — only compiled with --features parallel
     #[cfg(feature = "parallel")]
     {
-        // Flatten the union-find so find_flat() works in O(1) for parallel access
-        uf.flatten();
-
-        let _ = cluster_map; // per-thread maps used instead
-                             // Split image into horizontal strips, one per rayon task.
-                             // Each strip gets its own ClusterMap, then we merge results.
-        let n_rows = y_end.saturating_sub(y_start) as usize;
-        if n_rows == 0 {
-            out.clear();
-            return;
-        }
-
-        // Use ~4 tasks per rayon thread, minimum 64 rows per chunk
         let n_threads = rayon::current_num_threads();
-        let rows_per_chunk = (n_rows / (n_threads * 4)).max(64).min(n_rows);
-        let n_chunks = n_rows.div_ceil(rows_per_chunk);
-        let n_buckets = ((w as usize * rows_per_chunk) / 5).max(16);
 
-        // Parallel scan: each chunk produces keyed clusters (key, points)
-        let chunk_results: Vec<Vec<(u64, Vec<Pt>)>> = (0..n_chunks)
-            .into_par_iter()
-            .map_init(
-                || ClusterMap::with_capacity(n_buckets),
-                |local_map, chunk_idx| {
-                    let cy0 = y_start + (chunk_idx * rows_per_chunk) as u32;
-                    let cy1 = y_end.min(cy0 + rows_per_chunk as u32);
-                    local_map.reset(n_buckets);
-                    scan_rows_flat(buf, stride, w, cy0, cy1, uf, local_map);
-                    // Collect all clusters (even small ones) so merging
-                    // can combine strips that individually are below threshold
-                    local_map.collect_keyed(1)
-                },
-            )
-            .collect();
+        // When only 1 thread is available, skip flatten() and use the mutable
+        // find() path — avoids the O(width*height) flatten overhead.
+        if n_threads <= 1 {
+            let n_buckets = ((w as usize * h as usize) / 5).max(16);
+            cluster_map.reset(n_buckets);
+            scan_rows_mut(buf, stride, w, y_start, y_end, uf, cluster_map);
 
-        // Merge clusters from different strips with the same key
-        merge_strip_clusters(chunk_results, min_cluster_size, out);
+            out.clear();
+            for entry in &mut cluster_map.entries {
+                if entry.points.len() >= min_cluster_size as usize {
+                    let points = std::mem::take(&mut entry.points);
+                    out.push(Cluster { points });
+                }
+            }
+        } else {
+            // Flatten the union-find so find_flat() works in O(1) for parallel access
+            uf.flatten();
+
+            let _ = cluster_map; // per-thread maps used instead
+                                 // Split image into horizontal strips, one per rayon task.
+                                 // Each strip gets its own ClusterMap, then we merge results.
+            let n_rows = y_end.saturating_sub(y_start) as usize;
+            if n_rows == 0 {
+                out.clear();
+                return;
+            }
+
+            // Use ~4 tasks per rayon thread, minimum 64 rows per chunk
+            let rows_per_chunk = (n_rows / (n_threads * 4)).max(64).min(n_rows);
+            let n_chunks = n_rows.div_ceil(rows_per_chunk);
+            let n_buckets = ((w as usize * rows_per_chunk) / 5).max(16);
+
+            // Parallel scan: each chunk produces keyed clusters (key, points)
+            let chunk_results: Vec<Vec<(u64, Vec<Pt>)>> = (0..n_chunks)
+                .into_par_iter()
+                .map_init(
+                    || ClusterMap::with_capacity(n_buckets),
+                    |local_map, chunk_idx| {
+                        let cy0 = y_start + (chunk_idx * rows_per_chunk) as u32;
+                        let cy1 = y_end.min(cy0 + rows_per_chunk as u32);
+                        local_map.reset(n_buckets);
+                        scan_rows_flat(buf, stride, w, cy0, cy1, uf, local_map);
+                        // Collect all clusters (even small ones) so merging
+                        // can combine strips that individually are below threshold
+                        local_map.collect_keyed(1)
+                    },
+                )
+                .collect();
+
+            // Merge clusters from different strips with the same key
+            merge_strip_clusters(chunk_results, min_cluster_size, out);
+        }
     }
 
     #[cfg(not(feature = "parallel"))]
