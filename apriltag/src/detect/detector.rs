@@ -1,7 +1,7 @@
 use crate::family::{FamilyId, TagFamily};
 
 #[cfg(feature = "parallel")]
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use super::cluster::{gradient_clusters, Cluster};
 use super::connected::connected_components;
@@ -263,6 +263,18 @@ impl Detector {
 
         // Stage 6: Edge refinement
         if self.config.refine_edges {
+            // COVERAGE: parallel feature block — only compiled with --features parallel
+            #[cfg(feature = "parallel")]
+            {
+                let quad_decimate = self.config.quad_decimate;
+                buffers
+                    .quads
+                    .par_iter_mut()
+                    .for_each_init(Vec::new, |vals, quad| {
+                        refine_edges(quad, img, quad_decimate, vals);
+                    });
+            }
+            #[cfg(not(feature = "parallel"))]
             for quad in &mut buffers.quads {
                 refine_edges(
                     quad,
