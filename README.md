@@ -14,7 +14,7 @@ Pure Rust implementation of the [AprilTag](https://april.eecs.umich.edu/software
 
 | Metric | Value |
 |--------|-------|
-| **Performance** | 0.85× (faster) on clean scenes, 1.07× overall vs C reference |
+| **Performance** | 0.95× overall vs C reference (single-threaded, 59 scenarios) |
 | **Tests** | 377 unit + integration tests |
 | **Coverage** | 99.5% line coverage (cargo-llvm-cov) |
 | **Regression suite** | 59 scenarios, all passing |
@@ -49,10 +49,19 @@ Detection performance is benchmarked against the [reference C implementation](ht
 | Noise (sigma 20) | 126.4 ms | 114.7 ms | 1.10× |
 | Combined distortions | 71.6 ms | 62.1 ms | 1.15× |
 
+**Multi-threaded scaling** (59-scenario aggregate):
+
+| Threads | Rust | C reference | Ratio |
+|---------|------|-------------|-------|
+| 1 | 798 ms | 844 ms | **0.95×** |
+| 2 | 521 ms | 519 ms | 1.00× |
+| 4 | 402 ms | 351 ms | 1.15× |
+
 **Highlights:**
+- **Single-threaded aggregate: 0.95×** (5% faster than C across all 59 scenarios)
 - **4000×3000 with decimation:** 0.44× (2.3× faster than C)
 - **2000×1500 clean:** 0.70× (30% faster than C)
-- **Overall across 59 scenarios:** 1.09× (9% slower aggregate, dominated by noisy high-res scenes)
+- **Multi-threaded gap** is dominated by the `highres-4000x3000` noisy outlier (1.57× at 4T); clean scenes stay ~0.50× at all thread counts
 
 The 59-scenario regression suite covers rotation, perspective, scale (16–200px tags), noise (sigma 5–40), contrast (10–50%), lighting gradients, blur, multi-tag, occlusion, decimation modes, and scaling benchmarks. Every scenario must pass on every commit.
 

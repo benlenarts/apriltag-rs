@@ -95,11 +95,31 @@ To reproduce: `just sim-ref benchmark` (requires `scripts/fetch-references.sh` f
 | 10 | 67.1 | 63.0 | 1.06× |
 | 25 | 108.5 | 100.8 | 1.08× |
 
+### Multi-threaded scaling
+
+To reproduce: `just bench-par 1,2,4` (requires `scripts/fetch-references.sh` first).
+
+**59-scenario aggregate:**
+
+| Threads | Rust (ms) | C ref (ms) | Ratio |
+|---------|-----------|------------|-------|
+| 1 | 797.9 | 843.7 | **0.95×** |
+| 2 | 521.2 | 518.7 | 1.00× |
+| 4 | 402.2 | 351.0 | 1.15× |
+
+**`highres-4000x3000` (117 tags, noise+blur+lighting, 12 MP):**
+
+| Threads | Rust (ms) | C ref (ms) | Ratio |
+|---------|-----------|------------|-------|
+| 1 | 478.5 | 451.8 | 1.06× |
+| 2 | 283.3 | 245.6 | 1.15× |
+| 4 | 204.5 | 130.6 | 1.57× |
+
 ### Analysis
 
-Rust is **15% faster on clean scenes** (rotation, blur, contrast, perspective, scale, decimation) due to optimized data structures (ClusterMap, index-indirect sort) and better cache locality.
+**Single-threaded (1T):** Rust is **5% faster overall** (0.95×). Clean scenes are 15% faster (0.85×) due to optimized data structures (ClusterMap, index-indirect sort) and better cache locality. Noisy scenes are 10–15% slower because gradient clustering generates many more edge candidates in noisy images.
 
-Rust is **10–15% slower on noisy/combined scenes** because gradient clustering generates many more edge candidates in noisy images. The C implementation's sort-based clustering handles this edge case more efficiently. The `highres-4000x3000` scenario (1.32×) is an outlier — it combines 117 tags with noise, lighting gradients, and blur on a 12 MP image.
+**Multi-threaded scaling:** The C reference scales better with threads on large noisy images. At 4 threads, the `highres-4000x3000` outlier (1.57×) dominates the aggregate. Clean scenes remain ~0.50× at all thread counts — Rust's parallelization is effective but the noisy-scene bottleneck scales worse than C's sort-based approach.
 
 The **decimation fast path** (0.44×) shows Rust's advantage with subsampling: the Rust implementation skips more work in the decimation path than the C reference.
 
