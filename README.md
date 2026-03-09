@@ -14,7 +14,7 @@ Pure Rust implementation of the [AprilTag](https://april.eecs.umich.edu/software
 
 | Metric | Value |
 |--------|-------|
-| **Performance** | 1.00× vs C reference on 4000×3000, 117-tag scene |
+| **Performance** | 0.85× (faster) on clean scenes, 1.07× overall vs C reference |
 | **Tests** | 377 unit + integration tests |
 | **Coverage** | 99.5% line coverage (cargo-llvm-cov) |
 | **Regression suite** | 59 scenarios, all passing |
@@ -35,12 +35,24 @@ Pure Rust implementation of the [AprilTag](https://april.eecs.umich.edu/software
 
 ## Performance
 
-Detection performance matches the [reference C implementation](https://github.com/AprilRobotics/apriltag) (apriltag3). Benchmarked on a realistic 4000×3000 scene with 117 tags at varied rotations and perspective tilts, plus noise (sigma 15), lighting gradient, reduced contrast, and blur:
+Detection performance is benchmarked against the [reference C implementation](https://github.com/AprilRobotics/apriltag) (apriltag3) across 59 scenarios. Rust is **faster on clean scenes** and **slightly slower on noisy scenes** where gradient clustering generates more edges to process.
 
-| Scenario | Rust | C reference | Ratio |
-|----------|------|-------------|-------|
-| highres-4000×3000 (117 tags) | 142 ms | 142 ms | 1.00× |
-| 41-scenario suite (all conditions) | 17.4 ms | 17.2 ms | 1.01× |
+**Per-condition averages** (single-threaded, median of adaptive iterations):
+
+| Condition | Rust | C reference | Ratio |
+|-----------|------|-------------|-------|
+| Clean scenes | 6.5 ms | 7.7 ms | **0.85×** |
+| Rotation (30°) | 7.4 ms | 8.5 ms | **0.86×** |
+| Blur (sigma 2) | 6.8 ms | 8.0 ms | **0.85×** |
+| Contrast (25%) | 6.6 ms | 7.6 ms | **0.87×** |
+| Perspective (20° tilt) | 9.9 ms | 10.7 ms | **0.93×** |
+| Noise (sigma 20) | 126.4 ms | 114.7 ms | 1.10× |
+| Combined distortions | 71.6 ms | 62.1 ms | 1.15× |
+
+**Highlights:**
+- **4000×3000 with decimation:** 0.44× (2.3× faster than C)
+- **2000×1500 clean:** 0.70× (30% faster than C)
+- **Overall across 59 scenarios:** 1.09× (9% slower aggregate, dominated by noisy high-res scenes)
 
 The 59-scenario regression suite covers rotation, perspective, scale (16–200px tags), noise (sigma 5–40), contrast (10–50%), lighting gradients, blur, multi-tag, occlusion, decimation modes, and scaling benchmarks. Every scenario must pass on every commit.
 

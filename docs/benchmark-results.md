@@ -4,14 +4,104 @@
 
 ## Rust vs C reference timing
 
-Measured on a realistic 4000×3000 scene with 117 tags at varied rotations and perspective tilts, plus noise (sigma 15), lighting gradient, reduced contrast, and blur.
+All measurements: single-threaded, median of adaptive iterations (min 10), release build. Ratio < 1.0 means Rust is faster.
 
-| Scenario | Rust | C reference | Ratio |
-|----------|------|-------------|-------|
-| highres-4000×3000 (117 tags) | 142 ms | 142 ms | 1.00× |
-| 41-scenario suite (all conditions) | 17.4 ms | 17.2 ms | 1.01× |
+To reproduce: `just sim-ref benchmark` (requires `scripts/fetch-references.sh` first).
 
-To reproduce: `just bench-ref benchmark` (requires `scripts/fetch-references.sh` first).
+### Per-scenario comparison (59 scenarios)
+
+| Scenario | Rust (ms) | C ref (ms) | Ratio | Image size |
+|----------|-----------|------------|-------|------------|
+| baseline-tag36h11 | 0.3 | 0.3 | 0.84× | 300×300 |
+| baseline-tag16h5 | 0.3 | 0.3 | 0.86× | 300×300 |
+| baseline-tag25h9 | 0.3 | 0.3 | 0.98× | 300×300 |
+| rotation-0deg | 0.6 | 0.7 | 0.80× | 500×500 |
+| rotation-10deg | 0.5 | 0.7 | 0.76× | 500×500 |
+| rotation-15deg | 0.6 | 0.7 | 0.80× | 500×500 |
+| rotation-20deg | 0.5 | 0.7 | 0.77× | 500×500 |
+| rotation-25deg | 0.6 | 0.8 | 0.81× | 500×500 |
+| rotation-30deg | 0.6 | 0.7 | 0.78× | 500×500 |
+| rotation-45deg | 0.6 | 0.7 | 0.79× | 500×500 |
+| rotation-60deg | 0.5 | 0.7 | 0.77× | 500×500 |
+| rotation-70deg | 0.5 | 0.7 | 0.76× | 500×500 |
+| rotation-75deg | 0.5 | 0.7 | 0.77× | 500×500 |
+| rotation-80deg | 0.6 | 0.7 | 0.79× | 500×500 |
+| rotation-90deg | 0.5 | 0.7 | 0.81× | 500×500 |
+| perspective-tilt-10deg | 0.5 | 0.6 | 0.74× | 500×500 |
+| perspective-tilt-20deg | 0.5 | 0.7 | 0.77× | 500×500 |
+| perspective-tilt-30deg | 0.5 | 0.7 | 0.79× | 500×500 |
+| scale-16px | 0.2 | 0.3 | 0.68× | 200×200 |
+| scale-32px | 0.2 | 0.3 | 0.72× | 200×200 |
+| scale-64px | 0.1 | 0.2 | 0.84× | 200×200 |
+| scale-128px | 0.4 | 0.4 | 0.82× | 384×384 |
+| scale-200px | 0.7 | 0.9 | 0.78× | 600×600 |
+| noise-sigma5 | 3.1 | 2.7 | 1.16× | 300×300 |
+| noise-sigma10 | 3.2 | 2.5 | 1.26× | 300×300 |
+| noise-sigma20 | 3.4 | 2.9 | 1.21× | 300×300 |
+| noise-sigma40 | 4.4 | 3.8 | 1.14× | 300×300 |
+| noise-saltpepper-5pct | 1.0 | 0.7 | 1.30× | 300×300 |
+| noise-saltpepper-10pct | 0.5 | 0.5 | 1.01× | 300×300 |
+| contrast-50pct | 0.3 | 0.3 | 0.85× | 300×300 |
+| contrast-25pct | 0.3 | 0.3 | 0.85× | 300×300 |
+| contrast-10pct | 0.3 | 0.3 | 0.85× | 300×300 |
+| lighting-gradient-lr | 1.1 | 0.9 | 1.20× | 300×300 |
+| lighting-vignette | 1.9 | 2.0 | 0.96× | 300×300 |
+| lighting-bright+60 | 0.3 | 0.3 | 0.85× | 300×300 |
+| lighting-bright-80 | 0.3 | 0.3 | 0.84× | 300×300 |
+| blur-sigma1 | 0.3 | 0.3 | 0.86× | 300×300 |
+| blur-sigma2 | 0.3 | 0.3 | 0.86× | 300×300 |
+| blur-sigma4 | 0.3 | 0.3 | 0.87× | 300×300 |
+| multi-2tags | 0.4 | 0.5 | 0.85× | 500×300 |
+| multi-5tags | 0.7 | 0.8 | 0.93× | 600×350 |
+| occlusion-10pct | 0.3 | 0.3 | 0.85× | 300×300 |
+| decimation-1x | 0.9 | 1.2 | 0.76× | 400×400 |
+| decimation-2x | 0.4 | 0.5 | 0.80× | 400×400 |
+| decimation-4x | 0.2 | 0.2 | 0.89× | 400×400 |
+| highres-4000x3000 | 591.0 | 447.5 | 1.32× | 4000×3000 |
+| scaling-size-500x500 | 0.6 | 0.7 | 0.80× | 500×500 |
+| scaling-size-1000x1000 | 1.6 | 2.2 | 0.76× | 1000×1000 |
+| scaling-size-2000x1500 | 4.0 | 5.7 | 0.70× | 2000×1500 |
+| scaling-size-4000x3000 | 14.6 | 21.9 | 0.67× | 4000×3000 |
+| scaling-noise-500x500 | 8.6 | 7.0 | 1.24× | 500×500 |
+| scaling-noise-1000x1000 | 38.4 | 33.0 | 1.16× | 1000×1000 |
+| scaling-noise-2000x1500 | 121.7 | 106.7 | 1.14× | 2000×1500 |
+| scaling-tags-1 | 3.5 | 5.3 | 0.65× | 2000×1500 |
+| scaling-tags-10 | 5.9 | 7.4 | 0.80× | 2000×1500 |
+| scaling-tags-30 | 11.8 | 12.7 | 0.93× | 2000×1500 |
+| scaling-decimate-1x | 52.6 | 118.9 | 0.44× | 4000×3000 |
+| scaling-decimate-2x | 14.4 | 22.1 | 0.65× | 4000×3000 |
+| scaling-decimate-4x | 4.4 | 6.1 | 0.72× | 4000×3000 |
+
+**Total: 907.4 ms vs 832.6 ms (1.09×)**
+
+### Per-condition averages
+
+| Condition | Rust (ms) | C ref (ms) | Ratio |
+|-----------|-----------|------------|-------|
+| Clean | 6.5 | 7.7 | **0.85×** |
+| Rotation (30°) | 7.4 | 8.5 | **0.86×** |
+| Perspective (20° tilt) | 9.9 | 10.7 | **0.93×** |
+| Noise (sigma 20) | 126.4 | 114.7 | 1.10× |
+| Blur (sigma 2) | 6.8 | 8.0 | **0.85×** |
+| Contrast (25%) | 6.6 | 7.6 | **0.87×** |
+| Combined distortions | 71.6 | 62.1 | 1.15× |
+
+### Per-tag-count averages
+
+| Tags | Rust (ms) | C ref (ms) | Ratio |
+|------|-----------|------------|-------|
+| 1 | 20.4 | 17.9 | 1.14× |
+| 5 | 39.3 | 37.4 | 1.05× |
+| 10 | 67.1 | 63.0 | 1.06× |
+| 25 | 108.5 | 100.8 | 1.08× |
+
+### Analysis
+
+Rust is **15% faster on clean scenes** (rotation, blur, contrast, perspective, scale, decimation) due to optimized data structures (ClusterMap, index-indirect sort) and better cache locality.
+
+Rust is **10–15% slower on noisy/combined scenes** because gradient clustering generates many more edge candidates in noisy images. The C implementation's sort-based clustering handles this edge case more efficiently. The `highres-4000x3000` scenario (1.32×) is an outlier — it combines 117 tags with noise, lighting gradients, and blur on a 12 MP image.
+
+The **decimation fast path** (0.44×) shows Rust's advantage with subsampling: the Rust implementation skips more work in the decimation path than the C reference.
 
 ## Regression suite
 
