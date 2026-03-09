@@ -116,6 +116,29 @@ impl UnionFind {
     pub fn root_size(&self, root: u32) -> u32 {
         unpack_size(self.data[root as usize]) + 1
     }
+
+    /// Flatten all paths so every element points directly to its root.
+    ///
+    /// After this call, [`find_flat`](Self::find_flat) returns the correct
+    /// representative in O(1) without mutation, enabling read-only concurrent
+    /// access from multiple threads.
+    pub fn flatten(&mut self) {
+        for i in 0..self.data.len() as u32 {
+            let root = self.find(i);
+            let entry = self.data[i as usize];
+            self.data[i as usize] = pack(root, unpack_size(entry));
+        }
+    }
+
+    /// Find the representative of the set containing `id` in O(1).
+    ///
+    /// Requires [`flatten`](Self::flatten) to have been called first.
+    /// Unlike [`find`](Self::find), this takes `&self` and can be called
+    /// concurrently from multiple threads.
+    #[inline(always)]
+    pub fn find_flat(&self, id: u32) -> u32 {
+        unpack_parent(self.data[id as usize])
+    }
 }
 
 #[cfg(test)]
@@ -242,5 +265,46 @@ mod tests {
         uf.union(0, 1);
         let r = uf.find(0);
         assert_eq!(uf.union(0, 1), r);
+    }
+
+    #[test]
+    fn flatten_enables_find_flat() {
+        let mut uf = UnionFind::new(10);
+        uf.union(0, 1);
+        uf.union(1, 2);
+        uf.union(2, 3);
+        uf.union(5, 6);
+        uf.union(6, 7);
+
+        uf.flatten();
+
+        // All elements in {0,1,2,3} should have the same root
+        let root_a = uf.find_flat(0);
+        assert_eq!(uf.find_flat(1), root_a);
+        assert_eq!(uf.find_flat(2), root_a);
+        assert_eq!(uf.find_flat(3), root_a);
+
+        // All elements in {5,6,7} should have the same root
+        let root_b = uf.find_flat(5);
+        assert_eq!(uf.find_flat(6), root_b);
+        assert_eq!(uf.find_flat(7), root_b);
+
+        // Singletons should point to themselves
+        assert_eq!(uf.find_flat(4), 4);
+        assert_eq!(uf.find_flat(8), 8);
+
+        // Different sets should have different roots
+        assert_ne!(root_a, root_b);
+    }
+
+    #[test]
+    fn flatten_preserves_sizes() {
+        let mut uf = UnionFind::new(5);
+        uf.union(0, 1);
+        uf.union(0, 2);
+        let root = uf.find(0);
+        let size_before = uf.root_size(root);
+        uf.flatten();
+        assert_eq!(uf.root_size(root), size_before);
     }
 }
