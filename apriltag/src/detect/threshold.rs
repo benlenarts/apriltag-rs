@@ -3,6 +3,11 @@ use super::image::ImageU8;
 const TILESZ: u32 = 4;
 
 /// Binarize a rectangular block of pixels using a single tile's lo/hi values.
+///
+/// `img_y_base` is the absolute y coordinate in the source image for the first
+/// output row at `out_y_start`.  For sequential use these are the same; for
+/// parallel tile-row processing `out_y_start` is chunk-relative while
+/// `img_y_base` remains absolute.
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn binarize_block(
@@ -15,20 +20,23 @@ fn binarize_block(
     min_white_black_diff: i32,
     x_start: usize,
     x_end: usize,
-    y_start: usize,
-    y_end: usize,
+    out_y_start: usize,
+    out_y_end: usize,
+    img_y_base: usize,
 ) {
+    let n_rows = out_y_end - out_y_start;
     if (hi as i32 - lo as i32) < min_white_black_diff {
-        for y in y_start..y_end {
+        for dy in 0..n_rows {
+            let out_y = out_y_start + dy;
             for x in x_start..x_end {
-                out_buf[y * out_w + x] = 127;
+                out_buf[out_y * out_w + x] = 127;
             }
         }
     } else {
         let thresh = lo as i32 + (hi as i32 - lo as i32) / 2;
-        for y in y_start..y_end {
-            let img_row_off = y * stride;
-            let out_row_off = y * out_w;
+        for dy in 0..n_rows {
+            let img_row_off = (img_y_base + dy) * stride;
+            let out_row_off = (out_y_start + dy) * out_w;
             for x in x_start..x_end {
                 out_buf[out_row_off + x] = if img_buf[img_row_off + x] as i32 > thresh {
                     255
@@ -154,89 +162,152 @@ pub fn threshold(
     // Remainder pixels (beyond tile-aligned region) use the last tile's values.
     out.reshape(w, h);
 
-    for ty in 0..th {
-        let y_start = (ty * TILESZ) as usize;
-        let y_end = y_start + TILESZ as usize;
-        let tile_row = (ty * tw) as usize;
-
-        for tx in 0..tw {
-            let idx = tile_row + tx as usize;
-            let x_start = (tx * TILESZ) as usize;
-            binarize_block(
-                &img.buf,
-                img.stride as usize,
-                &mut out.buf,
-                w as usize,
-                eroded_min[idx],
-                dilated_max[idx],
-                min_white_black_diff,
-                x_start,
-                x_start + TILESZ as usize,
-                y_start,
-                y_end,
-            );
-        }
-
-        if (tw * TILESZ) < w {
-            let idx = tile_row + (tw - 1) as usize;
-            binarize_block(
-                &img.buf,
-                img.stride as usize,
-                &mut out.buf,
-                w as usize,
-                eroded_min[idx],
-                dilated_max[idx],
-                min_white_black_diff,
-                (tw * TILESZ) as usize,
-                w as usize,
-                y_start,
-                y_end,
-            );
-        }
-    }
-
-    if (th * TILESZ) < h {
-        let y_start = (th * TILESZ) as usize;
-        let tile_row = ((th - 1) * tw) as usize;
-
-        for tx in 0..tw {
-            let idx = tile_row + tx as usize;
-            let x_start = (tx * TILESZ) as usize;
-            binarize_block(
-                &img.buf,
-                img.stride as usize,
-                &mut out.buf,
-                w as usize,
-                eroded_min[idx],
-                dilated_max[idx],
-                min_white_black_diff,
-                x_start,
-                x_start + TILESZ as usize,
-                y_start,
-                h as usize,
-            );
-        }
-
-        if (tw * TILESZ) < w {
-            let idx = tile_row + (tw - 1) as usize;
-            binarize_block(
-                &img.buf,
-                img.stride as usize,
-                &mut out.buf,
-                w as usize,
-                eroded_min[idx],
-                dilated_max[idx],
-                min_white_black_diff,
-                (tw * TILESZ) as usize,
-                w as usize,
-                y_start,
-                h as usize,
-            );
-        }
-    }
+    binarize_tiles(
+        &img.buf,
+        img.stride as usize,
+        &mut out.buf,
+        w as usize,
+        h as usize,
+        tw as usize,
+        th as usize,
+        eroded_min,
+        dilated_max,
+        min_white_black_diff,
+    );
 
     if deglitch {
         deglitch_image(out, &mut tile_bufs.morph_a, &mut tile_bufs.morph_b);
+    }
+}
+
+/// Binarize a single tile row (all tiles at row `ty`) into `out_chunk`.
+///
+/// `out_chunk` is a sub-slice of the output buffer covering the pixel rows for
+/// this tile row.  `n_rows` is the number of pixel rows in the chunk (TILESZ
+/// for interior rows, possibly less for the last remainder row).
+#[allow(clippy::too_many_arguments)]
+fn binarize_tile_row(
+    img_buf: &[u8],
+    img_stride: usize,
+    out_chunk: &mut [u8],
+    out_w: usize,
+    tw: usize,
+    w: usize,
+    n_rows: usize,
+    img_y_base: usize,
+    eroded_min: &[u8],
+    dilated_max: &[u8],
+    tile_row_base: usize,
+    min_white_black_diff: i32,
+) {
+    let tilesz = TILESZ as usize;
+    for tx in 0..tw {
+        let idx = tile_row_base + tx;
+        let x_start = tx * tilesz;
+        binarize_block(
+            img_buf,
+            img_stride,
+            out_chunk,
+            out_w,
+            eroded_min[idx],
+            dilated_max[idx],
+            min_white_black_diff,
+            x_start,
+            x_start + tilesz,
+            0,
+            n_rows,
+            img_y_base,
+        );
+    }
+
+    // Remainder columns beyond tile-aligned region
+    if tw * tilesz < w {
+        let idx = tile_row_base + (tw - 1);
+        binarize_block(
+            img_buf,
+            img_stride,
+            out_chunk,
+            out_w,
+            eroded_min[idx],
+            dilated_max[idx],
+            min_white_black_diff,
+            tw * tilesz,
+            w,
+            0,
+            n_rows,
+            img_y_base,
+        );
+    }
+}
+
+/// Binarize the full image tile-by-tile, optionally in parallel.
+#[allow(clippy::too_many_arguments)]
+fn binarize_tiles(
+    img_buf: &[u8],
+    img_stride: usize,
+    out_buf: &mut [u8],
+    w: usize,
+    h: usize,
+    tw: usize,
+    th: usize,
+    eroded_min: &[u8],
+    dilated_max: &[u8],
+    min_white_black_diff: i32,
+) {
+    let tilesz = TILESZ as usize;
+    // Total number of row-groups: th tile rows + possibly one remainder row
+    let has_remainder = th * tilesz < h;
+    let n_groups = th + if has_remainder { 1 } else { 0 };
+
+    // Each group covers `tilesz` rows, except the last may be shorter.
+    // Split out_buf into groups of `tilesz * w` bytes each.
+    // The last chunk may be shorter if there's a remainder.
+    let process_group = |group_idx: usize, chunk: &mut [u8]| {
+        let (img_y_base, n_rows, tile_row_base) = if group_idx < th {
+            let img_y = group_idx * tilesz;
+            (img_y, tilesz, group_idx * tw)
+        } else {
+            // Remainder row — use last tile row's lo/hi values
+            let img_y = th * tilesz;
+            let n_rows = h - img_y;
+            (img_y, n_rows, (th - 1) * tw)
+        };
+        binarize_tile_row(
+            img_buf,
+            img_stride,
+            chunk,
+            w,
+            tw,
+            w,
+            n_rows,
+            img_y_base,
+            eroded_min,
+            dilated_max,
+            tile_row_base,
+            min_white_black_diff,
+        );
+    };
+
+    // COVERAGE: parallel feature block — only compiled with --features parallel
+    #[cfg(feature = "parallel")]
+    {
+        use rayon::prelude::*;
+        if n_groups > 0 {
+            out_buf[..h * w]
+                .par_chunks_mut(tilesz * w)
+                .enumerate()
+                .for_each(|(i, chunk)| {
+                    process_group(i, chunk);
+                });
+        }
+    }
+
+    #[cfg(not(feature = "parallel"))]
+    {
+        let _ = n_groups; // suppress unused warning
+        for (i, chunk) in out_buf[..h * w].chunks_mut(tilesz * w).enumerate() {
+            process_group(i, chunk);
+        }
     }
 }
 
