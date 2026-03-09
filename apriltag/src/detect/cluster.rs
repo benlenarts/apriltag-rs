@@ -445,6 +445,7 @@ pub fn gradient_clusters(
                                  // Split image into horizontal strips, one per rayon task.
                                  // Each strip gets its own ClusterMap, then we merge results.
             let n_rows = y_end.saturating_sub(y_start) as usize;
+            // COVERAGE: requires multi-thread pool with image height ≤ 2
             if n_rows == 0 {
                 out.clear();
                 return;
@@ -756,6 +757,84 @@ mod tests {
         map.reset(16);
         assert_eq!(map.entries.len(), 0);
         assert_eq!(map.free_vecs.len(), 2);
+    }
+
+    /// Exercise the single-thread fast path (`scan_rows_mut`) when the parallel
+    /// feature is enabled but only 1 rayon thread is available.
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn gradient_clusters_single_thread_pool() {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        pool.install(|| {
+            // Left half black, right half white — same as clusters_at_black_white_boundary
+            let mut pixels = vec![0u8; 64];
+            for y in 0..8 {
+                for x in 4..8 {
+                    pixels[y * 8 + x] = 255;
+                }
+            }
+            let img = make_thresh(8, 8, &pixels);
+            let mut uf = run_cc(&img);
+            let mut clusters = Vec::new();
+            gradient_clusters(&img, &mut uf, 1, &mut ClusterMap::new(), &mut clusters);
+            assert!(!clusters.is_empty());
+
+            // Horizontal boundary (top black, bottom white) — exercises
+            // vertical and diagonal do_conn! paths in scan_rows_mut
+            let size = 40u32;
+            let mut h_pixels = vec![0u8; (size * size) as usize];
+            for y in (size / 2)..size {
+                for x in 0..size {
+                    h_pixels[(y * size + x) as usize] = 255;
+                }
+            }
+            let h_img = make_thresh(size, size, &h_pixels);
+            let mut uf_h = run_cc(&h_img);
+            let mut h_clusters = Vec::new();
+            gradient_clusters(
+                &h_img,
+                &mut uf_h,
+                1,
+                &mut ClusterMap::new(),
+                &mut h_clusters,
+            );
+            assert!(!h_clusters.is_empty());
+
+            // Also test uniform image (no clusters) on single-thread path
+            let uniform = make_thresh(8, 8, &vec![0u8; 64]);
+            let mut uf2 = run_cc(&uniform);
+            let mut empty_clusters = Vec::new();
+            gradient_clusters(
+                &uniform,
+                &mut uf2,
+                5,
+                &mut ClusterMap::default(),
+                &mut empty_clusters,
+            );
+            assert!(empty_clusters.is_empty());
+
+            // Also test with unknown (127) pixels
+            let mut unknown_pixels = vec![127u8; 64];
+            for y in 0..4 {
+                for x in 0..4 {
+                    unknown_pixels[y * 8 + x] = 0;
+                }
+            }
+            let unknown_img = make_thresh(8, 8, &unknown_pixels);
+            let mut uf3 = run_cc(&unknown_img);
+            let mut unknown_clusters = Vec::new();
+            gradient_clusters(
+                &unknown_img,
+                &mut uf3,
+                1,
+                &mut ClusterMap::new(),
+                &mut unknown_clusters,
+            );
+            assert!(unknown_clusters.is_empty());
+        });
     }
 
     #[test]
