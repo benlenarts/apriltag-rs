@@ -8,9 +8,7 @@ use line_fitting::build_line_fit_pts;
 
 use super::cluster::{Cluster, Pt};
 use super::geometry::Vec2;
-
-#[cfg(feature = "parallel")]
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use super::par::Par;
 
 /// A detected quadrilateral with four corners in pixel coordinates.
 #[derive(Debug, Clone)]
@@ -68,47 +66,22 @@ pub fn fit_quads(
     normal_border: bool,
     reversed_border: bool,
     out: &mut Vec<Quad>,
-    #[cfg(not(feature = "parallel"))] bufs: &mut QuadFitBufs,
 ) {
     // C reference: 2*(2*w + 2*h) = 4*(w+h). Each edge point is typically added
     // twice (two unique neighbors), so the limit is 2× the geometric perimeter.
     // See apriltag_quad_thresh.c:1090.
     let max_perimeter = 4 * (image_width + image_height) as usize;
 
-    out.clear();
-
-    // COVERAGE: parallel feature block — only compiled with --features parallel
-    #[cfg(feature = "parallel")]
-    {
-        *out = clusters
-            .par_iter_mut()
-            .map_init(QuadFitBufs::new, |bufs, cluster| {
-                fit_quad(
-                    cluster,
-                    params,
-                    max_perimeter,
-                    normal_border,
-                    reversed_border,
-                    bufs,
-                )
-            })
-            .flatten()
-            .collect();
-    }
-
-    #[cfg(not(feature = "parallel"))]
-    {
-        out.extend(clusters.iter_mut().filter_map(|cluster| {
-            fit_quad(
-                cluster,
-                params,
-                max_perimeter,
-                normal_border,
-                reversed_border,
-                bufs,
-            )
-        }));
-    }
+    *out = Par::get().map_init_collect(clusters, QuadFitBufs::new, |bufs, cluster| {
+        fit_quad(
+            cluster,
+            params,
+            max_perimeter,
+            normal_border,
+            reversed_border,
+            bufs,
+        )
+    });
 }
 
 /// Try to fit a single quad from a cluster of edge points.
@@ -275,17 +248,7 @@ mod tests {
         let cluster = Cluster { points };
         let params = QuadThreshParams::default();
         let mut quads = Vec::new();
-        fit_quads(
-            &mut [cluster],
-            5,
-            5,
-            &params,
-            true,
-            true,
-            &mut quads,
-            #[cfg(not(feature = "parallel"))]
-            &mut QuadFitBufs::new(),
-        );
+        fit_quads(&mut [cluster], 5, 5, &params, true, true, &mut quads);
         assert!(quads.is_empty());
     }
 
@@ -366,17 +329,7 @@ mod tests {
         let params = QuadThreshParams::default();
 
         let mut quads = Vec::new();
-        fit_quads(
-            &mut [cluster],
-            400,
-            400,
-            &params,
-            true,
-            true,
-            &mut quads,
-            #[cfg(not(feature = "parallel"))]
-            &mut QuadFitBufs::new(),
-        );
+        fit_quads(&mut [cluster], 400, 400, &params, true, true, &mut quads);
 
         assert!(!quads.is_empty());
     }
@@ -425,17 +378,7 @@ mod tests {
         let cluster = Cluster { points };
         let params = QuadThreshParams::default();
         let mut quads = Vec::new();
-        fit_quads(
-            &mut [cluster],
-            400,
-            400,
-            &params,
-            true,
-            true,
-            &mut quads,
-            #[cfg(not(feature = "parallel"))]
-            &mut QuadFitBufs::new(),
-        );
+        fit_quads(&mut [cluster], 400, 400, &params, true, true, &mut quads);
         assert!(quads.is_empty());
     }
 
@@ -457,17 +400,7 @@ mod tests {
         let cluster = Cluster { points };
         let params = QuadThreshParams::default();
         let mut quads = Vec::new();
-        fit_quads(
-            &mut [cluster],
-            400,
-            400,
-            &params,
-            true,
-            true,
-            &mut quads,
-            #[cfg(not(feature = "parallel"))]
-            &mut QuadFitBufs::new(),
-        );
+        fit_quads(&mut [cluster], 400, 400, &params, true, true, &mut quads);
         assert!(quads.is_empty());
     }
 
@@ -518,17 +451,7 @@ mod tests {
         let cluster = Cluster { points };
         let params = QuadThreshParams::default();
         let mut quads = Vec::new();
-        fit_quads(
-            &mut [cluster],
-            400,
-            400,
-            &params,
-            false,
-            true,
-            &mut quads,
-            #[cfg(not(feature = "parallel"))]
-            &mut QuadFitBufs::new(),
-        );
+        fit_quads(&mut [cluster], 400, 400, &params, false, true, &mut quads);
         assert!(quads.is_empty());
     }
 }

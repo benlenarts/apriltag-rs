@@ -1,4 +1,5 @@
 use super::image::ImageU8;
+use super::par::Par;
 
 const TILESZ: u32 = 4;
 
@@ -255,10 +256,6 @@ fn binarize_tiles(
     min_white_black_diff: i32,
 ) {
     let tilesz = TILESZ as usize;
-    // Total number of row-groups: th tile rows + possibly one remainder row
-    let has_remainder = th * tilesz < h;
-    let n_groups = th + if has_remainder { 1 } else { 0 };
-
     // Each group covers `tilesz` rows, except the last may be shorter.
     // Split out_buf into groups of `tilesz * w` bytes each.
     // The last chunk may be shorter if there's a remainder.
@@ -288,27 +285,9 @@ fn binarize_tiles(
         );
     };
 
-    // COVERAGE: parallel feature block — only compiled with --features parallel
-    #[cfg(feature = "parallel")]
-    {
-        use rayon::prelude::*;
-        if n_groups > 0 {
-            out_buf[..h * w]
-                .par_chunks_mut(tilesz * w)
-                .enumerate()
-                .for_each(|(i, chunk)| {
-                    process_group(i, chunk);
-                });
-        }
-    }
-
-    #[cfg(not(feature = "parallel"))]
-    {
-        let _ = n_groups; // suppress unused warning
-        for (i, chunk) in out_buf[..h * w].chunks_mut(tilesz * w).enumerate() {
-            process_group(i, chunk);
-        }
-    }
+    Par::get().chunks_mut_for_each(&mut out_buf[..h * w], tilesz * w, |i, chunk| {
+        process_group(i, chunk);
+    });
 }
 
 /// Morphological close (dilate then erode) with 3x3 structuring element.

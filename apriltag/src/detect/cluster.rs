@@ -1,7 +1,5 @@
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
-
 use super::image::ImageU8;
+use super::par::Par;
 use super::unionfind::UnionFind;
 
 /// An edge point with fixed-point coordinates and gradient direction.
@@ -418,14 +416,8 @@ pub fn gradient_clusters(
     let y_start = 1u32;
     let y_end = h.saturating_sub(1);
 
-    // COVERAGE: parallel feature block — only compiled with --features parallel
-    #[cfg(feature = "parallel")]
-    {
-        let n_threads = rayon::current_num_threads();
-
-        // When only 1 thread is available, skip flatten() and use the mutable
-        // find() path — avoids the O(width*height) flatten overhead.
-        if n_threads <= 1 {
+    match Par::get() {
+        Par::Sequential => {
             let n_buckets = ((w as usize * h as usize) / 5).max(16);
             cluster_map.reset(n_buckets);
             scan_rows_mut(buf, stride, w, y_start, y_end, uf, cluster_map);
@@ -437,15 +429,20 @@ pub fn gradient_clusters(
                     out.push(Cluster { points });
                 }
             }
-        } else {
+        }
+        #[cfg(feature = "parallel")]
+        Par::Parallel => {
+            use rayon::prelude::*;
+
             // Flatten the union-find so find_flat() works in O(1) for parallel access
             uf.flatten();
 
             let _ = cluster_map; // per-thread maps used instead
-                                 // Split image into horizontal strips, one per rayon task.
-                                 // Each strip gets its own ClusterMap, then we merge results.
+            let n_threads = rayon::current_num_threads();
+
+            // Split image into horizontal strips, one per rayon task.
+            // Each strip gets its own ClusterMap, then we merge results.
             let n_rows = y_end.saturating_sub(y_start) as usize;
-            // COVERAGE: requires multi-thread pool with image height ≤ 2
             if n_rows == 0 {
                 out.clear();
                 return;
@@ -475,22 +472,6 @@ pub fn gradient_clusters(
 
             // Merge clusters from different strips with the same key
             merge_strip_clusters(chunk_results, min_cluster_size, out);
-        }
-    }
-
-    #[cfg(not(feature = "parallel"))]
-    {
-        let n_buckets = ((w as usize * h as usize) / 5).max(16);
-        cluster_map.reset(n_buckets);
-        scan_rows_mut(buf, stride, w, y_start, y_end, uf, cluster_map);
-
-        // Collect clusters that meet the minimum size threshold.
-        out.clear();
-        for entry in &mut cluster_map.entries {
-            if entry.points.len() >= min_cluster_size as usize {
-                let points = std::mem::take(&mut entry.points);
-                out.push(Cluster { points });
-            }
         }
     }
 

@@ -1,7 +1,5 @@
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
-
 use super::image::{GrayImage, ImageU8};
+use super::par::Par;
 use wide::{i32x8, u32x8};
 
 /// Decimate an image by factor `f`, subsampling every f-th pixel.
@@ -31,26 +29,12 @@ pub fn decimate(img: &(impl GrayImage + Sync), f: u32, out: &mut ImageU8) {
     let out_h = img.height() / f;
     out.reshape(out_w, out_h);
 
-    // COVERAGE: parallel feature block — only compiled with --features parallel
-    #[cfg(feature = "parallel")]
-    {
-        let owu = out_w as usize;
-        out.buf[..out_h as usize * owu]
-            .par_chunks_mut(owu)
-            .enumerate()
-            .for_each(|(oy, row)| {
-                for ox in 0..out_w {
-                    row[ox as usize] = img.get(ox * f, oy as u32 * f);
-                }
-            });
-    }
-
-    #[cfg(not(feature = "parallel"))]
-    for oy in 0..out_h {
+    let owu = out_w as usize;
+    Par::get().chunks_mut_for_each(&mut out.buf[..out_h as usize * owu], owu, |oy, row| {
         for ox in 0..out_w {
-            out.set(ox, oy, img.get(ox * f, oy * f));
+            row[ox as usize] = img.get(ox * f, oy as u32 * f);
         }
-    }
+    });
 }
 
 /// Build a 1D Gaussian kernel with the given sigma and kernel size.
@@ -159,18 +143,9 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize, out: &mut ImageU8, tmp: 
         }
     };
 
-    // COVERAGE: parallel feature block — only compiled with --features parallel
-    #[cfg(feature = "parallel")]
-    tmp.buf[..h as usize * wu]
-        .par_chunks_mut(wu)
-        .enumerate()
-        .for_each(|(y, out_row)| h_row(y as i32, out_row));
-
-    #[cfg(not(feature = "parallel"))]
-    for y in 0..h {
-        let off = y as usize * wu;
-        h_row(y, &mut tmp.buf[off..off + wu]);
-    }
+    Par::get().chunks_mut_for_each(&mut tmp.buf[..h as usize * wu], wu, |y, out_row| {
+        h_row(y as i32, out_row);
+    });
 
     // Vertical pass: SIMD for 8-wide chunks, scalar remainder
     out.reshape(img.width, img.height);
@@ -214,18 +189,9 @@ fn gaussian_blur(img: &ImageU8, sigma: f32, ksz: usize, out: &mut ImageU8, tmp: 
         }
     };
 
-    // COVERAGE: parallel feature block — only compiled with --features parallel
-    #[cfg(feature = "parallel")]
-    out.buf[..h as usize * wu]
-        .par_chunks_mut(wu)
-        .enumerate()
-        .for_each(|(y, out_row)| v_row(y as i32, out_row));
-
-    #[cfg(not(feature = "parallel"))]
-    for y in 0..h {
-        let off = y as usize * wu;
-        v_row(y, &mut out.buf[off..off + wu]);
-    }
+    Par::get().chunks_mut_for_each(&mut out.buf[..h as usize * wu], wu, |y, out_row| {
+        v_row(y as i32, out_row);
+    });
 }
 
 /// Apply Gaussian blur or sharpening based on `quad_sigma`.
