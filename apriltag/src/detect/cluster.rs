@@ -154,8 +154,11 @@ impl ClusterMap {
 // with dx, dy ∈ {-1, 0, 1}.
 // `rep0` is pre-computed by the caller to avoid redundant find() calls.
 // Returns true when a boundary point was added.
+//
+// `$uf` is a union-find; `$find_method` is the method name to look up a root
+// (`find` for mutable sequential path, `find_flat` for immutable parallel path).
 macro_rules! do_conn {
-    ($map:expr, $uf:expr, $buf:expr, $stride:expr,
+    ($map:expr, $uf:expr, $find_method:ident, $buf:expr, $stride:expr,
      $x:expr, $y:expr, $rep0:expr, $v0:expr,
      $dx:expr, $dy:expr, $w:expr, $min_component_size:expr) => {{
         let nx = ($x as i32 + $dx) as usize;
@@ -163,7 +166,7 @@ macro_rules! do_conn {
         let v1 = $buf[ny * $stride + nx];
         if $v0 as i32 + v1 as i32 == 255 {
             let id1 = ny as u32 * $w + nx as u32;
-            let rep1_root = $uf.find_flat(id1);
+            let rep1_root = $uf.$find_method(id1);
             if $uf.root_size(rep1_root) >= $min_component_size {
                 let rep0 = $rep0 as u64;
                 let rep1 = rep1_root as u64;
@@ -194,9 +197,111 @@ macro_rules! do_conn {
 
 /// Scan rows `y0..y1` and insert boundary points into `cluster_map`.
 ///
+/// Uses `&mut UnionFind` with `find()` for path compression during the scan.
+/// This is the sequential path — no `flatten()` needed.
+#[cfg(not(feature = "parallel"))]
+fn scan_rows_mut(
+    buf: &[u8],
+    stride: usize,
+    w: u32,
+    y0: u32,
+    y1: u32,
+    uf: &mut UnionFind,
+    cluster_map: &mut ClusterMap,
+) {
+    let min_component_size = 25u32;
+    for y in y0..y1 {
+        let row_off = y as usize * stride;
+        let mut connected_last = false;
+        for x in 1..w.saturating_sub(1) {
+            let v0 = buf[row_off + x as usize];
+            if v0 == 127 {
+                connected_last = false;
+                continue;
+            }
+
+            let rep0 = uf.find(y * w + x);
+            if uf.root_size(rep0) < min_component_size {
+                connected_last = false;
+                continue;
+            }
+
+            // 4-connectivity
+            do_conn!(
+                cluster_map,
+                uf,
+                find,
+                buf,
+                stride,
+                x,
+                y,
+                rep0,
+                v0,
+                1,
+                0,
+                w,
+                min_component_size
+            );
+            do_conn!(
+                cluster_map,
+                uf,
+                find,
+                buf,
+                stride,
+                x,
+                y,
+                rep0,
+                v0,
+                0,
+                1,
+                w,
+                min_component_size
+            );
+
+            // 8-connectivity with deduplication
+            if !connected_last {
+                do_conn!(
+                    cluster_map,
+                    uf,
+                    find,
+                    buf,
+                    stride,
+                    x,
+                    y,
+                    rep0,
+                    v0,
+                    -1,
+                    1,
+                    w,
+                    min_component_size
+                );
+            }
+            connected_last = do_conn!(
+                cluster_map,
+                uf,
+                find,
+                buf,
+                stride,
+                x,
+                y,
+                rep0,
+                v0,
+                1,
+                1,
+                w,
+                min_component_size
+            );
+        }
+    }
+}
+
+/// Scan rows `y0..y1` and insert boundary points into `cluster_map`.
+///
 /// Requires [`UnionFind::flatten`] to have been called so that
-/// [`find_flat`](UnionFind::find_flat) returns the correct root.
-fn scan_rows(
+/// [`find_flat`](UnionFind::find_flat) returns the correct root in O(1).
+/// Takes `&UnionFind` (immutable) so it can be shared across parallel tasks.
+#[cfg(feature = "parallel")]
+fn scan_rows_flat(
     buf: &[u8],
     stride: usize,
     w: u32,
@@ -226,6 +331,7 @@ fn scan_rows(
             do_conn!(
                 cluster_map,
                 uf,
+                find_flat,
                 buf,
                 stride,
                 x,
@@ -240,6 +346,7 @@ fn scan_rows(
             do_conn!(
                 cluster_map,
                 uf,
+                find_flat,
                 buf,
                 stride,
                 x,
@@ -257,6 +364,7 @@ fn scan_rows(
                 do_conn!(
                     cluster_map,
                     uf,
+                    find_flat,
                     buf,
                     stride,
                     x,
@@ -272,6 +380,7 @@ fn scan_rows(
             connected_last = do_conn!(
                 cluster_map,
                 uf,
+                find_flat,
                 buf,
                 stride,
                 x,
@@ -304,9 +413,6 @@ pub fn gradient_clusters(
     let w = threshed.width;
     let h = threshed.height;
 
-    // Flatten the union-find so find_flat() works in O(1)
-    uf.flatten();
-
     let buf = &threshed.buf;
     let stride = threshed.stride as usize;
 
@@ -316,6 +422,9 @@ pub fn gradient_clusters(
     // COVERAGE: parallel feature block — only compiled with --features parallel
     #[cfg(feature = "parallel")]
     {
+        // Flatten the union-find so find_flat() works in O(1) for parallel access
+        uf.flatten();
+
         let _ = cluster_map; // per-thread maps used instead
                              // Split image into horizontal strips, one per rayon task.
                              // Each strip gets its own ClusterMap, then we merge results.
@@ -340,7 +449,7 @@ pub fn gradient_clusters(
                     let cy0 = y_start + (chunk_idx * rows_per_chunk) as u32;
                     let cy1 = y_end.min(cy0 + rows_per_chunk as u32);
                     local_map.reset(n_buckets);
-                    scan_rows(buf, stride, w, cy0, cy1, uf, local_map);
+                    scan_rows_flat(buf, stride, w, cy0, cy1, uf, local_map);
                     // Collect all clusters (even small ones) so merging
                     // can combine strips that individually are below threshold
                     local_map.collect_keyed(1)
@@ -356,7 +465,7 @@ pub fn gradient_clusters(
     {
         let n_buckets = ((w as usize * h as usize) / 5).max(16);
         cluster_map.reset(n_buckets);
-        scan_rows(buf, stride, w, y_start, y_end, uf, cluster_map);
+        scan_rows_mut(buf, stride, w, y_start, y_end, uf, cluster_map);
 
         // Collect clusters that meet the minimum size threshold.
         out.clear();
