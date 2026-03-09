@@ -1,3 +1,5 @@
+pub(crate) mod par;
+
 #[doc(hidden)]
 pub mod cluster;
 #[doc(hidden)]

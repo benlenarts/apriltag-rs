@@ -9,7 +9,7 @@ use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
 use apriltag::detect::homography::Homography;
 use apriltag::detect::image::ImageU8;
 use apriltag::detect::preprocess::{apply_sigma, decimate};
-use apriltag::detect::quad::{fit_quads, QuadFitBufs, QuadThreshParams};
+use apriltag::detect::quad::{fit_quads, QuadThreshParams};
 use apriltag::detect::refine::refine_edges;
 use apriltag::detect::threshold::{threshold, ThresholdBuffers};
 use apriltag::detect::unionfind::UnionFind;
@@ -239,7 +239,6 @@ fn bench_fit_quads(c: &mut Criterion) {
     let qtp = QuadThreshParams::default();
     c.bench_function("fit_quads", |b| {
         let mut quads = Vec::new();
-        let mut bufs = QuadFitBufs::new();
         b.iter(|| {
             let mut clusters = clusters.clone();
             fit_quads(
@@ -250,7 +249,6 @@ fn bench_fit_quads(c: &mut Criterion) {
                 true,
                 true,
                 &mut quads,
-                &mut bufs,
             )
         })
     });
@@ -341,7 +339,6 @@ fn bench_decode(c: &mut Criterion) {
         true,
         true,
         &mut quads,
-        &mut QuadFitBufs::new(),
     );
 
     // Find a quad that produces a valid homography and successful decode
