@@ -328,7 +328,7 @@ pub fn gradient_clusters(
         // Use ~4 tasks per rayon thread, minimum 64 rows per chunk
         let n_threads = rayon::current_num_threads();
         let rows_per_chunk = (n_rows / (n_threads * 4)).max(64).min(n_rows);
-        let n_chunks = (n_rows + rows_per_chunk - 1) / rows_per_chunk;
+        let n_chunks = n_rows.div_ceil(rows_per_chunk);
         let n_buckets = ((w as usize * rows_per_chunk) / 5).max(16);
 
         // Parallel scan: each chunk produces keyed clusters (key, points)
