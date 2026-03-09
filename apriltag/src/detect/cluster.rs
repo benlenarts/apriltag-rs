@@ -609,6 +609,31 @@ mod tests {
     }
 
     #[test]
+    fn cluster_map_reset_recycles_entries() {
+        // Exercise ClusterMap::reset recycling path (lines 67-70):
+        // after a frame with populated entries, reset should drain
+        // entries and push their point Vecs into free_vecs.
+        let mut map = ClusterMap::new();
+        map.reset(16);
+
+        let pt = Pt {
+            x: 10,
+            y: 20,
+            gx: 1,
+            gy: 0,
+            slope: 0,
+        };
+        map.insert(0, pt);
+        map.insert(1, pt);
+        assert_eq!(map.entries.len(), 2);
+
+        // Reset should drain entries and recycle their Vecs
+        map.reset(16);
+        assert_eq!(map.entries.len(), 0);
+        assert_eq!(map.free_vecs.len(), 2);
+    }
+
+    #[test]
     fn unknown_pixels_ignored() {
         let mut pixels = vec![127u8; 64];
         // Set a small region to black/white
