@@ -86,6 +86,7 @@ dependencies = [
  "criterion",
  "rayon",
  "serde",
+ "smallvec",
  "thiserror",
  "toml",
  "wide",
