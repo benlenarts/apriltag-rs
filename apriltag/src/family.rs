@@ -2,8 +2,6 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
 use crate::bits::{self, BitLocation};
 use crate::error::LayoutError;
 use crate::layout::Layout;
@@ -65,34 +63,38 @@ impl From<&str> for FamilyId {
     }
 }
 
-impl Serialize for FamilyId {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+#[cfg(feature = "serde")]
+impl serde::Serialize for FamilyId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.0.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for FamilyId {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for FamilyId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
         Ok(Self(Arc::from(s)))
     }
 }
 
-/// Serde-driven family configuration matching the TOML format.
-#[derive(Debug, Clone, Deserialize)]
+/// Family configuration matching the TOML format.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct FamilyConfig {
     pub name: FamilyId,
     pub min_hamming: u32,
     /// Per-family complexity parameter used in the LCG seed computation.
     /// Required for Era 2 code generation; optional for classic families.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub min_complexity: Option<u32>,
     pub layout: LayoutConfig,
 }
 
 /// Layout configuration variant.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "lowercase"))]
 pub enum LayoutConfig {
     Classic { grid_size: usize },
     Standard { grid_size: usize },
@@ -167,6 +169,7 @@ impl TagFamily {
     }
 
     /// Parse a TOML config string and binary code data into a TagFamily.
+    #[cfg(feature = "serde")]
     pub fn from_toml_and_bin(toml_str: &str, bin_data: &[u8]) -> Result<TagFamily, FamilyError> {
         let config: FamilyConfig =
             toml::from_str(toml_str).map_err(|e| FamilyError::Config(e.to_string()))?;
@@ -199,6 +202,7 @@ fn parse_bin_codes(data: &[u8]) -> Result<Vec<u64>, FamilyError> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum FamilyError {
+    #[cfg(feature = "serde")]
     #[error("config error: {0}")]
     Config(String),
     #[error("layout error: {0}")]
@@ -210,40 +214,93 @@ pub enum FamilyError {
 // --- Built-in families ---
 
 macro_rules! builtin_family {
-    ($name:ident, $toml:expr, $bin:expr) => {
+    ($name:ident, $family_name:expr, $min_hamming:expr, $min_complexity:expr, $layout:expr, $bin:expr) => {
         #[allow(clippy::expect_used)] // compile-time-embedded data; infallible in practice
         pub fn $name() -> TagFamily {
-            TagFamily::from_toml_and_bin(
-                include_str!(concat!("../families/", $toml)),
-                include_bytes!(concat!("../families/", $bin)),
-            )
-            .expect(concat!("built-in family ", $toml, " should be valid"))
+            let config = FamilyConfig {
+                name: FamilyId::new($family_name),
+                min_hamming: $min_hamming,
+                min_complexity: $min_complexity,
+                layout: $layout,
+            };
+            let codes =
+                parse_bin_codes(include_bytes!(concat!("../families/", $bin))).expect(concat!(
+                    "built-in family ",
+                    $family_name,
+                    " binary data should be valid"
+                ));
+            TagFamily::from_config_and_codes(config, codes).expect(concat!(
+                "built-in family ",
+                $family_name,
+                " should be valid"
+            ))
         }
     };
 }
 
 #[cfg(feature = "family-tag16h5")]
-builtin_family!(tag16h5, "tag16h5.toml", "tag16h5.bin");
+builtin_family!(
+    tag16h5,
+    "tag16h5",
+    5,
+    Some(5),
+    LayoutConfig::Classic { grid_size: 8 },
+    "tag16h5.bin"
+);
 #[cfg(feature = "family-tag25h9")]
-builtin_family!(tag25h9, "tag25h9.toml", "tag25h9.bin");
+builtin_family!(
+    tag25h9,
+    "tag25h9",
+    9,
+    Some(8),
+    LayoutConfig::Classic { grid_size: 9 },
+    "tag25h9.bin"
+);
 #[cfg(feature = "family-tag36h11")]
-builtin_family!(tag36h11, "tag36h11.toml", "tag36h11.bin");
+builtin_family!(
+    tag36h11,
+    "tag36h11",
+    11,
+    Some(10),
+    LayoutConfig::Classic { grid_size: 10 },
+    "tag36h11.bin"
+);
 #[cfg(feature = "family-circle21h7")]
-builtin_family!(tag_circle21h7, "tagCircle21h7.toml", "tagCircle21h7.bin");
+builtin_family!(
+    tag_circle21h7,
+    "tagCircle21h7",
+    7,
+    Some(10),
+    LayoutConfig::Circle { grid_size: 9 },
+    "tagCircle21h7.bin"
+);
 #[cfg(feature = "family-circle49h12")]
-builtin_family!(tag_circle49h12, "tagCircle49h12.toml", "tagCircle49h12.bin");
+builtin_family!(
+    tag_circle49h12,
+    "tagCircle49h12",
+    12,
+    Some(15),
+    LayoutConfig::Circle { grid_size: 11 },
+    "tagCircle49h12.bin"
+);
 #[cfg(feature = "family-custom48h12")]
-builtin_family!(tag_custom48h12, "tagCustom48h12.toml", "tagCustom48h12.bin");
+builtin_family!(tag_custom48h12, "tagCustom48h12", 12, Some(12), LayoutConfig::Custom { grid_size: 10, data: "dddddddddddbbbbbbbbddbwwwwwwbddbwddddwbddbwdxxdwbddbwdxxdwbddbwddddwbddbwwwwwwbddbbbbbbbbddddddddddd".to_string() }, "tagCustom48h12.bin");
 #[cfg(feature = "family-standard41h12")]
 builtin_family!(
     tag_standard41h12,
-    "tagStandard41h12.toml",
+    "tagStandard41h12",
+    12,
+    Some(10),
+    LayoutConfig::Standard { grid_size: 9 },
     "tagStandard41h12.bin"
 );
 #[cfg(feature = "family-standard52h13")]
 builtin_family!(
     tag_standard52h13,
-    "tagStandard52h13.toml",
+    "tagStandard52h13",
+    13,
+    Some(12),
+    LayoutConfig::Standard { grid_size: 10 },
     "tagStandard52h13.bin"
 );
 
@@ -410,11 +467,11 @@ mod tests {
     #[test]
     fn parse_bin_codes_not_multiple_of_8() {
         let bad_data = &[0u8; 7]; // 7 bytes, not a multiple of 8
-        let result =
-            TagFamily::from_toml_and_bin(include_str!("../families/tag16h5.toml"), bad_data);
+        let result = parse_bin_codes(bad_data);
         assert!(matches!(result, Err(FamilyError::InvalidBin(_))));
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn from_toml_and_bin_invalid_toml() {
         let result = TagFamily::from_toml_and_bin("not valid toml {{{", &[]);
@@ -457,6 +514,7 @@ mod tests {
         assert_eq!(s, "tag36h11");
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn family_id_serialize() {
         // Exercise the Serialize impl on FamilyId

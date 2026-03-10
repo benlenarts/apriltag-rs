@@ -8,6 +8,7 @@ repository.workspace = true
 
 [features]
 default = ["all-families"]
+serde = ["apriltag/serde"]
 all-families = ["apriltag/all-families"]
 
 [dependencies]

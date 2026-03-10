@@ -9,6 +9,7 @@ _ws := "--workspace --features parallel"
 # Run all tests
 test:
     cargo test {{ _ws }}
+    cargo test -p apriltag --features serde
 
 # Run clippy lints
 lint:

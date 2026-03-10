@@ -8,6 +8,7 @@ repository.workspace = true
 
 [features]
 default = ["all-families"]
+serde = ["dep:serde", "dep:toml"]
 parallel = ["rayon"]
 
 # Include all built-in tag families.
@@ -35,12 +36,14 @@ family-standard52h13 = []
 [dependencies]
 smallvec = "1"
 thiserror = "2"
-serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+serde = { version = "1", features = ["derive"], optional = true }
+toml = { version = "0.8", optional = true }
 rayon = { version = "1.10", optional = true }
 wide = "0.7"
 
 [dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
