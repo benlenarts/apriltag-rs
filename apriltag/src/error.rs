@@ -41,3 +41,49 @@ impl fmt::Display for LayoutError {
 }
 
 impl std::error::Error for LayoutError {}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_not_square() {
+        let err = LayoutError::NotSquare(7);
+        assert_eq!(
+            err.to_string(),
+            "layout string length 7 is not a perfect square"
+        );
+    }
+
+    #[test]
+    fn display_invalid_char() {
+        let err = LayoutError::InvalidChar('Z', 3);
+        assert_eq!(
+            err.to_string(),
+            "invalid character 'Z' in layout string at position 3"
+        );
+    }
+
+    #[test]
+    fn display_not_symmetric() {
+        assert_eq!(
+            LayoutError::NotSymmetric.to_string(),
+            "layout is not rotationally symmetric"
+        );
+    }
+
+    #[test]
+    fn display_no_border() {
+        assert_eq!(
+            LayoutError::NoBorder.to_string(),
+            "no valid border detected in layout"
+        );
+    }
+
+    #[test]
+    fn display_invalid_border() {
+        let err = LayoutError::InvalidBorder("bad width".to_string());
+        assert_eq!(err.to_string(), "invalid border: bad width");
+    }
+}

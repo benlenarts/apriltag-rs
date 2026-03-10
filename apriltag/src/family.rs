@@ -544,4 +544,82 @@ mod tests {
         let s = toml::to_string(&w).unwrap();
         assert!(s.contains("my-tag"));
     }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn family_id_deserialize() {
+        #[derive(serde::Deserialize)]
+        struct Wrap {
+            name: FamilyId,
+        }
+        let w: Wrap = toml::from_str("name = \"tag36h11\"").unwrap();
+        assert_eq!(&*w.name, "tag36h11");
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn from_toml_and_bin_valid() {
+        let toml_str = r#"
+name = "tag16h5"
+min_hamming = 5
+
+[layout]
+type = "classic"
+grid_size = 8
+"#;
+        // 2 codes × 8 bytes each = 16 bytes
+        let mut bin_data = Vec::new();
+        bin_data.extend_from_slice(&0x27c8u64.to_le_bytes());
+        bin_data.extend_from_slice(&0x31b6u64.to_le_bytes());
+        let family = TagFamily::from_toml_and_bin(toml_str, &bin_data).unwrap();
+        assert_eq!(family.config.name, "tag16h5");
+        assert_eq!(family.codes.len(), 2);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn from_toml_and_bin_invalid_bin() {
+        let toml_str = r#"
+name = "test"
+min_hamming = 5
+
+[layout]
+type = "classic"
+grid_size = 8
+"#;
+        let result = TagFamily::from_toml_and_bin(toml_str, &[0u8; 7]);
+        assert!(matches!(result, Err(FamilyError::InvalidBin(_))));
+    }
+
+    #[test]
+    fn family_error_display_layout() {
+        let err = FamilyError::Layout(LayoutError::NotSymmetric);
+        assert_eq!(
+            err.to_string(),
+            "layout error: layout is not rotationally symmetric"
+        );
+    }
+
+    #[test]
+    fn family_error_display_invalid_bin() {
+        let err = FamilyError::InvalidBin("bad data".to_string());
+        assert_eq!(err.to_string(), "invalid binary data: bad data");
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn family_error_display_config() {
+        let err = FamilyError::Config("parse failed".to_string());
+        assert_eq!(err.to_string(), "config error: parse failed");
+    }
+
+    #[test]
+    fn layout_error_into_family_error() {
+        let layout_err = LayoutError::NoBorder;
+        let family_err: FamilyError = layout_err.into();
+        assert!(matches!(
+            family_err,
+            FamilyError::Layout(LayoutError::NoBorder)
+        ));
+    }
 }
