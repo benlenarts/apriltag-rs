@@ -80,6 +80,57 @@ impl ThresholdBuffers {
     }
 }
 
+/// Compute per-tile min/max values, writing into padded arrays.
+///
+/// Uses `Par::get()` for optional parallelism: splits tile rows into chunks
+/// of an interleaved `[min, max]` buffer, then scatters into padded arrays.
+fn compute_tile_minmax(
+    img: &ImageU8,
+    tw: u32,
+    th: u32,
+    padded_w: u32,
+    tile_min: &mut [u8],
+    tile_max: &mut [u8],
+) {
+    let tw_usize = tw as usize;
+    // Interleaved [min, max] buffer: 2 bytes per tile, tw tiles per row
+    let row_stride = tw_usize * 2;
+    let mut minmax = vec![0u8; (th as usize) * row_stride];
+
+    let img_buf = &img.buf;
+    let img_stride = img.stride as usize;
+    let tilesz = TILESZ as usize;
+
+    Par::get().chunks_mut_for_each(&mut minmax, row_stride, |ty, chunk| {
+        let base_y = ty * tilesz;
+        for tx in 0..tw_usize {
+            let base_x = tx * tilesz;
+            let mut lo = 255u8;
+            let mut hi = 0u8;
+            for dy in 0..tilesz {
+                let row_off = (base_y + dy) * img_stride + base_x;
+                for dx in 0..tilesz {
+                    let v = img_buf[row_off + dx];
+                    lo = lo.min(v);
+                    hi = hi.max(v);
+                }
+            }
+            chunk[tx * 2] = lo;
+            chunk[tx * 2 + 1] = hi;
+        }
+    });
+
+    // Scatter into padded arrays
+    for ty in 0..th as usize {
+        for tx in 0..tw_usize {
+            let src = ty * row_stride + tx * 2;
+            let dst = ((ty as u32 + 1) * padded_w + (tx as u32 + 1)) as usize;
+            tile_min[dst] = minmax[src];
+            tile_max[dst] = minmax[src + 1];
+        }
+    }
+}
+
 /// Produce a ternary threshold image: 0 (black), 255 (white), or 127 (unknown).
 ///
 /// Uses tile-based adaptive thresholding with min/max dilation to handle
@@ -117,21 +168,7 @@ pub fn threshold(
     let tile_min = &mut tile_bufs.tile_min;
     let tile_max = &mut tile_bufs.tile_max;
 
-    for ty in 0..th {
-        for tx in 0..tw {
-            let mut lo = 255u8;
-            let mut hi = 0u8;
-            for dy in 0..TILESZ {
-                for dx in 0..TILESZ {
-                    let v = img.get(tx * TILESZ + dx, ty * TILESZ + dy);
-                    lo = lo.min(v);
-                    hi = hi.max(v);
-                }
-            }
-            tile_min[((ty + 1) * padded_w + (tx + 1)) as usize] = lo;
-            tile_max[((ty + 1) * padded_w + (tx + 1)) as usize] = hi;
-        }
-    }
+    compute_tile_minmax(img, tw, th, padded_w, tile_min, tile_max);
 
     // Dilate max, erode min using 3x3 tile neighborhood (no bounds checks needed)
     let tile_len = (tw * th) as usize;
