@@ -134,6 +134,13 @@ impl<'a> ImageRef<'a> {
             buf,
         }
     }
+
+    /// Create a borrowed image view with stride equal to width (no padding).
+    ///
+    /// `buf` must contain at least `width * height` bytes.
+    pub fn from_pixels(width: u32, height: u32, buf: &'a [u8]) -> Self {
+        Self::new(width, height, width, buf)
+    }
 }
 
 impl GrayImage for ImageRef<'_> {

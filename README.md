@@ -122,11 +122,11 @@ apriltag = { git = "https://github.com/benlenarts/apriltag-rs.git" }
 ### Detect tags in an image
 
 ```rust
-use apriltag::{Detector, ImageU8};
+use apriltag::{Detector, ImageRef};
 use apriltag::family;
 
-// Load a grayscale image
-let img = ImageU8::from_pixels(width, height, pixels);
+// Zero-copy view of existing grayscale pixels
+let img = ImageRef::from_pixels(width, height, &pixels);
 
 // Create a detector with default settings
 let mut detector = Detector::builder()
@@ -138,6 +138,8 @@ for det in &detections {
     println!("id={} center={:?}", det.id, det.center);
 }
 ```
+
+The detector accepts any `&impl GrayImage` — use `ImageRef` for zero-copy detection from a `&[u8]` slice, or `ImageU8` for owned images. You can implement `GrayImage` for your own image types.
 
 ### Detect tags from the CLI
 
