@@ -312,7 +312,7 @@ fn stitch_row(buf: &[u8], w: u32, stride: u32, uf: &mut UnionFind, y: u32) {
     // up-neighbors, but the gap row y wasn't processed yet, so we
     // need to process y+1 looking at y as well.
     let next_y = y + 1;
-    if next_y >= (buf.len() as u32 + stride - 1) / stride {
+    if next_y >= (buf.len() as u32).div_ceil(stride) {
         return; // no row below
     }
     let next_row = (next_y * stride) as usize;
