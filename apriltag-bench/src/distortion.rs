@@ -243,7 +243,7 @@ mod tests {
 
     fn uniform_image(width: u32, height: u32, val: u8) -> ImageU8 {
         let buf = vec![val; (width * height) as usize];
-        ImageU8::from_buf(width, height, width, buf)
+        ImageU8::from_pixels(width, height, buf)
     }
 
     #[test]

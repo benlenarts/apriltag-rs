@@ -5,7 +5,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use apriltag::detect::cluster::gradient_clusters;
 use apriltag::detect::connected::connected_components;
 use apriltag::detect::decode::{decode_quad, DecodeBufs, QuickDecode};
-use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
+use apriltag::detect::detector::{Detector, DetectorBuffers};
 use apriltag::detect::geometry::Vec2;
 use apriltag::detect::homography::Homography;
 use apriltag::detect::image::ImageU8;
@@ -433,12 +433,10 @@ fn build_multi_tag_image() -> ImageU8 {
 
 fn bench_end_to_end_multi(c: &mut Criterion) {
     let img = build_multi_tag_image();
-    let config = DetectorConfig {
-        quad_sigma: 0.8,
-        ..DetectorConfig::default()
-    };
-    let mut detector = Detector::new(config);
-    detector.add_family(family::tag36h11(), 2);
+    let mut detector = Detector::builder()
+        .quad_sigma(0.8)
+        .family(family::tag36h11(), 2)
+        .build();
 
     let mut buffers = DetectorBuffers::new();
     let dets = detector.detect(&img, &mut buffers);
@@ -455,12 +453,10 @@ fn bench_end_to_end_multi(c: &mut Criterion) {
 
 fn bench_end_to_end(c: &mut Criterion) {
     let img = build_bench_image();
-    let config = DetectorConfig {
-        quad_sigma: 0.8,
-        ..DetectorConfig::default()
-    };
-    let mut detector = Detector::new(config);
-    detector.add_family(family::tag36h11(), 2);
+    let mut detector = Detector::builder()
+        .quad_sigma(0.8)
+        .family(family::tag36h11(), 2)
+        .build();
 
     let mut buffers = DetectorBuffers::new();
     // Sanity check: the image should produce a detection
@@ -474,12 +470,10 @@ fn bench_end_to_end(c: &mut Criterion) {
 
 fn bench_end_to_end_reuse(c: &mut Criterion) {
     let img = build_bench_image();
-    let config = DetectorConfig {
-        quad_sigma: 0.8,
-        ..DetectorConfig::default()
-    };
-    let mut detector = Detector::new(config);
-    detector.add_family(family::tag36h11(), 2);
+    let mut detector = Detector::builder()
+        .quad_sigma(0.8)
+        .family(family::tag36h11(), 2)
+        .build();
 
     let mut buffers = DetectorBuffers::new();
     // Warm up to populate buffers
@@ -647,12 +641,10 @@ fn build_highres_image() -> ImageU8 {
 
 fn bench_end_to_end_highres(c: &mut Criterion) {
     let img = build_highres_image();
-    let config = DetectorConfig {
-        quad_sigma: 0.8,
-        ..DetectorConfig::default()
-    };
-    let mut detector = Detector::new(config);
-    detector.add_family(family::tag36h11(), 2);
+    let mut detector = Detector::builder()
+        .quad_sigma(0.8)
+        .family(family::tag36h11(), 2)
+        .build();
 
     let mut buffers = DetectorBuffers::new();
     let dets = detector.detect(&img, &mut buffers);

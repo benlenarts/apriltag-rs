@@ -36,7 +36,7 @@ fn snapshot() -> (usize, usize) {
 }
 
 fn main() {
-    use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
+    use apriltag::detect::detector::{Detector, DetectorBuffers};
     use apriltag::detect::image::ImageU8;
     use apriltag::family;
     use apriltag::types::Pixel;
@@ -73,12 +73,7 @@ fn main() {
         }
     }
 
-    let config = DetectorConfig {
-        quad_sigma: 0.8,
-        ..DetectorConfig::default()
-    };
-    let mut detector = Detector::new(config);
-    detector.add_family(fam, 2);
+    let mut detector = Detector::builder().quad_sigma(0.8).family(fam, 2).build();
 
     // --- detect() with fresh buffers ---
     println!("=== detect() with fresh buffers each call ===");

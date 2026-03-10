@@ -111,7 +111,7 @@ fn load_image(path: &str) -> Result<ImageU8> {
     let height = img.height();
     let pixels = img.into_raw();
 
-    Ok(ImageU8::from_buf(width, height, width, pixels))
+    Ok(ImageU8::from_pixels(width, height, pixels))
 }
 
 fn pose_from_result(pose: &Pose, error: f64) -> OutputPose {

@@ -23,7 +23,7 @@ use super::unionfind::UnionFind;
 /// pixel coordinates.
 ///
 /// ```
-/// use apriltag::detect::detector::{Detector, DetectorConfig, DetectorBuffers};
+/// use apriltag::detect::detector::{Detector, DetectorBuffers};
 /// use apriltag::detect::image::ImageU8;
 /// use apriltag::family;
 /// use apriltag::types::Pixel;
@@ -44,10 +44,10 @@ use super::unionfind::UnionFind;
 /// }
 ///
 /// // Detect tags
-/// let mut config = DetectorConfig::default();
-/// config.quad_decimate = 1.0;
-/// let mut det = Detector::new(config);
-/// det.add_family(f, 2);
+/// let mut det = Detector::builder()
+///     .quad_decimate(1.0)
+///     .family(f, 2)
+///     .build();
 /// let detections = det.detect(&img, &mut DetectorBuffers::new());
 ///
 /// assert!(!detections.is_empty());
@@ -94,12 +94,13 @@ impl Default for DetectorConfig {
 /// Create once and pass to [`Detector::detect`] in a loop:
 ///
 /// ```
-/// use apriltag::detect::detector::{Detector, DetectorConfig, DetectorBuffers};
+/// use apriltag::detect::detector::{Detector, DetectorBuffers};
 /// use apriltag::detect::image::ImageU8;
 /// use apriltag::family;
 ///
-/// let mut det = Detector::new(DetectorConfig::default());
-/// det.add_family(family::tag36h11(), 2);
+/// let mut det = Detector::builder()
+///     .family(family::tag36h11(), 2)
+///     .build();
 ///
 /// let mut buffers = DetectorBuffers::new();
 /// let frames = [ImageU8::new(100, 100), ImageU8::new(100, 100)];
