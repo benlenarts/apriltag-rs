@@ -86,19 +86,7 @@ just bench-ref benchmark
 
 ## Safety
 
-All production crates enforce `#![forbid(unsafe_code)]`:
-
-| Crate | Policy |
-|-------|--------|
-| `apriltag` | `forbid(unsafe_code)` |
-| `apriltag-gen` | `forbid(unsafe_code)` |
-| `apriltag-gen-cli` | `forbid(unsafe_code)` |
-| `apriltag-detect-cli` | `forbid(unsafe_code)` |
-| `apriltag-wasm` | `forbid(unsafe_code)` |
-| `apriltag-bench-wasm` | `forbid(unsafe_code)` |
-| `apriltag-bench` | `deny(unsafe_code)` (FFI bridge to C reference only) |
-
-The only `unsafe` code in the project is the optional C reference FFI bridge (`apriltag-bench/src/reference.rs`), used exclusively for benchmark comparison. It is never compiled unless the `reference` feature is explicitly enabled.
+All production crates enforce `#![forbid(unsafe_code)]`. The only exception is the optional C reference FFI bridge in `apriltag-bench` (`deny(unsafe_code)`, gated behind the `reference` feature), used exclusively for benchmark comparison and never compiled by default.
 
 ## Crates
 
