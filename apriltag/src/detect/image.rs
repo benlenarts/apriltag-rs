@@ -321,6 +321,17 @@ mod tests {
     }
 
     #[test]
+    fn image_ref_from_pixels() {
+        let data = vec![1, 2, 3, 4, 5, 6];
+        let img = ImageRef::from_pixels(3, 2, &data);
+        assert_eq!(img.width(), 3);
+        assert_eq!(img.height(), 2);
+        assert_eq!(img.stride(), 3);
+        assert_eq!(img.get(0, 0), 1);
+        assert_eq!(img.get(2, 1), 6);
+    }
+
+    #[test]
     fn image_ref_trait_methods() {
         let data = vec![1, 2, 3, 0, 4, 5, 6, 0];
         let img = ImageRef::new(3, 2, 4, &data);

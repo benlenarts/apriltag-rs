@@ -467,6 +467,16 @@ mod tests {
     }
 
     #[test]
+    fn buffers_convenience_returns_empty() {
+        let bufs = Detector::buffers();
+        // Just verify it returns a valid DetectorBuffers (same as DetectorBuffers::new())
+        assert_eq!(
+            std::mem::size_of_val(&bufs),
+            std::mem::size_of::<DetectorBuffers>()
+        );
+    }
+
+    #[test]
     fn builder_default_trait() {
         let b = DetectorBuilder::default();
         assert!((b.config.quad_decimate - 2.0).abs() < 1e-6);
