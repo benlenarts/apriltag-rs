@@ -209,6 +209,13 @@ impl ImageU8 {
         }
     }
 
+    /// Create an image from pixel data where stride equals width.
+    ///
+    /// This is the common case — use [`from_buf`](Self::from_buf) when stride differs from width.
+    pub fn from_pixels(width: u32, height: u32, buf: Vec<u8>) -> Self {
+        Self::from_buf(width, height, width, buf)
+    }
+
     /// Create an image from existing pixel data.
     ///
     /// `stride` must be >= `width`, and `buf` must contain at least `stride * height` bytes.
@@ -424,6 +431,17 @@ mod tests {
         img.set(2, 3, 128);
         assert_eq!(img.get(2, 3), 128);
         assert_eq!(img.get(0, 0), 0);
+    }
+
+    #[test]
+    fn from_pixels_sets_stride_to_width() {
+        let buf = vec![1, 2, 3, 4, 5, 6];
+        let img = ImageU8::from_pixels(3, 2, buf);
+        assert_eq!(img.width, 3);
+        assert_eq!(img.height, 2);
+        assert_eq!(img.stride, 3);
+        assert_eq!(img.get(0, 0), 1);
+        assert_eq!(img.get(2, 1), 6);
     }
 
     #[test]

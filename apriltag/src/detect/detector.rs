@@ -142,14 +142,96 @@ impl Default for DetectorBuffers {
     }
 }
 
+/// Builder for constructing a [`Detector`] with a fluent API.
+///
+/// Exposes the most commonly used configuration parameters as chainable methods.
+/// For expert-only parameters (e.g. `min_cluster_pixels`, `cos_critical_rad`),
+/// use [`Detector::new`] with a [`DetectorConfig`] directly.
+///
+/// ```
+/// use apriltag::detect::detector::Detector;
+/// use apriltag::family;
+///
+/// let mut detector = Detector::builder()
+///     .family(family::tag36h11(), 2)
+///     .quad_decimate(1.0)
+///     .build();
+/// ```
+pub struct DetectorBuilder {
+    config: DetectorConfig,
+    families: Vec<(TagFamily, u32)>,
+}
+
+impl DetectorBuilder {
+    /// Create a new builder with default configuration and no families.
+    pub fn new() -> Self {
+        Self {
+            config: DetectorConfig::default(),
+            families: Vec::new(),
+        }
+    }
+
+    /// Set the decimation factor for input images (default: 2.0).
+    pub fn quad_decimate(mut self, v: f32) -> Self {
+        self.config.quad_decimate = v;
+        self
+    }
+
+    /// Set the Gaussian blur sigma (default: 0.0, 0 = no blur).
+    pub fn quad_sigma(mut self, v: f32) -> Self {
+        self.config.quad_sigma = v;
+        self
+    }
+
+    /// Enable or disable edge refinement (default: true).
+    pub fn refine_edges(mut self, v: bool) -> Self {
+        self.config.refine_edges = v;
+        self
+    }
+
+    /// Set the decode sharpening factor (default: 0.25).
+    pub fn decode_sharpening(mut self, v: f64) -> Self {
+        self.config.decode_sharpening = v;
+        self
+    }
+
+    /// Enable or disable deglitching (default: false).
+    pub fn deglitch(mut self, v: bool) -> Self {
+        self.config.qtp.deglitch = v;
+        self
+    }
+
+    /// Add a tag family with the given maximum Hamming distance.
+    pub fn family(mut self, family: TagFamily, max_hamming: u32) -> Self {
+        self.families.push((family, max_hamming));
+        self
+    }
+
+    /// Build the detector.
+    pub fn build(self) -> Detector {
+        let mut detector = Detector::new(self.config);
+        for (family, max_hamming) in self.families {
+            detector.add_family(family, max_hamming);
+        }
+        detector
+    }
+}
+
+impl Default for DetectorBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// An AprilTag detector with pre-built lookup tables.
 ///
 /// ```
-/// use apriltag::detect::detector::{Detector, DetectorConfig};
+/// use apriltag::detect::detector::Detector;
 /// use apriltag::family;
 ///
-/// let mut det = Detector::new(DetectorConfig::default());
-/// det.add_family(family::tag36h11(), 2);
+/// let mut det = Detector::builder()
+///     .family(family::tag36h11(), 2)
+///     .build();
 /// ```
 pub struct Detector {
     pub config: DetectorConfig,
@@ -157,6 +239,11 @@ pub struct Detector {
 }
 
 impl Detector {
+    /// Create a builder for configuring a detector with a fluent API.
+    pub fn builder() -> DetectorBuilder {
+        DetectorBuilder::new()
+    }
+
     /// Create a new detector with the given configuration.
     pub fn new(config: DetectorConfig) -> Self {
         Self {
@@ -335,6 +422,59 @@ mod tests {
     use super::*;
     use crate::detect::image::{ImageRef, ImageU8};
     use crate::family;
+
+    #[test]
+    fn builder_default_matches_config_default() {
+        let builder = DetectorBuilder::new();
+        let config = DetectorConfig::default();
+        assert!((builder.config.quad_decimate - config.quad_decimate).abs() < 1e-6);
+        assert!((builder.config.quad_sigma - config.quad_sigma).abs() < 1e-6);
+        assert_eq!(builder.config.refine_edges, config.refine_edges);
+        assert!((builder.config.decode_sharpening - config.decode_sharpening).abs() < 1e-6);
+        assert_eq!(builder.config.qtp.deglitch, config.qtp.deglitch);
+    }
+
+    #[test]
+    fn builder_sets_fields() {
+        let det = Detector::builder()
+            .quad_decimate(1.0)
+            .quad_sigma(0.5)
+            .refine_edges(false)
+            .decode_sharpening(0.5)
+            .deglitch(true)
+            .build();
+        assert!((det.config.quad_decimate - 1.0).abs() < 1e-6);
+        assert!((det.config.quad_sigma - 0.5).abs() < 1e-6);
+        assert!(!det.config.refine_edges);
+        assert!((det.config.decode_sharpening - 0.5).abs() < 1e-6);
+        assert!(det.config.qtp.deglitch);
+    }
+
+    #[test]
+    #[cfg(feature = "family-tag36h11")]
+    fn builder_adds_families() {
+        let det = Detector::builder().family(family::tag36h11(), 2).build();
+        assert_eq!(det.families.len(), 1);
+    }
+
+    #[test]
+    fn builder_default_trait() {
+        let b = DetectorBuilder::default();
+        assert!((b.config.quad_decimate - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    #[cfg(feature = "family-tag16h5")]
+    fn builder_detect_synthetic_tag() {
+        let (img, fam) = build_synthetic_tag_image();
+        let mut det = Detector::builder()
+            .quad_decimate(1.0)
+            .family(fam, 2)
+            .build();
+        let dets = det.detect(&img, &mut DetectorBuffers::new());
+        assert!(!dets.is_empty());
+        assert_eq!(dets[0].id, 0);
+    }
 
     #[test]
     fn detector_default_config() {
