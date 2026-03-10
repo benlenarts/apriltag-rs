@@ -131,7 +131,7 @@ let img = ImageU8::from_pixels(width, height, pixels);
 
 // Create a detector with default settings
 let mut detector = Detector::builder()
-    .family(family::tag36h11(), 2)
+    .add_family(family::tag36h11(), 2)
     .build();
 
 let detections = detector.detect(&img, &mut DetectorBuffers::new());

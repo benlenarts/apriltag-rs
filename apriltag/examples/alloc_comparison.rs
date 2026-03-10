@@ -73,7 +73,10 @@ fn main() {
         }
     }
 
-    let mut detector = Detector::builder().quad_sigma(0.8).family(fam, 2).build();
+    let mut detector = Detector::builder()
+        .quad_sigma(0.8)
+        .add_family(fam, 2)
+        .build();
 
     // --- detect() with fresh buffers ---
     println!("=== detect() with fresh buffers each call ===");

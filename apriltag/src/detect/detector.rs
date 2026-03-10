@@ -46,7 +46,7 @@ use super::unionfind::UnionFind;
 /// // Detect tags
 /// let mut det = Detector::builder()
 ///     .quad_decimate(1.0)
-///     .family(f, 2)
+///     .add_family(f, 2)
 ///     .build();
 /// let detections = det.detect(&img, &mut DetectorBuffers::new());
 ///
@@ -99,7 +99,7 @@ impl Default for DetectorConfig {
 /// use apriltag::family;
 ///
 /// let mut det = Detector::builder()
-///     .family(family::tag36h11(), 2)
+///     .add_family(family::tag36h11(), 2)
 ///     .build();
 ///
 /// let mut buffers = DetectorBuffers::new();
@@ -154,7 +154,7 @@ impl Default for DetectorBuffers {
 /// use apriltag::family;
 ///
 /// let mut detector = Detector::builder()
-///     .family(family::tag36h11(), 2)
+///     .add_family(family::tag36h11(), 2)
 ///     .quad_decimate(1.0)
 ///     .build();
 /// ```
@@ -203,7 +203,7 @@ impl DetectorBuilder {
     }
 
     /// Add a tag family with the given maximum Hamming distance.
-    pub fn family(mut self, family: TagFamily, max_hamming: u32) -> Self {
+    pub fn add_family(mut self, family: TagFamily, max_hamming: u32) -> Self {
         self.families.push((family, max_hamming));
         self
     }
@@ -231,7 +231,7 @@ impl Default for DetectorBuilder {
 /// use apriltag::family;
 ///
 /// let mut det = Detector::builder()
-///     .family(family::tag36h11(), 2)
+///     .add_family(family::tag36h11(), 2)
 ///     .build();
 /// ```
 pub struct Detector {
@@ -454,7 +454,9 @@ mod tests {
     #[test]
     #[cfg(feature = "family-tag36h11")]
     fn builder_adds_families() {
-        let det = Detector::builder().family(family::tag36h11(), 2).build();
+        let det = Detector::builder()
+            .add_family(family::tag36h11(), 2)
+            .build();
         assert_eq!(det.families.len(), 1);
     }
 
@@ -470,7 +472,7 @@ mod tests {
         let (img, fam) = build_synthetic_tag_image();
         let mut det = Detector::builder()
             .quad_decimate(1.0)
-            .family(fam, 2)
+            .add_family(fam, 2)
             .build();
         let dets = det.detect(&img, &mut DetectorBuffers::new());
         assert!(!dets.is_empty());

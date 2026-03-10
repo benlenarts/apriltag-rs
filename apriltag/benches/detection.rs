@@ -435,7 +435,7 @@ fn bench_end_to_end_multi(c: &mut Criterion) {
     let img = build_multi_tag_image();
     let mut detector = Detector::builder()
         .quad_sigma(0.8)
-        .family(family::tag36h11(), 2)
+        .add_family(family::tag36h11(), 2)
         .build();
 
     let mut buffers = DetectorBuffers::new();
@@ -455,7 +455,7 @@ fn bench_end_to_end(c: &mut Criterion) {
     let img = build_bench_image();
     let mut detector = Detector::builder()
         .quad_sigma(0.8)
-        .family(family::tag36h11(), 2)
+        .add_family(family::tag36h11(), 2)
         .build();
 
     let mut buffers = DetectorBuffers::new();
@@ -472,7 +472,7 @@ fn bench_end_to_end_reuse(c: &mut Criterion) {
     let img = build_bench_image();
     let mut detector = Detector::builder()
         .quad_sigma(0.8)
-        .family(family::tag36h11(), 2)
+        .add_family(family::tag36h11(), 2)
         .build();
 
     let mut buffers = DetectorBuffers::new();
@@ -643,7 +643,7 @@ fn bench_end_to_end_highres(c: &mut Criterion) {
     let img = build_highres_image();
     let mut detector = Detector::builder()
         .quad_sigma(0.8)
-        .family(family::tag36h11(), 2)
+        .add_family(family::tag36h11(), 2)
         .build();
 
     let mut buffers = DetectorBuffers::new();
