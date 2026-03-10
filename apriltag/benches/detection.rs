@@ -5,10 +5,8 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use apriltag::detect::cluster::gradient_clusters;
 use apriltag::detect::connected::connected_components;
 use apriltag::detect::decode::{decode_quad, DecodeBufs, QuickDecode};
-use apriltag::detect::detector::{Detector, DetectorBuffers};
 use apriltag::detect::geometry::Vec2;
 use apriltag::detect::homography::Homography;
-use apriltag::detect::image::ImageU8;
 use apriltag::detect::preprocess::{apply_sigma, decimate};
 use apriltag::detect::quad::{fit_quads, QuadThreshParams};
 use apriltag::detect::refine::refine_edges;
@@ -16,6 +14,7 @@ use apriltag::detect::threshold::{threshold, ThresholdBuffers};
 use apriltag::detect::unionfind::UnionFind;
 use apriltag::family;
 use apriltag::types::Pixel;
+use apriltag::{Detector, DetectorBuffers, ImageU8};
 
 /// Build a 640x480 image with a centered tag36h11 tag (scale ~40px per grid cell).
 fn build_bench_image() -> ImageU8 {

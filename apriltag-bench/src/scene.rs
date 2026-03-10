@@ -1,8 +1,8 @@
 /// Scene composition: place rendered tags into an image with ground truth.
-use apriltag::detect::image::ImageU8;
 use apriltag::family;
 use apriltag::render::RenderedTag;
 use apriltag::types::Pixel;
+use apriltag::ImageU8;
 use serde::{Deserialize, Serialize};
 
 use crate::transform::Transform;

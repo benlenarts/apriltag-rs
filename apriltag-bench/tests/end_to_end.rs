@@ -1,6 +1,6 @@
 /// End-to-end integration tests: build scenes → detect → evaluate metrics.
-use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
 use apriltag::family;
+use apriltag::{Detector, DetectorBuffers, DetectorConfig};
 use apriltag_bench::distortion::{self, Distortion};
 use apriltag_bench::metrics;
 use apriltag_bench::scene::{Background, SceneBuilder};

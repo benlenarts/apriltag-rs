@@ -4,12 +4,11 @@ use serde::{Deserialize, Serialize};
 use tsify_next::Tsify;
 use wasm_bindgen::prelude::*;
 
-use apriltag::detect::detector::{
-    Detection as CoreDetection, Detector as CoreDetector, DetectorBuffers, DetectorConfig,
-};
-use apriltag::detect::image::ImageRef;
 use apriltag::detect::pose::{estimate_tag_pose, PoseParams};
 use apriltag::family;
+use apriltag::{
+    Detection as CoreDetection, Detector as CoreDetector, DetectorBuffers, DetectorConfig, ImageRef,
+};
 
 // ── Tsify types for TypeScript interface generation ──
 

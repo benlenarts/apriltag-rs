@@ -36,10 +36,9 @@ fn snapshot() -> (usize, usize) {
 }
 
 fn main() {
-    use apriltag::detect::detector::{Detector, DetectorBuffers};
-    use apriltag::detect::image::ImageU8;
     use apriltag::family;
     use apriltag::types::Pixel;
+    use apriltag::{Detector, DetectorBuffers, ImageU8};
 
     // Build 640x480 image with a tag
     let fam = family::tag36h11();

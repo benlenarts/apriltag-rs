@@ -3,8 +3,8 @@
 /// the C reference also fails to detect large tags on mid-gray backgrounds.
 #[cfg(feature = "reference")]
 mod gray_background {
-    use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
     use apriltag::family;
+    use apriltag::{Detector, DetectorBuffers, DetectorConfig};
     use apriltag_bench::reference::{reference_detect, ReferenceConfig};
     use apriltag_bench::scene::{Background, SceneBuilder};
     use apriltag_bench::transform::Transform;

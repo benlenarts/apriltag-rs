@@ -122,8 +122,7 @@ apriltag = { git = "https://github.com/benlenarts/apriltag-rs.git" }
 ### Detect tags in an image
 
 ```rust
-use apriltag::detect::detector::{Detector, DetectorBuffers};
-use apriltag::detect::image::ImageU8;
+use apriltag::{Detector, ImageU8};
 use apriltag::family;
 
 // Load a grayscale image
@@ -134,7 +133,7 @@ let mut detector = Detector::builder()
     .add_family(family::tag36h11(), 2)
     .build();
 
-let detections = detector.detect(&img, &mut DetectorBuffers::new());
+let detections = detector.detect(&img, &mut Detector::buffers());
 for det in &detections {
     println!("id={} center={:?}", det.id, det.center);
 }

@@ -1,5 +1,5 @@
 /// Image distortions for testing detector robustness.
-use apriltag::detect::image::ImageU8;
+use apriltag::ImageU8;
 use serde::{Deserialize, Serialize};
 
 /// An image distortion to apply after scene composition.

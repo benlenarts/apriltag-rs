@@ -2,8 +2,8 @@
 
 use std::time::Instant;
 
-use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
 use apriltag::family;
+use apriltag::{Detector, DetectorBuffers, DetectorConfig};
 use clap::{Parser, Subcommand};
 
 use apriltag_bench::catalog::{self, Category, Scenario};

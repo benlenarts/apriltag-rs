@@ -4,11 +4,10 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use serde::Serialize;
 
-use apriltag::detect::detector::{Detector, DetectorBuffers, DetectorConfig};
-use apriltag::detect::image::ImageU8;
 use apriltag::detect::pose::{estimate_tag_pose, Pose, PoseParams};
 use apriltag::detect::quad::QuadThreshParams;
 use apriltag::family;
+use apriltag::{Detector, DetectorBuffers, DetectorConfig, ImageU8};
 
 /// AprilTag detection CLI — detect tags in PNG/JPEG images
 #[derive(Parser)]

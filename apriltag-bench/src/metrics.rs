@@ -1,5 +1,5 @@
 /// Detection quality metrics: corner accuracy, detection rate, scoring.
-use apriltag::detect::detector::Detection;
+use apriltag::Detection;
 use serde::{Deserialize, Serialize};
 
 use crate::scene::PlacedTag;

@@ -23,8 +23,7 @@ use super::unionfind::UnionFind;
 /// pixel coordinates.
 ///
 /// ```
-/// use apriltag::detect::detector::{Detector, DetectorBuffers};
-/// use apriltag::detect::image::ImageU8;
+/// use apriltag::{Detector, DetectorBuffers, ImageU8};
 /// use apriltag::family;
 /// use apriltag::types::Pixel;
 ///
@@ -94,8 +93,7 @@ impl Default for DetectorConfig {
 /// Create once and pass to [`Detector::detect`] in a loop:
 ///
 /// ```
-/// use apriltag::detect::detector::{Detector, DetectorBuffers};
-/// use apriltag::detect::image::ImageU8;
+/// use apriltag::{Detector, DetectorBuffers, ImageU8};
 /// use apriltag::family;
 ///
 /// let mut det = Detector::builder()
@@ -150,7 +148,7 @@ impl Default for DetectorBuffers {
 /// use [`Detector::new`] with a [`DetectorConfig`] directly.
 ///
 /// ```
-/// use apriltag::detect::detector::Detector;
+/// use apriltag::Detector;
 /// use apriltag::family;
 ///
 /// let mut detector = Detector::builder()
@@ -227,7 +225,7 @@ impl Default for DetectorBuilder {
 /// An AprilTag detector with pre-built lookup tables.
 ///
 /// ```
-/// use apriltag::detect::detector::Detector;
+/// use apriltag::Detector;
 /// use apriltag::family;
 ///
 /// let mut det = Detector::builder()
@@ -243,6 +241,14 @@ impl Detector {
     /// Create a builder for configuring a detector with a fluent API.
     pub fn builder() -> DetectorBuilder {
         DetectorBuilder::new()
+    }
+
+    /// Create new empty [`DetectorBuffers`] with no pre-allocated memory.
+    ///
+    /// Convenience alias for [`DetectorBuffers::new()`] so callers can avoid
+    /// importing `DetectorBuffers` separately.
+    pub fn buffers() -> DetectorBuffers {
+        DetectorBuffers::new()
     }
 
     /// Create a new detector with the given configuration.

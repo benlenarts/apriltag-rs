@@ -3,7 +3,7 @@
 ///
 /// This module is only available when the `reference` feature is enabled.
 /// Requires running `scripts/fetch-references.sh` to obtain the C source.
-use apriltag::detect::image::ImageU8;
+use apriltag::ImageU8;
 
 /// A detection result from the reference C implementation.
 #[derive(Debug, Clone)]
