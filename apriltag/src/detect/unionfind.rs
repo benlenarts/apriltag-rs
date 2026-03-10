@@ -245,8 +245,8 @@ impl UnionFind {
             }
             // ra is the winner (larger set). Make rb point to ra.
             let rb_entry = self.data[rb as usize].load(Ordering::Relaxed);
+            // COVERAGE: retry path only hit under contention from concurrent threads
             if unpack_parent(rb_entry) != rb {
-                // rb is no longer a root — retry
                 continue;
             }
             // CAS: set rb's parent to ra
@@ -277,6 +277,7 @@ impl UnionFind {
     /// Compare data contents for testing (AtomicU64 doesn't impl PartialEq).
     #[cfg(test)]
     fn data_eq(&self, other: &Self) -> bool {
+        // COVERAGE: length mismatch branch not exercised by current tests
         if self.data.len() != other.data.len() {
             return false;
         }
@@ -523,6 +524,7 @@ mod tests {
             // After all threads join, every element should share a root with 0
             let root = uf.find_shared(0);
             for i in 1..n {
+                // COVERAGE: assertion message only reached on failure
                 assert_eq!(
                     uf.find_shared(i),
                     root,

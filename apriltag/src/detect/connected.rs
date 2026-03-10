@@ -113,6 +113,7 @@ fn connected_components_par(threshed: &ImageU8, uf: &mut UnionFind) {
     assert!(buf.len() >= (h * stride) as usize);
     uf.reset((w * h) as usize);
 
+    // COVERAGE: parallel path only taken with parallel feature + multi-thread
     if h == 0 || w == 0 {
         return;
     }
@@ -132,6 +133,7 @@ fn connected_components_par(threshed: &ImageU8, uf: &mut UnionFind) {
         }
     }
 
+    // COVERAGE: parallel path only taken with parallel feature + multi-thread
     if h <= 1 {
         return;
     }
@@ -167,6 +169,7 @@ fn connected_components_par(threshed: &ImageU8, uf: &mut UnionFind) {
     // Stitch gap rows serially (the row between each pair of strips)
     for window in strips.windows(2) {
         let gap_y = window[0].1; // first row after strip 0 = gap row
+                                 // COVERAGE: guard for edge case where last strip ends at image boundary
         if gap_y >= h {
             continue;
         }
@@ -312,6 +315,7 @@ fn stitch_row(buf: &[u8], w: u32, stride: u32, uf: &mut UnionFind, y: u32) {
     // up-neighbors, but the gap row y wasn't processed yet, so we
     // need to process y+1 looking at y as well.
     let next_y = y + 1;
+    // COVERAGE: bounds guards; gap rows are always interior in practice
     if next_y >= (buf.len() as u32).div_ceil(stride) {
         return; // no row below
     }
@@ -526,6 +530,7 @@ mod tests {
         for (_, members) in &seq_classes {
             let par_root = uf_par.find_flat(members[0]);
             for &m in &members[1..] {
+                // COVERAGE: assertion message only reached on failure
                 assert_eq!(
                     uf_par.find_flat(m),
                     par_root,
@@ -539,6 +544,7 @@ mod tests {
         for i in 0..n {
             par_classes.entry(uf_par.find_flat(i)).or_default().push(i);
         }
+        // COVERAGE: assertion message only reached on failure
         assert_eq!(
             seq_classes.len(),
             par_classes.len(),
