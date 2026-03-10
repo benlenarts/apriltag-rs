@@ -35,7 +35,6 @@ family-standard52h13 = []
 
 [dependencies]
 smallvec = "1"
-thiserror = "2"
 serde = { version = "1", features = ["derive"], optional = true }
 toml = { version = "0.8", optional = true }
 rayon = { version = "1.10", optional = true }

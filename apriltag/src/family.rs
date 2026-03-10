@@ -200,15 +200,31 @@ fn parse_bin_codes(data: &[u8]) -> Result<Vec<u64>, FamilyError> {
     Ok(chunks.iter().map(|c| u64::from_le_bytes(*c)).collect())
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum FamilyError {
     #[cfg(feature = "serde")]
-    #[error("config error: {0}")]
     Config(String),
-    #[error("layout error: {0}")]
-    Layout(#[from] LayoutError),
-    #[error("invalid binary data: {0}")]
+    Layout(LayoutError),
     InvalidBin(String),
+}
+
+impl fmt::Display for FamilyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            #[cfg(feature = "serde")]
+            Self::Config(msg) => write!(f, "config error: {msg}"),
+            Self::Layout(err) => write!(f, "layout error: {err}"),
+            Self::InvalidBin(msg) => write!(f, "invalid binary data: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for FamilyError {}
+
+impl From<LayoutError> for FamilyError {
+    fn from(err: LayoutError) -> Self {
+        Self::Layout(err)
+    }
 }
 
 // --- Built-in families ---
