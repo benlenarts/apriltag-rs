@@ -1,6 +1,6 @@
 # apriltag-rs
 
-Pure Rust implementation of the [AprilTag](https://april.eecs.umich.edu/software/apriltag) visual fiducial system. No C dependencies. WASM-compatible.
+Pure Rust implementation of the [AprilTag](https://april.eecs.umich.edu/software/apriltag) visual fiducial system. WASM-compatible.
 
 <!-- Badges auto-updated by CI on push to main (see .github/workflows/stats.yml) -->
 [![CI](https://github.com/benlenarts/apriltag-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/benlenarts/apriltag-rs/actions/workflows/ci.yml)
@@ -19,14 +19,14 @@ Pure Rust implementation of the [AprilTag](https://april.eecs.umich.edu/software
 | **Coverage** | 99.5% line coverage (cargo-llvm-cov) |
 | **Regression suite** | 59 scenarios, all passing |
 | **Safety** | `#![forbid(unsafe_code)]` in all production crates |
-| **Code** | ~18k lines of pure Rust, zero C dependencies |
+| **Code** | ~18k lines of pure Rust |
 
 > All numbers above are auto-updated by CI on every push to main.
 > See [`.github/badges/`](.github/badges/) for the raw data.
 
 ## Features
 
-- **Pure Rust** — no FFI, no C toolchain required
+- **Pure Rust** — `forbid(unsafe_code)`, 99.5% test coverage
 - **WASM-compatible** — runs in the browser via WebAssembly
 - **All standard tag families** — Tag16h5, Tag25h9, Tag36h11, Standard41h12, Standard52h13, Circle21h7, Circle49h12, Custom48h12
 - **Full detection pipeline** — grayscale conversion, decimation, blur, gradient computation, quad detection, homography, decoding, and pose estimation
