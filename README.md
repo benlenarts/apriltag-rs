@@ -153,23 +153,14 @@ wasm-pack build apriltag-wasm --target web
 
 ## Tag families
 
-| Family | Bits | Min Hamming | Tags |
-|--------|------|-------------|------|
-| Tag16h5 | 16 | 5 | 30 |
-| Tag25h9 | 25 | 9 | 35 |
-| Tag36h11 | 36 | 11 | 587 |
-| Standard41h12 | 41 | 12 | 2,115 |
-| Standard52h13 | 52 | 13 | 48,714 |
-| Circle21h7 | 21 | 7 | 38 |
-| Circle49h12 | 49 | 12 | 65,535 |
-| Custom48h12 | 48 | 12 | 42,211 |
-
-Enable only the families you need to reduce binary size:
+All standard families are supported: Tag16h5, Tag25h9, Tag36h11, Standard41h12, Standard52h13, Circle21h7, Circle49h12, and Custom48h12. Each family is included at compile time via feature flags — enable only what you need to reduce binary size:
 
 ```toml
 [dependencies]
 apriltag = { version = "0.1", default-features = false, features = ["family-tag36h11"] }
 ```
+
+To generate custom tag families, see the [`apriltag-gen-cli` README](apriltag-gen-cli/README.md).
 
 ## Architecture
 
