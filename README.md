@@ -26,10 +26,9 @@ Pure Rust implementation of the [AprilTag](https://april.eecs.umich.edu/software
 
 ## Features
 
-- **Pure Rust** — `forbid(unsafe_code)`, 99.5% test coverage
+- **Pure Rust** — `forbid(unsafe_code)`, minimal dependencies, 99.5% test coverage
 - **WASM-compatible** — runs in the browser via WebAssembly
 - **All standard tag families** — Tag16h5, Tag25h9, Tag36h11, Standard41h12, Standard52h13, Circle21h7, Circle49h12, Custom48h12
-- **Full detection pipeline** — grayscale conversion, decimation, blur, gradient computation, quad detection, homography, decoding, and pose estimation
 - **Tag generation** — generate and render tag family bitmaps
 - **Optional parallelism** — multi-threaded detection via Rayon
 
