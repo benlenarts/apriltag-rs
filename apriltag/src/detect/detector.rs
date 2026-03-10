@@ -470,7 +470,7 @@ mod tests {
     #[cfg(feature = "family-tag16h5")]
     fn builder_detect_synthetic_tag() {
         let (img, fam) = build_synthetic_tag_image();
-        let mut det = Detector::builder()
+        let det = Detector::builder()
             .quad_decimate(1.0)
             .add_family(fam, 2)
             .build();

@@ -73,7 +73,7 @@ fn main() {
         }
     }
 
-    let mut detector = Detector::builder()
+    let detector = Detector::builder()
         .quad_sigma(0.8)
         .add_family(fam, 2)
         .build();
