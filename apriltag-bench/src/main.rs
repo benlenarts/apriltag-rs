@@ -81,6 +81,9 @@ enum Command {
         /// Number of threads (1 = single-threaded, 0 = all cores).
         #[arg(long, default_value_t = 1)]
         threads: usize,
+        /// Run the complete sweep (all tag configs, conditions, families, decimate levels).
+        #[arg(long)]
+        full: bool,
     },
     /// Compare Rust detector vs C reference (requires --features reference).
     Compare {
@@ -219,7 +222,8 @@ fn main() {
             iterations,
             format,
             threads,
-        } => cmd_benchmark_sweep(iterations, &format, threads),
+            full,
+        } => cmd_benchmark_sweep(iterations, &format, threads, full),
         Command::Compare {
             category,
             scenario,
@@ -677,10 +681,10 @@ fn cmd_benchmark_inner(
     }
 }
 
-fn cmd_benchmark_sweep(iterations: usize, format: &str, threads: usize) {
+fn cmd_benchmark_sweep(iterations: usize, format: &str, threads: usize, full: bool) {
     #[cfg(not(feature = "reference"))]
     {
-        let _ = (iterations, format, threads);
+        let _ = (iterations, format, threads, full);
         eprintln!("Error: the 'benchmark-sweep' command requires the 'reference' feature.");
         eprintln!(
             "Build with: cargo run -p apriltag-bench --features reference -- benchmark-sweep"
@@ -697,12 +701,12 @@ fn cmd_benchmark_sweep(iterations: usize, format: &str, threads: usize) {
             .build()
             .expect("failed to create thread pool");
 
-        pool.install(|| cmd_benchmark_sweep_inner(iterations, format, threads));
+        pool.install(|| cmd_benchmark_sweep_inner(iterations, format, threads, full));
     }
 }
 
 #[cfg(feature = "reference")]
-fn cmd_benchmark_sweep_inner(iterations: usize, format: &str, threads: usize) {
+fn cmd_benchmark_sweep_inner(iterations: usize, format: &str, threads: usize, full: bool) {
     use apriltag_bench::reference::{PersistentReferenceDetector, ReferenceConfig};
 
     #[derive(serde::Serialize)]
@@ -710,6 +714,8 @@ fn cmd_benchmark_sweep_inner(iterations: usize, format: &str, threads: usize) {
         name: String,
         tags: usize,
         condition: String,
+        families: String,
+        quad_decimate: f32,
         image_size: [u32; 2],
         rust_median_us: u64,
         ref_median_us: u64,
@@ -721,17 +727,40 @@ fn cmd_benchmark_sweep_inner(iterations: usize, format: &str, threads: usize) {
         name: String,
         tags: usize,
         condition: String,
+        families: String,
+        quad_decimate: f32,
         scene: apriltag_bench::scene::Scene,
     }
 
-    // Tag counts and corresponding image sizes / tag scale
-    let tag_configs: &[(usize, u32, u32, f64)] = &[
-        // (n_tags, width, height, tag_scale)
+    // Full tag configs: (n_tags, width, height, tag_scale)
+    let all_tag_configs: &[(usize, u32, u32, f64)] = &[
         (1, 500, 500, 80.0),
         (5, 800, 600, 50.0),
         (10, 1000, 800, 45.0),
         (25, 1280, 960, 35.0),
+        (25, 2000, 1500, 50.0),
+        (50, 4000, 3000, 45.0),
+        (70, 6000, 4000, 40.0),
     ];
+    let quick_tag_configs: &[(usize, u32, u32, f64)] = &[
+        (1, 500, 500, 80.0),
+        (25, 2000, 1500, 50.0),
+        (70, 6000, 4000, 40.0),
+    ];
+    let tag_configs = if full {
+        all_tag_configs
+    } else {
+        quick_tag_configs
+    };
+
+    // Family modes
+    let all_family_modes: &[&str] = &["single", "mixed"];
+    let family_modes = all_family_modes; // both in quick and full
+
+    // Decimate levels
+    let all_decimates: &[f32] = &[1.0, 2.0, 4.0];
+    let quick_decimates: &[f32] = &[1.0, 2.0];
+    let decimates = if full { all_decimates } else { quick_decimates };
 
     // Distortion conditions
     struct Condition {
@@ -741,7 +770,7 @@ fn cmd_benchmark_sweep_inner(iterations: usize, format: &str, threads: usize) {
         distortions: Vec<Distortion>,
     }
 
-    let conditions = vec![
+    let all_conditions = vec![
         Condition {
             name: "clean",
             rotation_deg: 0.0,
@@ -795,91 +824,160 @@ fn cmd_benchmark_sweep_inner(iterations: usize, format: &str, threads: usize) {
         },
     ];
 
+    // In quick mode, only use clean + combined
+    let conditions: Vec<&Condition> = if full {
+        all_conditions.iter().collect()
+    } else {
+        all_conditions
+            .iter()
+            .filter(|c| c.name == "clean" || c.name == "combined")
+            .collect()
+    };
+
+    let total_full =
+        all_tag_configs.len() * all_family_modes.len() * all_decimates.len() * all_conditions.len();
+    let total_scenarios =
+        tag_configs.len() * family_modes.len() * decimates.len() * conditions.len();
+
+    if !full && format != "json" {
+        println!(
+            "Running {} / {} scenarios (pass --full for the complete sweep)\n",
+            total_scenarios, total_full
+        );
+    }
+
     // Generate all sweep scenes
     let mut sweep_scenes = Vec::new();
 
     for &(n_tags, width, height, tag_scale) in tag_configs {
-        // Compute grid positions for tags
         let positions = grid_positions(n_tags, width, height, tag_scale);
 
-        for cond in &conditions {
-            let name = format!("{}tags-{}", n_tags, cond.name);
+        for &family_mode in family_modes {
+            for cond in &conditions {
+                for &decimate in decimates {
+                    let name = format!(
+                        "{}tags-{}-{}-dec{}",
+                        n_tags, family_mode, cond.name, decimate as u32
+                    );
 
-            let mut builder = SceneBuilder::new(width, height).background(Background::Solid(128));
+                    let mut builder =
+                        SceneBuilder::new(width, height).background(Background::Solid(128));
 
-            for (id, &(cx, cy)) in positions.iter().enumerate() {
-                let transform = if cond.tilt_x_deg.abs() > 0.01 || cond.rotation_deg.abs() > 0.01 {
-                    if cond.tilt_x_deg.abs() > 0.01 {
-                        Transform::FromPose {
-                            center: [cx, cy],
-                            size: tag_scale,
-                            roll: cond.rotation_deg.to_radians(),
-                            tilt_x: cond.tilt_x_deg.to_radians(),
-                            tilt_y: 0.0,
-                        }
-                    } else {
-                        Transform::Similarity {
-                            cx,
-                            cy,
-                            scale: tag_scale / 2.0,
-                            theta: cond.rotation_deg.to_radians(),
-                        }
+                    for (id, &(cx, cy)) in positions.iter().enumerate() {
+                        let tag_family = if family_mode == "mixed" && id % 2 == 1 {
+                            "tagStandard52h13"
+                        } else {
+                            "tag36h11"
+                        };
+
+                        let transform =
+                            if cond.tilt_x_deg.abs() > 0.01 || cond.rotation_deg.abs() > 0.01 {
+                                if cond.tilt_x_deg.abs() > 0.01 {
+                                    Transform::FromPose {
+                                        center: [cx, cy],
+                                        size: tag_scale,
+                                        roll: cond.rotation_deg.to_radians(),
+                                        tilt_x: cond.tilt_x_deg.to_radians(),
+                                        tilt_y: 0.0,
+                                    }
+                                } else {
+                                    Transform::Similarity {
+                                        cx,
+                                        cy,
+                                        scale: tag_scale / 2.0,
+                                        theta: cond.rotation_deg.to_radians(),
+                                    }
+                                }
+                            } else {
+                                Transform::Similarity {
+                                    cx,
+                                    cy,
+                                    scale: tag_scale / 2.0,
+                                    theta: 0.0,
+                                }
+                            };
+
+                        builder = builder.add_tag(tag_family, id as u32, transform);
                     }
-                } else {
-                    Transform::Similarity {
-                        cx,
-                        cy,
-                        scale: tag_scale / 2.0,
-                        theta: 0.0,
+
+                    let mut scene = builder.build();
+
+                    if !cond.distortions.is_empty() {
+                        distortion::apply(&mut scene.image, &cond.distortions);
                     }
-                };
 
-                builder = builder.add_tag("tag36h11", id as u32, transform);
+                    sweep_scenes.push(SweepScene {
+                        name,
+                        tags: n_tags,
+                        condition: cond.name.to_string(),
+                        families: family_mode.to_string(),
+                        quad_decimate: decimate,
+                        scene,
+                    });
+                }
             }
-
-            let mut scene = builder.build();
-
-            if !cond.distortions.is_empty() {
-                distortion::apply(&mut scene.image, &cond.distortions);
-            }
-
-            sweep_scenes.push(SweepScene {
-                name,
-                tags: n_tags,
-                condition: cond.name.to_string(),
-                scene,
-            });
         }
     }
 
-    // Run benchmarks
-    let mut rows = Vec::new();
-    let ref_config = ReferenceConfig {
+    // Create detectors for single-family and mixed-family modes
+    let make_ref_config = |decimate: f32| ReferenceConfig {
+        quad_decimate: decimate,
         nthreads: threads as i32,
-        ..Default::default()
     };
-    let ref_detector = PersistentReferenceDetector::new("tag36h11", &ref_config);
 
-    let mut rust_detector = Detector::new(DetectorConfig::default());
-    if let Some(fam) = family::builtin_family("tag36h11") {
-        rust_detector.add_family(fam, 2);
-    }
+    let make_rust_detector = |families: &str, decimate: f32| {
+        let mut config = DetectorConfig::default();
+        config.quad_decimate = decimate;
+        let mut detector = Detector::new(config);
+        if let Some(fam) = family::builtin_family("tag36h11") {
+            detector.add_family(fam, 2);
+        }
+        if families == "mixed" {
+            if let Some(fam) = family::builtin_family("tagStandard52h13") {
+                detector.add_family(fam, 2);
+            }
+        }
+        detector
+    };
 
     if format != "json" {
         println!(
-            "{:<30} {:>5} {:>10} {:>10} {:>10} {:>10} {:>6}",
-            "Scenario", "Tags", "Rust(ms)", "Ref(ms)", "Ratio", "Size", "N"
+            "{:<40} {:>5} {:>8} {:>4} {:>10} {:>10} {:>10} {:>10} {:>6}",
+            "Scenario", "Tags", "Family", "Dec", "Rust(ms)", "Ref(ms)", "Ratio", "Size", "N"
         );
-        println!("{}", "-".repeat(87));
+        println!("{}", "-".repeat(109));
     }
 
+    let mut rows = Vec::new();
     let mut buffers = DetectorBuffers::new();
 
+    // Track current detector config to avoid re-creating unnecessarily
+    let mut cur_family_mode = String::new();
+    let mut cur_decimate: f32 = -1.0;
+    let mut rust_detector = make_rust_detector("single", 2.0); // placeholder
+    let mut ref_detector = PersistentReferenceDetector::new("tag36h11", &make_ref_config(2.0)); // placeholder
+
     for ss in &sweep_scenes {
+        // Re-create detectors if family mode or decimate changed
+        if ss.families != cur_family_mode || (ss.quad_decimate - cur_decimate).abs() > 0.001 {
+            cur_family_mode = ss.families.clone();
+            cur_decimate = ss.quad_decimate;
+            rust_detector = make_rust_detector(&cur_family_mode, cur_decimate);
+            let ref_config = make_ref_config(cur_decimate);
+            if cur_family_mode == "mixed" {
+                ref_detector = PersistentReferenceDetector::with_families(
+                    &["tag36h11", "tagStandard52h13"],
+                    &ref_config,
+                );
+            } else {
+                ref_detector = PersistentReferenceDetector::new("tag36h11", &ref_config);
+            }
+        }
+
         let img = &ss.scene.image;
         let size = [img.width, img.height];
 
-        // Warmup runs (3 iterations to stabilize caches and allocator)
+        // Warmup runs
         for _ in 0..3 {
             let _ = rust_detector.detect(img, &mut buffers);
             let _ = ref_detector.detect(img);
@@ -926,9 +1024,11 @@ fn cmd_benchmark_sweep_inner(iterations: usize, format: &str, threads: usize) {
 
         if format != "json" {
             println!(
-                "{:<30} {:>5} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4} {:>5}",
+                "{:<40} {:>5} {:>8} {:>4} {:>9.1} {:>9.1} {:>9.2}x {:>4}x{:<4} {:>5}",
                 &ss.name,
                 ss.tags,
+                &ss.families,
+                ss.quad_decimate as u32,
                 rust_us as f64 / 1000.0,
                 ref_us as f64 / 1000.0,
                 ratio,
@@ -942,6 +1042,8 @@ fn cmd_benchmark_sweep_inner(iterations: usize, format: &str, threads: usize) {
             name: ss.name.clone(),
             tags: ss.tags,
             condition: ss.condition.clone(),
+            families: ss.families.clone(),
+            quad_decimate: ss.quad_decimate,
             image_size: size,
             rust_median_us: rust_us,
             ref_median_us: ref_us,
@@ -953,11 +1055,11 @@ fn cmd_benchmark_sweep_inner(iterations: usize, format: &str, threads: usize) {
     if format == "json" {
         println!("{}", serde_json::to_string_pretty(&rows).unwrap());
     } else {
-        println!("{}", "-".repeat(87));
+        println!("{}", "-".repeat(109));
 
         // Per-condition summary
         println!("\nPer-condition averages:");
-        let cond_names: Vec<String> = conditions.iter().map(|c| c.name.to_string()).collect();
+        let cond_names: Vec<&str> = conditions.iter().map(|c| c.name).collect();
         for cond_name in &cond_names {
             let cond_rows: Vec<_> = rows.iter().filter(|r| r.condition == *cond_name).collect();
             let total_rust: u64 = cond_rows.iter().map(|r| r.rust_median_us).sum();
@@ -978,7 +1080,12 @@ fn cmd_benchmark_sweep_inner(iterations: usize, format: &str, threads: usize) {
 
         // Per-tag-count summary
         println!("\nPer-tag-count averages:");
+        let mut seen_tags = Vec::new();
         for &(n_tags, _, _, _) in tag_configs {
+            if seen_tags.contains(&n_tags) {
+                continue;
+            }
+            seen_tags.push(n_tags);
             let tag_rows: Vec<_> = rows.iter().filter(|r| r.tags == n_tags).collect();
             let total_rust: u64 = tag_rows.iter().map(|r| r.rust_median_us).sum();
             let total_ref: u64 = tag_rows.iter().map(|r| r.ref_median_us).sum();

@@ -17,8 +17,6 @@ pub enum Category {
     MultiTag,
     Occlusion,
     Decimation,
-    Highres,
-    Scaling,
 }
 
 impl Category {
@@ -35,8 +33,6 @@ impl Category {
             Category::MultiTag,
             Category::Occlusion,
             Category::Decimation,
-            Category::Highres,
-            Category::Scaling,
         ]
     }
 
@@ -53,8 +49,6 @@ impl Category {
             Category::MultiTag => "multi-tag",
             Category::Occlusion => "occlusion",
             Category::Decimation => "decimation",
-            Category::Highres => "highres",
-            Category::Scaling => "scaling",
         }
     }
 
@@ -98,8 +92,6 @@ pub fn all_scenarios() -> Vec<Scenario> {
     scenarios.extend(multi_tag_scenarios());
     scenarios.extend(occlusion_scenarios());
     scenarios.extend(decimation_scenarios());
-    scenarios.extend(highres_scenarios());
-    scenarios.extend(scaling_scenarios());
     scenarios
 }
 
@@ -561,99 +553,96 @@ fn multi_tag_scenarios() -> Vec<Scenario> {
                 builder.build()
             }),
         },
-    ]
-}
-
-fn highres_scenarios() -> Vec<Scenario> {
-    // Place mixed tag36h11/tagStandard52h13 tags in a 4000×3000 grid with varied rotations and tilts
-    let n_cols = 10;
-    let n_rows = 7;
-    let n_tags = n_cols * n_rows; // 70 tags
-    let spacing_x = 4000.0 / (n_cols as f64 + 1.0);
-    let spacing_y = 3000.0 / (n_rows as f64 + 1.0);
-    let tag_size = 120.0; // pixels (full tag width)
-
-    // Deterministic per-tag parameters via simple hash
-    let tag_params: Vec<(f64, f64, f64)> = (0..n_tags)
-        .map(|i| {
-            let seed = (i as u32).wrapping_mul(2654435761);
-            let roll_deg = ((seed % 360) as f64 - 180.0) * 10.0 / 180.0; // ±10°
-            let roll_rad = roll_deg.to_radians();
-            let tilt_x = (((seed >> 8) % 200) as f64 - 100.0) / 100.0 * 0.05; // ±0.05 rad (~3°)
-            let tilt_y = (((seed >> 16) % 200) as f64 - 100.0) / 100.0 * 0.05; // ±0.05 rad (~3°)
-            (roll_rad, tilt_x, tilt_y)
-        })
-        .collect();
-
-    let expect_ids: Vec<(String, u32)> = (0..n_tags)
-        .map(|i| {
-            let family = if i % 2 == 0 {
-                "tag36h11"
-            } else {
-                "tagStandard52h13"
-            };
-            (family.to_string(), i as u32)
-        })
-        .collect();
-
-    vec![Scenario {
-        name: "highres-4000x3000".to_string(),
-        description: format!(
-            "{n_tags} mixed tag36h11/tagStandard52h13 tags at 4000×3000 with rotation, perspective, noise, and lighting"
-        ),
-        category: Category::Highres,
-        expect_ids,
-        max_corner_rmse: 5.0,
-        quad_decimate: None,
-        build_fn: Box::new(move || {
-            let mut builder = SceneBuilder::new(4000, 3000).background(Background::Solid(128));
-
-            for row in 0..n_rows {
-                for col in 0..n_cols {
-                    let i = row * n_cols + col;
-                    let cx = spacing_x * (col as f64 + 1.0);
-                    let cy = spacing_y * (row as f64 + 1.0);
-                    let (roll, tilt_x, tilt_y) = tag_params[i];
-
+        Scenario {
+            name: "multi-family-2tags".to_string(),
+            description: "One tag36h11 + one tagStandard52h13 side by side".to_string(),
+            category: Category::MultiTag,
+            expect_ids: vec![
+                ("tag36h11".to_string(), 0),
+                ("tagStandard52h13".to_string(), 0),
+            ],
+            max_corner_rmse: 3.0,
+            quad_decimate: None,
+            build_fn: Box::new(|| {
+                SceneBuilder::new(600, 400)
+                    .background(Background::Solid(128))
+                    .add_tag(
+                        "tag36h11",
+                        0,
+                        Transform::Similarity {
+                            cx: 150.0,
+                            cy: 200.0,
+                            scale: 50.0,
+                            theta: 0.0,
+                        },
+                    )
+                    .add_tag(
+                        "tagStandard52h13",
+                        0,
+                        Transform::Similarity {
+                            cx: 450.0,
+                            cy: 200.0,
+                            scale: 50.0,
+                            theta: 0.0,
+                        },
+                    )
+                    .build()
+            }),
+        },
+        Scenario {
+            name: "multi-family-grid".to_string(),
+            description: "10 mixed tag36h11/tagStandard52h13 tags with varied rotation/tilt"
+                .to_string(),
+            category: Category::MultiTag,
+            expect_ids: (0..10)
+                .map(|i| {
                     let family = if i % 2 == 0 {
                         "tag36h11"
                     } else {
                         "tagStandard52h13"
                     };
+                    (family.to_string(), (i / 2) as u32)
+                })
+                .collect(),
+            max_corner_rmse: 5.0,
+            quad_decimate: None,
+            build_fn: Box::new(|| {
+                let positions = [
+                    (150.0, 150.0),
+                    (400.0, 150.0),
+                    (650.0, 150.0),
+                    (900.0, 150.0),
+                    (1050.0, 150.0),
+                    (150.0, 500.0),
+                    (400.0, 500.0),
+                    (650.0, 500.0),
+                    (900.0, 500.0),
+                    (1050.0, 500.0),
+                ];
+                let rotations = [0.0, 0.2, -0.15, 0.3, -0.1, 0.1, -0.25, 0.15, -0.05, 0.2];
+                let mut builder = SceneBuilder::new(1200, 800).background(Background::Solid(128));
+                for (i, (&(cx, cy), &theta)) in positions.iter().zip(rotations.iter()).enumerate() {
+                    let family = if i % 2 == 0 {
+                        "tag36h11"
+                    } else {
+                        "tagStandard52h13"
+                    };
+                    let tag_id = (i / 2) as u32;
                     builder = builder.add_tag(
                         family,
-                        i as u32,
-                        Transform::FromPose {
-                            center: [cx, cy],
-                            size: tag_size,
-                            roll,
-                            tilt_x,
-                            tilt_y,
+                        tag_id,
+                        Transform::Similarity {
+                            cx,
+                            cy,
+                            scale: 40.0,
+                            theta,
                         },
                     );
                 }
-            }
-
-            let mut scene = builder.build();
-            crate::distortion::apply(
-                &mut scene.image,
-                &[
-                    Distortion::ContrastScale { factor: 0.7 },
-                    Distortion::GradientLighting {
-                        direction: 0.3,
-                        min_factor: 0.7,
-                        max_factor: 1.3,
-                    },
-                    Distortion::GaussianNoise {
-                        sigma: 15.0,
-                        seed: 42,
-                    },
-                    Distortion::GaussianBlur { sigma: 0.8 },
-                ],
-            );
-            scene
-        }),
-    }]
+                builder.build()
+            }),
+        },
+    ]
 }
 
 fn occlusion_scenarios() -> Vec<Scenario> {
@@ -718,152 +707,6 @@ fn decimation_scenarios() -> Vec<Scenario> {
             }),
         })
         .collect()
-}
-
-fn scaling_scenarios() -> Vec<Scenario> {
-    let mut scenarios = Vec::new();
-
-    // (a) Image size sweep — isolates preprocessing, threshold, connected components, clustering
-    let sizes: &[(u32, u32)] = &[(500, 500), (1000, 1000), (2000, 1500), (4000, 3000)];
-    for &(w, h) in sizes {
-        let tag_scale = (w.min(h) as f64) / 6.0; // tag fills ~1/3 of smaller dimension
-        let cx = w as f64 / 2.0;
-        let cy = h as f64 / 2.0;
-        scenarios.push(Scenario {
-            name: format!("scaling-size-{w}x{h}"),
-            description: format!("Single tag36h11 at {w}×{h}, no noise"),
-            category: Category::Scaling,
-            expect_ids: vec![("tag36h11".to_string(), 0)],
-            max_corner_rmse: 3.0,
-            quad_decimate: None,
-            build_fn: Box::new(move || {
-                SceneBuilder::new(w, h)
-                    .background(Background::Solid(128))
-                    .add_tag(
-                        "tag36h11",
-                        0,
-                        Transform::Similarity {
-                            cx,
-                            cy,
-                            scale: tag_scale,
-                            theta: 0.0,
-                        },
-                    )
-                    .build()
-            }),
-        });
-    }
-
-    // (b) Noise at scale — isolates noise-induced clustering penalty
-    let noise_sizes: &[(u32, u32)] = &[(500, 500), (1000, 1000), (2000, 1500)];
-    for &(w, h) in noise_sizes {
-        let tag_scale = (w.min(h) as f64) / 6.0;
-        let cx = w as f64 / 2.0;
-        let cy = h as f64 / 2.0;
-        scenarios.push(Scenario {
-            name: format!("scaling-noise-{w}x{h}"),
-            description: format!("Single tag36h11 at {w}×{h}, noise sigma=15"),
-            category: Category::Scaling,
-            expect_ids: vec![("tag36h11".to_string(), 0)],
-            max_corner_rmse: 5.0,
-            quad_decimate: None,
-            build_fn: Box::new(move || {
-                let mut scene = SceneBuilder::new(w, h)
-                    .background(Background::Solid(128))
-                    .add_tag(
-                        "tag36h11",
-                        0,
-                        Transform::Similarity {
-                            cx,
-                            cy,
-                            scale: tag_scale,
-                            theta: 0.0,
-                        },
-                    )
-                    .build();
-                crate::distortion::apply(
-                    &mut scene.image,
-                    &[Distortion::GaussianNoise {
-                        sigma: 15.0,
-                        seed: 42,
-                    }],
-                );
-                scene
-            }),
-        });
-    }
-
-    // (c) Tag count at fixed size — isolates decode/quad-fitting/dedup scaling
-    let tag_counts = [1, 10, 30];
-    for &n_tags in &tag_counts {
-        let expect_ids: Vec<(String, u32)> =
-            (0..n_tags).map(|i| ("tag36h11".to_string(), i)).collect();
-        scenarios.push(Scenario {
-            name: format!("scaling-tags-{n_tags}"),
-            description: format!("{n_tags} tag(s) at 2000×1500, no noise"),
-            category: Category::Scaling,
-            expect_ids,
-            max_corner_rmse: 3.0,
-            quad_decimate: None,
-            build_fn: Box::new(move || {
-                let (w, h) = (2000, 1500);
-                let cols = (n_tags as f64).sqrt().ceil() as u32;
-                let rows = n_tags.div_ceil(cols);
-                let spacing_x = w as f64 / (cols as f64 + 1.0);
-                let spacing_y = h as f64 / (rows as f64 + 1.0);
-                let tag_scale = (spacing_x.min(spacing_y) * 0.35).min(80.0);
-
-                let mut builder = SceneBuilder::new(w, h).background(Background::Solid(128));
-                for i in 0..n_tags {
-                    let col = i % cols;
-                    let row = i / cols;
-                    let cx = spacing_x * (col as f64 + 1.0);
-                    let cy = spacing_y * (row as f64 + 1.0);
-                    builder = builder.add_tag(
-                        "tag36h11",
-                        i,
-                        Transform::Similarity {
-                            cx,
-                            cy,
-                            scale: tag_scale,
-                            theta: 0.0,
-                        },
-                    );
-                }
-                builder.build()
-            }),
-        });
-    }
-
-    // (d) Decimation factor at fixed large size — isolates decimation benefit
-    let decimations = [1.0_f32, 2.0, 4.0];
-    for &decimate in &decimations {
-        scenarios.push(Scenario {
-            name: format!("scaling-decimate-{decimate:.0}x"),
-            description: format!("4000×3000 single tag, decimate={decimate}"),
-            category: Category::Scaling,
-            expect_ids: vec![("tag36h11".to_string(), 0)],
-            max_corner_rmse: if decimate >= 4.0 { 5.0 } else { 3.0 },
-            quad_decimate: Some(decimate),
-            build_fn: Box::new(|| {
-                SceneBuilder::new(4000, 3000)
-                    .background(Background::Solid(128))
-                    .add_tag(
-                        "tag36h11",
-                        0,
-                        Transform::Similarity {
-                            cx: 2000.0,
-                            cy: 1500.0,
-                            scale: 500.0,
-                            theta: 0.0,
-                        },
-                    )
-                    .build()
-            }),
-        });
-    }
-
-    scenarios
 }
 
 #[cfg(test)]
