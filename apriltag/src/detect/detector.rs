@@ -1,3 +1,5 @@
+use smallvec::SmallVec;
+
 use crate::family::{FamilyId, TagFamily};
 
 use super::cluster::{gradient_clusters, Cluster};
@@ -275,7 +277,7 @@ fn decode_quad_to_detections(
     families: &[(TagFamily, QuickDecode)],
     config: &DetectorConfig,
     bufs: &mut DecodeBufs,
-    out: &mut Vec<Detection>,
+    out: &mut SmallVec<[Detection; 1]>,
 ) {
     // COVERAGE: None branch requires a degenerate quad (all corners collinear)
     // surviving all prior pipeline stages — not reachable in practice.
@@ -297,7 +299,7 @@ fn decode_quad_to_detections(
             config.decode_sharpening,
             bufs,
         ) {
-            let (center, corners) = compute_detection_geometry(&h, result.rotation, family);
+            let (center, corners) = compute_detection_geometry(&h, result.rotation);
 
             out.push(Detection {
                 family_id: result.family_id,
@@ -312,11 +314,7 @@ fn decode_quad_to_detections(
 }
 
 /// Compute center and rotation-corrected corner positions.
-fn compute_detection_geometry(
-    h: &Homography,
-    rotation: i32,
-    _family: &TagFamily,
-) -> (Vec2, [Vec2; 4]) {
+fn compute_detection_geometry(h: &Homography, rotation: i32) -> (Vec2, [Vec2; 4]) {
     let (cx, cy) = h.project(0.0, 0.0);
 
     // Tag corners in canonical order, rotated by the detected rotation
@@ -417,12 +415,10 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "family-tag16h5")]
     fn compute_detection_geometry_identity() {
         let corners = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]].map(Vec2::from);
         let h = Homography::from_quad_corners(&corners).unwrap();
-        let family = family::tag16h5();
-        let (center, det_corners) = compute_detection_geometry(&h, 0, &family);
+        let (center, det_corners) = compute_detection_geometry(&h, 0);
         assert!((center[0] - 0.0).abs() < 1e-6);
         assert!((center[1] - 0.0).abs() < 1e-6);
         for i in 0..4 {

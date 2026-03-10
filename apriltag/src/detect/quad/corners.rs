@@ -1,3 +1,5 @@
+use smallvec::SmallVec;
+
 use super::line_fitting::{fit_line, range_moments, LineFitPt};
 use super::QuadThreshParams;
 
@@ -5,7 +7,7 @@ use super::QuadThreshParams;
 pub(super) fn find_corners(
     lfps: &[LineFitPt],
     errors: &mut Vec<f64>,
-    maxima: &mut Vec<(usize, f64)>,
+    maxima: &mut SmallVec<[(usize, f64); 10]>,
     params: &QuadThreshParams,
 ) -> Option<[usize; 4]> {
     let sz = lfps.len();
@@ -168,7 +170,7 @@ mod tests {
         let mut lfps = Vec::new();
         build_line_fit_pts(&points, &mut lfps);
         let mut errors = Vec::new();
-        let mut maxima = Vec::new();
+        let mut maxima = SmallVec::new();
         let params = QuadThreshParams::default();
         assert!(find_corners(&lfps, &mut errors, &mut maxima, &params).is_none());
     }

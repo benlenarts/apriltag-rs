@@ -1,3 +1,5 @@
+use smallvec::SmallVec;
+
 /// Parallelism strategy: sequential or parallel (rayon).
 ///
 /// Encapsulates both compile-time feature gating and runtime thread-count
@@ -114,15 +116,16 @@ impl Par {
     }
 
     /// Map over an immutable slice with per-thread init, appending results
-    /// to a `Vec<R>` via a closure, then flatten and collect.
+    /// to a `SmallVec<[R; 1]>` via a closure, then flatten and collect.
     ///
-    /// Parallel: `par_iter` + `map_init` (with thread-local `Vec`) + `flatten`.
+    /// Uses `SmallVec` so the common 0-1 element case avoids heap allocation.
+    /// Parallel: `par_iter` + `map_init` (with thread-local `SmallVec`) + `flatten`.
     /// Sequential: single init, direct append loop.
     pub(crate) fn flat_map_init_collect<T, B, R>(
         self,
         slice: &[T],
         init: impl Fn() -> B + Send + Sync,
-        f: impl Fn(&mut B, &T, &mut Vec<R>) + Send + Sync,
+        f: impl Fn(&mut B, &T, &mut SmallVec<[R; 1]>) + Send + Sync,
     ) -> Vec<R>
     where
         T: Sync,
@@ -132,9 +135,12 @@ impl Par {
         match self {
             Self::Sequential => {
                 let mut bufs = init();
+                let mut local = SmallVec::new();
                 let mut result = Vec::new();
                 for item in slice {
-                    f(&mut bufs, item, &mut result);
+                    local.clear();
+                    f(&mut bufs, item, &mut local);
+                    result.extend(local.drain(..));
                 }
                 result
             }
@@ -144,14 +150,14 @@ impl Par {
                 slice
                     .par_iter()
                     .map_init(
-                        || (init(), Vec::new()),
+                        || (init(), SmallVec::<[R; 1]>::new()),
                         |(bufs, local), item| {
                             local.clear();
                             f(bufs, item, local);
                             std::mem::take(local)
                         },
                     )
-                    .flatten()
+                    .flat_map_iter(|sv| sv)
                     .collect()
             }
         }
@@ -160,7 +166,7 @@ impl Par {
 
 #[cfg(test)]
 mod tests {
-    use super::Par;
+    use super::{Par, SmallVec};
 
     #[test]
     fn chunks_mut_for_each_sequential() {
@@ -210,7 +216,7 @@ mod tests {
         let result = Par::Sequential.flat_map_init_collect(
             &items,
             || (),
-            |_, &item, out| {
+            |_, &item, out: &mut SmallVec<[i32; 1]>| {
                 for i in 0..item {
                     out.push(i);
                 }

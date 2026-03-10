@@ -5,6 +5,7 @@ mod line_fitting;
 use corners::find_corners;
 use geometry::{compute_quad_corners, validate_quad};
 use line_fitting::build_line_fit_pts;
+use smallvec::SmallVec;
 
 use super::cluster::{Cluster, Pt};
 use super::geometry::Vec2;
@@ -48,7 +49,7 @@ impl Default for QuadThreshParams {
 pub struct QuadFitBufs {
     lfps: Vec<line_fitting::LineFitPt>,
     errors: Vec<f64>,
-    maxima: Vec<(usize, f64)>,
+    maxima: SmallVec<[(usize, f64); 10]>,
 }
 
 impl QuadFitBufs {
