@@ -7,6 +7,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::transform::Transform;
 
+/// Ground-truth pose parameters (camera intrinsics + tag size) for pose evaluation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PoseParamsData {
+    pub tagsize: f64,
+    pub fx: f64,
+    pub fy: f64,
+    pub cx: f64,
+    pub cy: f64,
+}
+
 /// A tag placed in a scene with its ground-truth corner positions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlacedTag {
@@ -16,6 +26,15 @@ pub struct PlacedTag {
     pub corners: [[f64; 2]; 4],
     /// Ground-truth center in image-space.
     pub center: [f64; 2],
+    /// Ground-truth rotation matrix (row-major 3×3), if known.
+    #[serde(default)]
+    pub gt_rotation: Option<[[f64; 3]; 3]>,
+    /// Ground-truth translation vector, if known.
+    #[serde(default)]
+    pub gt_translation: Option<[f64; 3]>,
+    /// Camera intrinsics + tag size used to generate the ground truth.
+    #[serde(default)]
+    pub gt_pose_params: Option<PoseParamsData>,
 }
 
 /// A complete scene: image + ground truth.
@@ -97,11 +116,70 @@ impl SceneBuilder {
             let corners = placement.transform.ground_truth_corners();
             let (cx, cy) = placement.transform.project(0.0, 0.0);
 
+            let (gt_rotation, gt_translation, gt_pose_params) = if let Transform::FromPose {
+                center,
+                size,
+                roll,
+                tilt_x,
+                tilt_y,
+            } = &placement.transform
+            {
+                let f = size * 2.0;
+
+                // Build rotation R_bench = Rz(roll) * Ry(tilt_x) * Rx(tilt_y)
+                let cr = roll.cos();
+                let sr = roll.sin();
+                let cxx = tilt_x.cos();
+                let sxx = tilt_x.sin();
+                let cyy = tilt_y.cos();
+                let syy = tilt_y.sin();
+
+                // R_bench columns
+                let r00 = cr * cxx;
+                let r10 = sr * cxx;
+                let r20 = -sxx;
+                let r01 = cr * sxx * syy - sr * cyy;
+                let r11 = sr * sxx * syy + cr * cyy;
+                let r21 = cxx * syy;
+                // Account for y-axis flip: pose estimator negates homography
+                // column 1 (r1 = -c1), so ground-truth R_gt = R_bench * diag(1,-1,1)
+                // then r2_gt = r0_gt × r1_gt to ensure proper rotation.
+                let r0 = [r00, r10, r20];
+                let r1 = [-r01, -r11, -r21];
+                let r2 = [
+                    r0[1] * r1[2] - r0[2] * r1[1],
+                    r0[2] * r1[0] - r0[0] * r1[2],
+                    r0[0] * r1[1] - r0[1] * r1[0],
+                ];
+
+                let rotation = [
+                    [r0[0], r1[0], r2[0]],
+                    [r0[1], r1[1], r2[1]],
+                    [r0[2], r1[2], r2[2]],
+                ];
+                let translation = [0.0, 0.0, f];
+
+                let pose_params = PoseParamsData {
+                    tagsize: 2.0,
+                    fx: f,
+                    fy: f,
+                    cx: center[0],
+                    cy: center[1],
+                };
+
+                (Some(rotation), Some(translation), Some(pose_params))
+            } else {
+                (None, None, None)
+            };
+
             ground_truth.push(PlacedTag {
                 family_name: placement.family_name.clone(),
                 tag_id: placement.tag_id,
                 corners,
                 center: [cx, cy],
+                gt_rotation,
+                gt_translation,
+                gt_pose_params,
             });
         }
 
@@ -537,6 +615,82 @@ mod tests {
         );
         // With height=1, t=0.0 so all pixels equal top value
         assert_eq!(img.get(0, 0), 100);
+    }
+
+    #[test]
+    fn from_pose_has_ground_truth() {
+        let scene = SceneBuilder::new(500, 500)
+            .background(Background::Solid(128))
+            .add_tag(
+                "tag36h11",
+                0,
+                Transform::FromPose {
+                    center: [250.0, 250.0],
+                    size: 100.0,
+                    roll: 0.0,
+                    tilt_x: 0.0,
+                    tilt_y: 0.0,
+                },
+            )
+            .build();
+
+        let gt = &scene.ground_truth[0];
+
+        // FromPose should provide ground-truth pose data
+        assert!(gt.gt_rotation.is_some());
+        assert!(gt.gt_translation.is_some());
+        assert!(gt.gt_pose_params.is_some());
+
+        let r = gt.gt_rotation.unwrap();
+        let t = gt.gt_translation.unwrap();
+        let pp = gt.gt_pose_params.as_ref().unwrap();
+
+        // For frontal no-tilt tag: R ≈ diag(1, -1, -1)
+        // The bench tag-space has y-down but the pose estimator's tag frame has y-up,
+        // so the estimator's c1 negation produces R = diag(1, -1, -1) for a frontal view.
+        let expected_r = [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]];
+        for i in 0..3 {
+            for j in 0..3 {
+                assert!(
+                    (r[i][j] - expected_r[i][j]).abs() < 0.01,
+                    "R[{i}][{j}] = {} expected {}",
+                    r[i][j],
+                    expected_r[i][j]
+                );
+            }
+        }
+
+        assert!(t[0].abs() < 0.01, "t_x = {} expected ~0", t[0]);
+        assert!(t[1].abs() < 0.01, "t_y = {} expected ~0", t[1]);
+        assert!((t[2] - 200.0).abs() < 0.01, "t_z = {} expected ~200", t[2]);
+
+        // tagsize should be 2.0 (tag-space [-1,1])
+        assert!((pp.tagsize - 2.0).abs() < 1e-10);
+        // fx = fy = size * 2.0 = 200
+        assert!((pp.fx - 200.0).abs() < 1e-10);
+        assert!((pp.fy - 200.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn similarity_has_no_ground_truth_pose() {
+        let scene = SceneBuilder::new(200, 200)
+            .background(Background::Solid(128))
+            .add_tag(
+                "tag36h11",
+                0,
+                Transform::Similarity {
+                    cx: 100.0,
+                    cy: 100.0,
+                    scale: 40.0,
+                    theta: 0.0,
+                },
+            )
+            .build();
+
+        let gt = &scene.ground_truth[0];
+        assert!(gt.gt_rotation.is_none());
+        assert!(gt.gt_translation.is_none());
+        assert!(gt.gt_pose_params.is_none());
     }
 
     #[test]

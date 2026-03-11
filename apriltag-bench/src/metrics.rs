@@ -178,6 +178,9 @@ mod tests {
             tag_id: id,
             corners,
             center: [cx, cy],
+            gt_rotation: None,
+            gt_translation: None,
+            gt_pose_params: None,
         }
     }
 
