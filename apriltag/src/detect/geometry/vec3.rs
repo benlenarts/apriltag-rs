@@ -4,6 +4,7 @@ use super::Mat3;
 
 /// A 3D vector, wrapping `[f64; 3]`.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct Vec3(pub [f64; 3]);
 
