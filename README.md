@@ -114,13 +114,25 @@ apriltag = { version = "0.1", default-features = false, features = ["family-tag3
 
 To generate custom tag families, see the [`apriltag-gen-cli` README](apriltag-gen-cli/README.md).
 
-## Architecture
+## Detection Architecture
 
-```
-Image → Preprocessing → Gradients → Segmentation → Quads → Homography → Decode → Pose
-         (decimate,      (magnitude,  (union-find,   (line    (DLT +      (gray    (SVD +
-          blur)           direction)   clustering)    fitting, Gauss       model,   orthogonal
-                                                     corners) elimination) bits)   iteration)
+```mermaid
+graph TD
+    A[Image] --> B[Preprocessing]
+    B --> C[Gradients]
+    C --> D[Segmentation]
+    D --> E[Quads]
+    E --> F[Homography]
+    F --> G[Decode]
+    G --> H[Pose]
+
+    B -.- B1["decimate, blur"]
+    C -.- C1["magnitude, direction"]
+    D -.- D1["union-find, clustering"]
+    E -.- E1["line fitting, corners"]
+    F -.- F1["DLT + Gauss elimination"]
+    G -.- G1["gray model, bits"]
+    H -.- H1["SVD + orthogonal iteration"]
 ```
 
 Each stage is independently benchmarked and tested. With the `parallel` feature, all major stages run on Rayon's thread pool.
