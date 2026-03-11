@@ -1,8 +1,19 @@
 /// Detection quality metrics: corner accuracy, detection rate, scoring.
+use apriltag::detect::geometry::{Mat3, Vec3};
+use apriltag::detect::pose::estimate_tag_pose;
 use apriltag::Detection;
 use serde::{Deserialize, Serialize};
 
 use crate::scene::PlacedTag;
+
+/// Per-detection pose error.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PoseError {
+    /// Rotation error in degrees: acos((trace(R_gt^T * R_est) - 1) / 2).
+    pub rotation_error_deg: f64,
+    /// Translation error normalized by ground-truth z distance.
+    pub translation_error_frac: f64,
+}
 
 /// Result of evaluating detections against ground truth for a single scene.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,6 +32,12 @@ pub struct SceneResult {
     pub mean_corner_error: f64,
     /// Detection time in microseconds.
     pub detection_time_us: u64,
+    /// Per-match pose errors (None if no ground-truth pose available).
+    pub pose_errors: Vec<Option<PoseError>>,
+    /// Mean rotation error in degrees across matches with pose data.
+    pub mean_rotation_error_deg: Option<f64>,
+    /// Mean translation error (normalized by t_z) across matches with pose data.
+    pub mean_translation_error_frac: Option<f64>,
 }
 
 /// A ground-truth tag matched (or unmatched) with a detection.
@@ -69,6 +86,7 @@ pub fn evaluate(
     detection_time_us: u64,
 ) -> SceneResult {
     let mut matches = Vec::new();
+    let mut detections_for_pose: Vec<Option<&Detection>> = Vec::new();
     let mut used = vec![false; detections.len()];
 
     for gt in ground_truth {
@@ -86,12 +104,14 @@ pub fn evaluate(
                 detection: Some(det.into()),
                 corner_errors: Some(corner_errors),
             });
+            detections_for_pose.push(Some(det));
         } else {
             matches.push(DetectionMatch {
                 ground_truth: gt.clone(),
                 detection: None,
                 corner_errors: None,
             });
+            detections_for_pose.push(None);
         }
     }
 
@@ -127,6 +147,46 @@ pub fn evaluate(
         (rmse, max, mean)
     };
 
+    // Compute pose errors for matches with ground-truth pose data
+    let pose_errors: Vec<Option<PoseError>> = matches
+        .iter()
+        .zip(detections_for_pose.iter())
+        .map(|(m, det_opt)| {
+            let gt = &m.ground_truth;
+            let (gt_r, gt_t, gt_pp) =
+                match (&gt.gt_rotation, &gt.gt_translation, &gt.gt_pose_params) {
+                    (Some(r), Some(t), Some(pp)) => (r, t, pp),
+                    _ => return None,
+                };
+            let det = match det_opt {
+                Some(d) => d,
+                None => return None,
+            };
+
+            let (pose, _err, _alt, _alt_err) = estimate_tag_pose(det, gt_pp);
+
+            Some(compute_pose_error(gt_r, gt_t, &Mat3(pose.r), &Vec3(pose.t)))
+        })
+        .collect();
+
+    let pose_error_values: Vec<&PoseError> =
+        pose_errors.iter().filter_map(|e| e.as_ref()).collect();
+    let mean_rotation_error_deg = if pose_error_values.is_empty() {
+        None
+    } else {
+        let sum: f64 = pose_error_values.iter().map(|e| e.rotation_error_deg).sum();
+        Some(sum / pose_error_values.len() as f64)
+    };
+    let mean_translation_error_frac = if pose_error_values.is_empty() {
+        None
+    } else {
+        let sum: f64 = pose_error_values
+            .iter()
+            .map(|e| e.translation_error_frac)
+            .sum();
+        Some(sum / pose_error_values.len() as f64)
+    };
+
     SceneResult {
         matches,
         false_positives,
@@ -135,6 +195,32 @@ pub fn evaluate(
         max_corner_error,
         mean_corner_error,
         detection_time_us,
+        pose_errors,
+        mean_rotation_error_deg,
+        mean_translation_error_frac,
+    }
+}
+
+/// Compute rotation and translation error between ground-truth and estimated pose.
+fn compute_pose_error(gt_r: &Mat3, gt_t: &Vec3, est_r: &Mat3, est_t: &Vec3) -> PoseError {
+    // Rotation error: acos((trace(R_gt^T * R_est) - 1) / 2)
+    let r_diff = gt_r.transpose() * *est_r;
+    let trace = r_diff.0[0][0] + r_diff.0[1][1] + r_diff.0[2][2];
+    let cos_angle = ((trace - 1.0) / 2.0).clamp(-1.0, 1.0);
+    let rotation_error_deg = cos_angle.acos().to_degrees();
+
+    // Translation error: ||t_gt - t_est|| / |t_gt_z|
+    let t_diff = *gt_t - *est_t;
+    let dist = t_diff.norm();
+    let translation_error_frac = if gt_t[2].abs() > 1e-10 {
+        dist / gt_t[2].abs()
+    } else {
+        dist
+    };
+
+    PoseError {
+        rotation_error_deg,
+        translation_error_frac,
     }
 }
 
@@ -325,6 +411,70 @@ mod tests {
 
         assert_eq!(result.detection_rate, 0.0);
         assert_eq!(result.false_positives.len(), 1);
+    }
+
+    #[test]
+    fn pose_error_none_without_gt() {
+        let corners = [[50.0, 50.0], [150.0, 50.0], [150.0, 150.0], [50.0, 150.0]];
+        let gt = vec![make_gt("tag36h11", 0, corners)];
+        let dets = vec![make_det("tag36h11", 0, corners)];
+
+        let result = evaluate(&gt, &dets, 0);
+
+        // No ground-truth pose → pose_errors should be [None]
+        assert_eq!(result.pose_errors.len(), 1);
+        assert!(result.pose_errors[0].is_none());
+        assert!(result.mean_rotation_error_deg.is_none());
+        assert!(result.mean_translation_error_frac.is_none());
+    }
+
+    #[test]
+    fn pose_error_zero_for_frontal() {
+        use crate::scene::{Background, SceneBuilder};
+        use crate::transform::Transform;
+        use apriltag::{family, Detector, DetectorBuffers, DetectorConfig};
+
+        // Build a frontal scene with ground-truth pose
+        let scene = SceneBuilder::new(500, 500)
+            .background(Background::Solid(128))
+            .add_tag(
+                "tag36h11",
+                0,
+                Transform::FromPose {
+                    center: [250.0, 250.0],
+                    size: 100.0,
+                    roll: 0.0,
+                    tilt_x: 0.0,
+                    tilt_y: 0.0,
+                },
+            )
+            .build();
+
+        // Detect the tag
+        let mut detector = Detector::new(DetectorConfig::default());
+        detector.add_family(family::builtin_family("tag36h11").unwrap(), 2);
+        let detections = detector.detect(&scene.image, &mut DetectorBuffers::new());
+
+        assert_eq!(detections.len(), 1, "should detect exactly one tag");
+
+        let result = evaluate(&scene.ground_truth, &detections, 0);
+
+        assert_eq!(result.pose_errors.len(), 1);
+        let pe = result.pose_errors[0]
+            .as_ref()
+            .expect("should have pose error");
+        assert!(
+            pe.rotation_error_deg < 5.0,
+            "rotation error {:.1}° should be < 5°",
+            pe.rotation_error_deg
+        );
+        assert!(
+            pe.translation_error_frac < 0.05,
+            "translation error {:.4} should be < 0.05",
+            pe.translation_error_frac
+        );
+        assert!(result.mean_rotation_error_deg.is_some());
+        assert!(result.mean_translation_error_frac.is_some());
     }
 
     #[test]

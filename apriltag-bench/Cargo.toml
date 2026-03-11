@@ -19,7 +19,7 @@ default = []
 reference = ["dep:cc"]
 
 [dependencies]
-apriltag = { path = "../apriltag", features = ["parallel"] }
+apriltag = { path = "../apriltag", features = ["parallel", "serde"] }
 clap = { version = "4", features = ["derive"] }
 rayon = "1.10"
 serde = { version = "1", features = ["derive"] }
