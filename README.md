@@ -14,7 +14,7 @@ Pure Rust implementation of the [AprilTag](https://april.eecs.umich.edu/software
 
 | Metric | Value |
 |--------|-------|
-| **Performance** | 0.95× overall vs C reference (single-threaded, 59 scenarios) |
+| **Performance** | Comparable to C reference ([benchmark](#performance)) |
 | **Tests** | 377 unit + integration tests |
 | **Coverage** | 99.5% line coverage (cargo-llvm-cov) |
 | **Regression suite** | 59 scenarios, all passing |
@@ -34,55 +34,17 @@ Pure Rust implementation of the [AprilTag](https://april.eecs.umich.edu/software
 
 ## Performance
 
-Detection performance is benchmarked against the [reference C implementation](https://github.com/AprilRobotics/apriltag) (apriltag3) across 59 scenarios. Rust is **faster on clean scenes** and **slightly slower on noisy scenes** where gradient clustering generates more edges to process.
+Detection performance is comparable to the [reference C implementation](https://github.com/AprilRobotics/apriltag) (apriltag3). Faster on clean scenes, currently slightly slower on noisy scenes with many edges.
 
-**Per-condition averages** (single-threaded, median of adaptive iterations):
-
-| Condition | Rust | C reference | Ratio |
-|-----------|------|-------------|-------|
-| Clean scenes | 6.5 ms | 7.7 ms | **0.85×** |
-| Rotation (30°) | 7.4 ms | 8.5 ms | **0.86×** |
-| Blur (sigma 2) | 6.8 ms | 8.0 ms | **0.85×** |
-| Contrast (25%) | 6.6 ms | 7.6 ms | **0.87×** |
-| Perspective (20° tilt) | 9.9 ms | 10.7 ms | **0.93×** |
-| Noise (sigma 20) | 126.4 ms | 114.7 ms | 1.10× |
-| Combined distortions | 71.6 ms | 62.1 ms | 1.15× |
-
-**Multi-threaded scaling** (59-scenario aggregate):
-
-| Threads | Rust | C reference | Ratio |
-|---------|------|-------------|-------|
-| 1 | 798 ms | 844 ms | **0.95×** |
-| 2 | 521 ms | 519 ms | 1.00× |
-| 4 | 402 ms | 351 ms | 1.15× |
-
-**Highlights:**
-- **Single-threaded aggregate: 0.95×** (5% faster than C across all 59 scenarios)
-- **4000×3000 with decimation:** 0.44× (2.3× faster than C)
-- **2000×1500 clean:** 0.70× (30% faster than C)
-- **Multi-threaded gap** is dominated by the `highres-4000x3000` noisy outlier (1.57× at 4T); clean scenes stay ~0.50× at all thread counts
-
-The 59-scenario regression suite covers rotation, perspective, scale (16–200px tags), noise (sigma 5–40), contrast (10–50%), lighting gradients, blur, multi-tag, occlusion, decimation modes, and scaling benchmarks. Every scenario must pass on every commit.
-
-
-### Streaming efficiency
-
-The detection API is designed for real-time use. `DetectorBuffers` pools all internal allocations across frames:
-
-- **69% allocation reduction** vs naive per-frame allocation
-- Threshold tile arrays, deglitch morph buffers, unsharp mask buffer, and edge refinement scratch space are all reused
-- WASM detector reuses buffers and grayscale conversion buffer across frames (~850 KB/frame allocation churn eliminated)
-- `ImageU8::new_reuse()` and `into_buf()` enable zero-copy buffer recycling
-
-Run the benchmarks yourself:
+Run the benchmarks yourself (requires `just fetch-references` first):
 
 ```bash
-# Criterion micro-benchmarks (per-stage and end-to-end)
-cargo bench -p apriltag
-
-# Rust vs C reference comparison (requires scripts/fetch-references.sh first)
-just bench-ref benchmark
+just sim-ref benchmark   # quick: single-threaded Rust vs C comparison
+just bench-par           # full: sweep across 1, 2, 4, 8 threads
+just bench               # Criterion microbenchmarks (per-stage and end-to-end)
 ```
+
+For streaming/real-time use, `DetectorBuffers` pools all internal allocations and reuses them across frames.
 
 ## Safety
 
