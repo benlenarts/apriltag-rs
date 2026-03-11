@@ -595,14 +595,9 @@ mod tests {
         let (pose, _, _, _) = estimate_tag_pose(&det, &params);
         let corrected = syac_correction(&pose);
 
-        // COVERAGE: assertion format args only execute on failure (test passes)
+        // Translation should be essentially unchanged for frontal view
         for i in 0..3 {
-            assert!(
-                (corrected.t[i] - pose.t[i]).abs() < 1e-6,
-                "t[{i}] changed: {} -> {}",
-                pose.t[i],
-                corrected.t[i]
-            );
+            assert!((corrected.t[i] - pose.t[i]).abs() < 1e-6);
         }
     }
 
@@ -633,14 +628,11 @@ mod tests {
         // Raw translations differ significantly (different camera frames)
         let raw_diff =
             ((pose1.t[0] - pose2.t[0]).powi(2) + (pose1.t[2] - pose2.t[2]).powi(2)).sqrt();
-        assert!(raw_diff > 1.0, "raw views should differ: {raw_diff}");
+        assert!(raw_diff > 1.0);
 
-        // COVERAGE: assertion format args only execute on failure (test passes)
+        // SYAC-corrected translations should nearly match
         let corrected_diff = ((c1.t[0] - c2.t[0]).powi(2) + (c1.t[2] - c2.t[2]).powi(2)).sqrt();
-        assert!(
-            corrected_diff < 0.01,
-            "SYAC should make cross-view translations consistent: raw_diff={raw_diff}, corrected_diff={corrected_diff}"
-        );
+        assert!(corrected_diff < 0.01);
     }
 
     #[test]
