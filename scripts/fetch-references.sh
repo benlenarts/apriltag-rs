@@ -14,6 +14,7 @@ PAPERS=(
   "https://april.eecs.umich.edu/media/pdfs/wang2016iros.pdf"
   "https://april.eecs.umich.edu/media/pdfs/krogius2019iros.pdf"
   "https://cs.brown.edu/people/pfelzens/papers/seg-ijcv.pdf"
+  "https://www.mdpi.com/1424-8220/19/24/5480/pdf"
 )
 
 # Reference implementations

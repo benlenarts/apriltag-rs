@@ -134,6 +134,7 @@ Each stage is independently benchmarked and tested. With the `parallel` feature,
 - Olson, E. "AprilTag: A robust and flexible visual fiducial system." ICRA 2011.
 - Wang, J. and Olson, E. "AprilTag 2: Efficient and robust fiducial detection." IROS 2016.
 - Krogius, M., Haggenmiller, A., and Olson, E. "Flexible Layouts for Fiducial Tags." IROS 2019.
+- Abbas, S.M. et al. "Analysis and Improvements in AprilTag Based State Estimation." Sensors 2019.
 
 ## License
 
