@@ -1,4 +1,6 @@
 /// Scene composition: place rendered tags into an image with ground truth.
+use apriltag::detect::geometry::{Mat3, Vec3};
+use apriltag::detect::pose::PoseParams;
 use apriltag::family;
 use apriltag::render::RenderedTag;
 use apriltag::types::Pixel;
@@ -6,16 +8,6 @@ use apriltag::ImageU8;
 use serde::{Deserialize, Serialize};
 
 use crate::transform::Transform;
-
-/// Ground-truth pose parameters (camera intrinsics + tag size) for pose evaluation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PoseParamsData {
-    pub tagsize: f64,
-    pub fx: f64,
-    pub fy: f64,
-    pub cx: f64,
-    pub cy: f64,
-}
 
 /// A tag placed in a scene with its ground-truth corner positions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,15 +18,15 @@ pub struct PlacedTag {
     pub corners: [[f64; 2]; 4],
     /// Ground-truth center in image-space.
     pub center: [f64; 2],
-    /// Ground-truth rotation matrix (row-major 3×3), if known.
+    /// Ground-truth rotation matrix, if known.
     #[serde(default)]
-    pub gt_rotation: Option<[[f64; 3]; 3]>,
+    pub gt_rotation: Option<Mat3>,
     /// Ground-truth translation vector, if known.
     #[serde(default)]
-    pub gt_translation: Option<[f64; 3]>,
+    pub gt_translation: Option<Vec3>,
     /// Camera intrinsics + tag size used to generate the ground truth.
     #[serde(default)]
-    pub gt_pose_params: Option<PoseParamsData>,
+    pub gt_pose_params: Option<PoseParams>,
 }
 
 /// A complete scene: image + ground truth.
@@ -135,31 +127,33 @@ impl SceneBuilder {
                 let syy = tilt_y.sin();
 
                 // R_bench columns
-                let r00 = cr * cxx;
-                let r10 = sr * cxx;
-                let r20 = -sxx;
-                let r01 = cr * sxx * syy - sr * cyy;
-                let r11 = sr * sxx * syy + cr * cyy;
-                let r21 = cxx * syy;
+                let r0 = Vec3::new(cr * cxx, sr * cxx, -sxx);
+                let r1_bench = Vec3::new(
+                    cr * sxx * syy - sr * cyy,
+                    sr * sxx * syy + cr * cyy,
+                    cxx * syy,
+                );
+
                 // Account for y-axis flip: pose estimator negates homography
                 // column 1 (r1 = -c1), so ground-truth R_gt = R_bench * diag(1,-1,1)
                 // then r2_gt = r0_gt × r1_gt to ensure proper rotation.
-                let r0 = [r00, r10, r20];
-                let r1 = [-r01, -r11, -r21];
-                let r2 = [
-                    r0[1] * r1[2] - r0[2] * r1[1],
-                    r0[2] * r1[0] - r0[0] * r1[2],
-                    r0[0] * r1[1] - r0[1] * r1[0],
-                ];
+                let r1 = -r1_bench;
+                let r2 = r0.cross(r1);
 
-                let rotation = [
+                let rotation = Mat3([
                     [r0[0], r1[0], r2[0]],
                     [r0[1], r1[1], r2[1]],
                     [r0[2], r1[2], r2[2]],
-                ];
-                let translation = [0.0, 0.0, f];
+                ]);
+                // The pose estimator works in tag-size units: t = c2 * (tagsize/2).
+                // Our virtual camera puts the tag at z=f pixels from center.
+                // The estimator sees columns scaled by half/f, so t_z = f/(half) * (tagsize/2).
+                // With tagsize=2, half=size/2: t_z = f/half = (size*2)/(size/2) = 4.
+                let tagsize = 2.0;
+                let half = size / 2.0;
+                let translation = Vec3::new(0.0, 0.0, f / half * (tagsize / 2.0));
 
-                let pose_params = PoseParamsData {
+                let pose_params = PoseParams {
                     tagsize: 2.0,
                     fx: f,
                     fy: f,
@@ -648,21 +642,22 @@ mod tests {
         // For frontal no-tilt tag: R ≈ diag(1, -1, -1)
         // The bench tag-space has y-down but the pose estimator's tag frame has y-up,
         // so the estimator's c1 negation produces R = diag(1, -1, -1) for a frontal view.
-        let expected_r = [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]];
+        let expected_r = Mat3([[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]]);
         for i in 0..3 {
             for j in 0..3 {
                 assert!(
-                    (r[i][j] - expected_r[i][j]).abs() < 0.01,
+                    (r.0[i][j] - expected_r.0[i][j]).abs() < 0.01,
                     "R[{i}][{j}] = {} expected {}",
-                    r[i][j],
-                    expected_r[i][j]
+                    r.0[i][j],
+                    expected_r.0[i][j]
                 );
             }
         }
 
         assert!(t[0].abs() < 0.01, "t_x = {} expected ~0", t[0]);
         assert!(t[1].abs() < 0.01, "t_y = {} expected ~0", t[1]);
-        assert!((t[2] - 200.0).abs() < 0.01, "t_z = {} expected ~200", t[2]);
+        // t_z = f/half * (tagsize/2) = 200/50 * 1 = 4.0
+        assert!((t[2] - 4.0).abs() < 0.01, "t_z = {} expected ~4.0", t[2]);
 
         // tagsize should be 2.0 (tag-space [-1,1])
         assert!((pp.tagsize - 2.0).abs() < 1e-10);
