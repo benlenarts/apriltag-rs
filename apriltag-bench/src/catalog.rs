@@ -66,6 +66,8 @@ pub struct Scenario {
     pub expect_ids: Vec<(String, u32)>,
     /// Maximum acceptable corner RMSE in pixels.
     pub max_corner_rmse: f64,
+    /// Maximum acceptable rotation error in degrees (None = no pose check).
+    pub max_rotation_error_deg: Option<f64>,
     /// Override detector config: quad_decimate value (None = use default).
     pub quad_decimate: Option<f32>,
     /// Build the scene.
@@ -115,6 +117,7 @@ fn baseline_scenarios() -> Vec<Scenario> {
                 category: Category::Baseline,
                 expect_ids: vec![(fam.to_string(), 0)],
                 max_corner_rmse: 2.0,
+                max_rotation_error_deg: None,
                 quad_decimate: None,
                 build_fn: Box::new(move || {
                     SceneBuilder::new(300, 300)
@@ -148,6 +151,7 @@ fn rotation_scenarios() -> Vec<Scenario> {
                 category: Category::Rotation,
                 expect_ids: vec![("tag36h11".to_string(), 0)],
                 max_corner_rmse: 3.0,
+                max_rotation_error_deg: None,
                 quad_decimate: None,
                 build_fn: Box::new(move || {
                     SceneBuilder::new(500, 500)
@@ -182,6 +186,7 @@ fn perspective_scenarios() -> Vec<Scenario> {
             category: Category::Perspective,
             expect_ids: vec![("tag36h11".to_string(), 0)],
             max_corner_rmse: 5.0,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(move || {
                 SceneBuilder::new(500, 500)
@@ -213,6 +218,7 @@ fn perspective_scenarios() -> Vec<Scenario> {
             category: Category::Perspective,
             expect_ids: vec![("tag36h11".to_string(), 0)],
             max_corner_rmse: max_rmse,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(move || {
                 SceneBuilder::new(500, 500)
@@ -244,6 +250,7 @@ fn perspective_scenarios() -> Vec<Scenario> {
             category: Category::Perspective,
             expect_ids: vec![("tag36h11".to_string(), 0)],
             max_corner_rmse: 5.0,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(move || {
                 SceneBuilder::new(500, 500)
@@ -281,6 +288,7 @@ fn scale_scenarios() -> Vec<Scenario> {
                 category: Category::Scale,
                 expect_ids: vec![("tag36h11".to_string(), 0)],
                 max_corner_rmse: 3.0,
+                max_rotation_error_deg: None,
                 quad_decimate: if size <= 32 { Some(1.0) } else { None },
                 build_fn: Box::new(move || {
                     SceneBuilder::new(img_size, img_size)
@@ -312,6 +320,7 @@ fn noise_scenarios() -> Vec<Scenario> {
             category: Category::Noise,
             expect_ids: vec![("tag36h11".to_string(), 0)],
             max_corner_rmse: 5.0,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(move || {
                 let mut scene = SceneBuilder::new(300, 300)
@@ -349,6 +358,7 @@ fn noise_scenarios() -> Vec<Scenario> {
             category: Category::Noise,
             expect_ids: vec![("tag36h11".to_string(), 0)],
             max_corner_rmse: 5.0,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(move || {
                 let mut scene = SceneBuilder::new(300, 300)
@@ -388,6 +398,7 @@ fn contrast_scenarios() -> Vec<Scenario> {
                 category: Category::Contrast,
                 expect_ids: vec![("tag36h11".to_string(), 0)],
                 max_corner_rmse: 3.0,
+                max_rotation_error_deg: None,
                 quad_decimate: None,
                 build_fn: Box::new(move || {
                     let mut scene = SceneBuilder::new(300, 300)
@@ -422,6 +433,7 @@ fn lighting_scenarios() -> Vec<Scenario> {
             category: Category::Lighting,
             expect_ids: vec![("tag36h11".to_string(), 0)],
             max_corner_rmse: 3.0,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(|| {
                 let mut scene = SceneBuilder::new(300, 300)
@@ -454,6 +466,7 @@ fn lighting_scenarios() -> Vec<Scenario> {
             category: Category::Lighting,
             expect_ids: vec![("tag36h11".to_string(), 0)],
             max_corner_rmse: 3.0,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(|| {
                 let mut scene = SceneBuilder::new(300, 300)
@@ -486,6 +499,7 @@ fn lighting_scenarios() -> Vec<Scenario> {
             category: Category::Lighting,
             expect_ids: vec![("tag36h11".to_string(), 0)],
             max_corner_rmse: 3.0,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(move || {
                 let mut scene = SceneBuilder::new(300, 300)
@@ -525,6 +539,7 @@ fn blur_scenarios() -> Vec<Scenario> {
                 category: Category::Blur,
                 expect_ids: vec![("tag36h11".to_string(), 0)],
                 max_corner_rmse: 5.0,
+                max_rotation_error_deg: None,
                 quad_decimate: None,
                 build_fn: Box::new(move || {
                     let mut scene = SceneBuilder::new(300, 300)
@@ -559,6 +574,7 @@ fn multi_tag_scenarios() -> Vec<Scenario> {
             category: Category::MultiTag,
             expect_ids: vec![("tag36h11".to_string(), 0), ("tag36h11".to_string(), 1)],
             max_corner_rmse: 3.0,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(|| {
                 SceneBuilder::new(500, 300)
@@ -592,6 +608,7 @@ fn multi_tag_scenarios() -> Vec<Scenario> {
             category: Category::MultiTag,
             expect_ids: (0..5).map(|i| ("tag36h11".to_string(), i)).collect(),
             max_corner_rmse: 3.0,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(|| {
                 let positions = [
@@ -626,6 +643,7 @@ fn multi_tag_scenarios() -> Vec<Scenario> {
                 ("tagStandard52h13".to_string(), 0),
             ],
             max_corner_rmse: 3.0,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(|| {
                 SceneBuilder::new(600, 400)
@@ -669,6 +687,7 @@ fn multi_tag_scenarios() -> Vec<Scenario> {
                 })
                 .collect(),
             max_corner_rmse: 5.0,
+            max_rotation_error_deg: None,
             quad_decimate: None,
             build_fn: Box::new(|| {
                 let positions = [
@@ -716,6 +735,7 @@ fn occlusion_scenarios() -> Vec<Scenario> {
         category: Category::Occlusion,
         expect_ids: vec![("tag36h11".to_string(), 0)],
         max_corner_rmse: 5.0,
+        max_rotation_error_deg: None,
         quad_decimate: None,
         build_fn: Box::new(|| {
             let mut scene = SceneBuilder::new(300, 300)
@@ -753,6 +773,7 @@ fn decimation_scenarios() -> Vec<Scenario> {
             category: Category::Decimation,
             expect_ids: vec![("tag36h11".to_string(), 0)],
             max_corner_rmse: if decimate >= 4.0 { 5.0 } else { 3.0 },
+            max_rotation_error_deg: None,
             quad_decimate: Some(decimate),
             build_fn: Box::new(|| {
                 SceneBuilder::new(400, 400)

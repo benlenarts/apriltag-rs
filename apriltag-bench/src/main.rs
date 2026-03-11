@@ -342,6 +342,7 @@ fn cmd_run(
             &result,
             s.expect_ids.len(),
             threshold,
+            s.max_rotation_error_deg,
         );
         if !quiet || !r.passed {
             reports.push(r);
@@ -378,6 +379,7 @@ fn cmd_regression(category: Option<String>) {
             &result,
             s.expect_ids.len(),
             s.max_corner_rmse,
+            s.max_rotation_error_deg,
         ));
     }
 
@@ -1451,6 +1453,7 @@ fn cmd_explore(
         &result,
         scene.ground_truth.len(),
         f64::INFINITY,
+        None,
     );
 
     match format {

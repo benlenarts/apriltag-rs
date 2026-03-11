@@ -122,13 +122,23 @@ pub fn scenario_report(
     result: &SceneResult,
     expected_count: usize,
     threshold: f64,
+    max_rotation_error_deg: Option<f64>,
 ) -> ScenarioReport {
     let detected = result
         .matches
         .iter()
         .filter(|m| m.detection.is_some())
         .count();
-    let passed = result.detection_rate >= 1.0 && result.corner_rmse <= threshold;
+    let mut passed = result.detection_rate >= 1.0 && result.corner_rmse <= threshold;
+
+    // Check rotation error threshold if set
+    if let (Some(max_rot), Some(actual_rot)) =
+        (max_rotation_error_deg, result.mean_rotation_error_deg)
+    {
+        if actual_rot > max_rot {
+            passed = false;
+        }
+    }
 
     ScenarioReport {
         name: name.to_string(),
