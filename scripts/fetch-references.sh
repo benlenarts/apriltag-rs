@@ -8,13 +8,13 @@ PAPERS_DIR="$PROJECT_ROOT/docs/papers"
 REF_DETECT_DIR="$PROJECT_ROOT/docs/reference-detection"
 REF_GENERATE_DIR="$PROJECT_ROOT/docs/reference-generation"
 
-# AprilTag papers
+# AprilTag papers: "url filename" pairs (filename optional, defaults to basename)
 PAPERS=(
   "https://april.eecs.umich.edu/media/pdfs/olson2011tags.pdf"
   "https://april.eecs.umich.edu/media/pdfs/wang2016iros.pdf"
   "https://april.eecs.umich.edu/media/pdfs/krogius2019iros.pdf"
   "https://cs.brown.edu/people/pfelzens/papers/seg-ijcv.pdf"
-  "https://www.mdpi.com/1424-8220/19/24/5480/pdf"
+  "https://www.mdpi.com/1424-8220/19/24/5480/pdf abbas2019sensors.pdf"
 )
 
 # Reference implementations
@@ -23,8 +23,14 @@ REF_GENERATE_REPO="https://github.com/AprilRobotics/apriltag-generation.git"
 
 echo "==> Downloading papers to $PAPERS_DIR"
 mkdir -p "$PAPERS_DIR"
-for url in "${PAPERS[@]}"; do
-  filename="$(basename "$url")"
+for entry in "${PAPERS[@]}"; do
+  url="${entry%% *}"
+  custom="${entry#* }"
+  if [[ "$custom" == "$url" ]]; then
+    filename="$(basename "$url")"
+  else
+    filename="$custom"
+  fi
   if [[ -f "$PAPERS_DIR/$filename" ]]; then
     echo "    $filename (already exists, skipping)"
   else
