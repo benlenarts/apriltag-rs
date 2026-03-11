@@ -118,13 +118,13 @@ To generate custom tag families, see the [`apriltag-gen-cli` README](apriltag-ge
 
 ```mermaid
 graph TD
-    A[Image] --> B["Preprocessing\n(decimate, blur)"]
-    B --> C["Gradients\n(magnitude, direction)"]
-    C --> D["Segmentation\n(union-find, clustering)"]
-    D --> E["Quads\n(line fitting, corners)"]
-    E --> F["Homography\n(DLT + Gauss elimination)"]
-    F --> G["Decode\n(gray model, bits)"]
-    G --> H["Pose\n(SVD + orthogonal iteration)"]
+    A[Image] --> B["Preprocessing<br/>(decimate, blur)"]
+    B --> C["Gradients<br/>(magnitude, direction)"]
+    C --> D["Segmentation<br/>(union-find, clustering)"]
+    D --> E["Quads<br/>(line fitting, corners)"]
+    E --> F["Homography<br/>(DLT + Gauss elimination)"]
+    F --> G["Decode<br/>(gray model, bits)"]
+    G --> H["Pose<br/>(SVD + orthogonal iteration)"]
 ```
 
 Each stage is independently benchmarked and tested. With the `parallel` feature, all major stages run on Rayon's thread pool.
