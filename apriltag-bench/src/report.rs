@@ -15,6 +15,10 @@ pub struct ScenarioReport {
     pub false_positives: usize,
     pub detection_time_us: u64,
     pub threshold: f64,
+    /// Mean rotation error in degrees (None if no pose data).
+    pub mean_rotation_error_deg: Option<f64>,
+    /// Mean translation error normalized by t_z (None if no pose data).
+    pub mean_translation_error_frac: Option<f64>,
 }
 
 /// Full report across all scenarios.
@@ -46,26 +50,60 @@ impl FullReport {
 
 /// Print a terminal table summarizing results.
 pub fn print_terminal(report: &FullReport) {
-    println!(
-        "{:<35} {:>5} {:>8} {:>8} {:>8} {:>6}",
-        "Scenario", "Det%", "RMSE", "MaxErr", "FP", "Status"
-    );
-    println!("{}", "-".repeat(75));
+    let has_pose = report
+        .scenarios
+        .iter()
+        .any(|s| s.mean_rotation_error_deg.is_some());
+
+    if has_pose {
+        println!(
+            "{:<35} {:>5} {:>8} {:>8} {:>8} {:>7} {:>7} {:>6}",
+            "Scenario", "Det%", "RMSE", "MaxErr", "FP", "RotErr", "TrnErr", "Status"
+        );
+        println!("{}", "-".repeat(95));
+    } else {
+        println!(
+            "{:<35} {:>5} {:>8} {:>8} {:>8} {:>6}",
+            "Scenario", "Det%", "RMSE", "MaxErr", "FP", "Status"
+        );
+        println!("{}", "-".repeat(75));
+    }
 
     for s in &report.scenarios {
         let status = if s.passed { "PASS" } else { "FAIL" };
-        println!(
-            "{:<35} {:>4.0}% {:>8.2} {:>8.2} {:>8} {:>6}",
-            truncate(&s.name, 35),
-            s.detection_rate * 100.0,
-            s.corner_rmse,
-            s.max_corner_error,
-            s.false_positives,
-            status,
-        );
+        if has_pose {
+            let rot = s
+                .mean_rotation_error_deg
+                .map_or("--".to_string(), |v| format!("{v:.1}°"));
+            let trn = s
+                .mean_translation_error_frac
+                .map_or("--".to_string(), |v| format!("{v:.4}"));
+            println!(
+                "{:<35} {:>4.0}% {:>8.2} {:>8.2} {:>8} {:>7} {:>7} {:>6}",
+                truncate(&s.name, 35),
+                s.detection_rate * 100.0,
+                s.corner_rmse,
+                s.max_corner_error,
+                s.false_positives,
+                rot,
+                trn,
+                status,
+            );
+        } else {
+            println!(
+                "{:<35} {:>4.0}% {:>8.2} {:>8.2} {:>8} {:>6}",
+                truncate(&s.name, 35),
+                s.detection_rate * 100.0,
+                s.corner_rmse,
+                s.max_corner_error,
+                s.false_positives,
+                status,
+            );
+        }
     }
 
-    println!("{}", "-".repeat(75));
+    let sep_width = if has_pose { 95 } else { 75 };
+    println!("{}", "-".repeat(sep_width));
     println!(
         "Total: {} | Passed: {} | Failed: {}",
         report.total, report.passed, report.failed
@@ -104,6 +142,8 @@ pub fn scenario_report(
         false_positives: result.false_positives.len(),
         detection_time_us: result.detection_time_us,
         threshold,
+        mean_rotation_error_deg: result.mean_rotation_error_deg,
+        mean_translation_error_frac: result.mean_translation_error_frac,
     }
 }
 
@@ -134,6 +174,8 @@ mod tests {
                 false_positives: 0,
                 detection_time_us: 100,
                 threshold: 2.0,
+                mean_rotation_error_deg: None,
+                mean_translation_error_frac: None,
             },
             ScenarioReport {
                 name: "b".into(),
@@ -147,6 +189,8 @@ mod tests {
                 false_positives: 0,
                 detection_time_us: 200,
                 threshold: 2.0,
+                mean_rotation_error_deg: None,
+                mean_translation_error_frac: None,
             },
         ];
         let full = FullReport::from_scenarios(reports);
