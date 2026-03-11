@@ -17,6 +17,7 @@ pub struct Pose {
 
 /// Camera intrinsics and tag geometry for pose estimation.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PoseParams {
     pub tagsize: f64,
     pub fx: f64,

@@ -4,6 +4,7 @@ use super::Vec3;
 
 /// A 3×3 matrix, wrapping `[[f64; 3]; 3]` (row-major).
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct Mat3(pub [[f64; 3]; 3]);
 
