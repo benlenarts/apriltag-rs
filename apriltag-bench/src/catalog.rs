@@ -170,37 +170,101 @@ fn rotation_scenarios() -> Vec<Scenario> {
 }
 
 fn perspective_scenarios() -> Vec<Scenario> {
+    let mut scenarios = Vec::new();
+
+    // Original tilt scenarios
     let tilts_deg = [10, 20, 30];
-    tilts_deg
-        .iter()
-        .map(|&deg| {
-            let tilt = (deg as f64).to_radians();
-            Scenario {
-                name: format!("perspective-tilt-{deg}deg"),
-                description: format!("Tag with {deg}° perspective tilt"),
-                category: Category::Perspective,
-                expect_ids: vec![("tag36h11".to_string(), 0)],
-                max_corner_rmse: 5.0,
-                quad_decimate: None,
-                build_fn: Box::new(move || {
-                    SceneBuilder::new(500, 500)
-                        .background(Background::Solid(128))
-                        .add_tag(
-                            "tag36h11",
-                            0,
-                            Transform::FromPose {
-                                center: [250.0, 250.0],
-                                size: 100.0,
-                                roll: 0.0,
-                                tilt_x: tilt,
-                                tilt_y: 0.0,
-                            },
-                        )
-                        .build()
-                }),
-            }
-        })
-        .collect()
+    for &deg in &tilts_deg {
+        let tilt = (deg as f64).to_radians();
+        scenarios.push(Scenario {
+            name: format!("perspective-tilt-{deg}deg"),
+            description: format!("Tag with {deg}° perspective tilt"),
+            category: Category::Perspective,
+            expect_ids: vec![("tag36h11".to_string(), 0)],
+            max_corner_rmse: 5.0,
+            quad_decimate: None,
+            build_fn: Box::new(move || {
+                SceneBuilder::new(500, 500)
+                    .background(Background::Solid(128))
+                    .add_tag(
+                        "tag36h11",
+                        0,
+                        Transform::FromPose {
+                            center: [250.0, 250.0],
+                            size: 100.0,
+                            roll: 0.0,
+                            tilt_x: tilt,
+                            tilt_y: 0.0,
+                        },
+                    )
+                    .build()
+            }),
+        });
+    }
+
+    // Yaw sweep scenarios (Abbas 2019: yaw is the dominant pose error source)
+    let yaw_degrees = [0, 10, 20, 30, 40, 50, 60];
+    for &deg in &yaw_degrees {
+        let tilt = (deg as f64).to_radians();
+        let max_rmse = if deg <= 40 { 5.0 } else { 8.0 };
+        scenarios.push(Scenario {
+            name: format!("perspective-yaw-{deg}deg"),
+            description: format!("Yaw {deg}° (Abbas 2019 sweep)"),
+            category: Category::Perspective,
+            expect_ids: vec![("tag36h11".to_string(), 0)],
+            max_corner_rmse: max_rmse,
+            quad_decimate: None,
+            build_fn: Box::new(move || {
+                SceneBuilder::new(500, 500)
+                    .background(Background::Solid(128))
+                    .add_tag(
+                        "tag36h11",
+                        0,
+                        Transform::FromPose {
+                            center: [250.0, 250.0],
+                            size: 100.0,
+                            roll: 0.0,
+                            tilt_x: tilt,
+                            tilt_y: 0.0,
+                        },
+                    )
+                    .build()
+            }),
+        });
+    }
+
+    // Combined tilt scenarios
+    let combined = [(20, 20), (30, 15)];
+    for &(tx, ty) in &combined {
+        let tilt_x = (tx as f64).to_radians();
+        let tilt_y = (ty as f64).to_radians();
+        scenarios.push(Scenario {
+            name: format!("perspective-combined-{tx}x-{ty}y"),
+            description: format!("Combined tilt {tx}°x + {ty}°y"),
+            category: Category::Perspective,
+            expect_ids: vec![("tag36h11".to_string(), 0)],
+            max_corner_rmse: 5.0,
+            quad_decimate: None,
+            build_fn: Box::new(move || {
+                SceneBuilder::new(500, 500)
+                    .background(Background::Solid(128))
+                    .add_tag(
+                        "tag36h11",
+                        0,
+                        Transform::FromPose {
+                            center: [250.0, 250.0],
+                            size: 100.0,
+                            roll: 0.0,
+                            tilt_x,
+                            tilt_y,
+                        },
+                    )
+                    .build()
+            }),
+        });
+    }
+
+    scenarios
 }
 
 fn scale_scenarios() -> Vec<Scenario> {
@@ -744,6 +808,38 @@ mod tests {
             assert_eq!(Category::from_name(cat.name()), Some(*cat));
         }
         assert_eq!(Category::from_name("nonexistent"), None);
+    }
+
+    #[test]
+    fn yaw_scenarios_cover_sweep() {
+        let scenarios = scenarios_for_category(Category::Perspective);
+        let yaw_names: Vec<_> = scenarios
+            .iter()
+            .filter(|s| s.name.starts_with("perspective-yaw-"))
+            .map(|s| s.name.clone())
+            .collect();
+        // Must have 0, 10, 20, 30, 40, 50, 60 degree yaw scenarios
+        for deg in [0, 10, 20, 30, 40, 50, 60] {
+            let expected = format!("perspective-yaw-{deg}deg");
+            assert!(
+                yaw_names.contains(&expected),
+                "missing scenario: {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn combined_tilt_scenarios_exist() {
+        let scenarios = scenarios_for_category(Category::Perspective);
+        let names: Vec<_> = scenarios.iter().map(|s| s.name.clone()).collect();
+        assert!(
+            names.contains(&"perspective-combined-20x-20y".to_string()),
+            "missing perspective-combined-20x-20y"
+        );
+        assert!(
+            names.contains(&"perspective-combined-30x-15y".to_string()),
+            "missing perspective-combined-30x-15y"
+        );
     }
 
     #[test]
