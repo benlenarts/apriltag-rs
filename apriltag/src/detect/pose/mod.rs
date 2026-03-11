@@ -265,6 +265,41 @@ fn find_second_minimum(
     (Some(pose2), err2)
 }
 
+/// Soft Yaw Axis Correction (SYAC) from Abbas et al. 2019.
+///
+/// Corrects the translation vector for yaw-induced frame inconsistency.
+/// When a camera views a tag at an oblique yaw angle, the reported translation
+/// is in a yaw-rotated frame. SYAC rotates the translation by the negative of
+/// the estimated yaw to produce coordinates in a consistent, tag-centered frame.
+///
+/// The rotation matrix is left unchanged; only translation is corrected.
+///
+/// Reference: Abbas, S.M. et al. "Analysis and Improvements in AprilTag Based
+/// State Estimation." Sensors 2019, 19(24), 5480. Section 4.1, Equations 3–7.
+pub fn syac_correction(pose: &Pose) -> Pose {
+    let r = Mat3(pose.r);
+
+    // Extract yaw angle (rotation about Y axis) from rotation matrix.
+    // For R = Ry(θ): R[0][2] = sin(θ), R[0][0] = cos(θ)
+    let yaw = f64::atan2(r.0[0][2], r.0[0][0]);
+
+    let tx = pose.t[0];
+    let ty = pose.t[1];
+    let tz = pose.t[2];
+
+    // Rotate translation by -yaw in the x-z plane to remove
+    // yaw-dependent frame shift (Abbas 2019, Eq. 5–6 adapted).
+    let cos_y = yaw.cos();
+    let sin_y = yaw.sin();
+    let tx_corrected = tx * cos_y + tz * sin_y;
+    let tz_corrected = -tx * sin_y + tz * cos_y;
+
+    Pose {
+        r: pose.r,
+        t: [tx_corrected, ty, tz_corrected],
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -525,6 +560,87 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn syac_frontal_noop() {
+        // For a frontal tag (no yaw), SYAC should not change translation.
+        let params = PoseParams {
+            tagsize: 0.1,
+            fx: 500.0,
+            fy: 500.0,
+            cx: 320.0,
+            cy: 240.0,
+        };
+
+        let s = params.tagsize / 2.0;
+        let z = 5.0;
+        let tag_corners_3d = [[-s, s, 0.0], [s, s, 0.0], [s, -s, 0.0], [-s, -s, 0.0]];
+
+        let mut corners = [[0.0f64; 2]; 4];
+        for i in 0..4 {
+            corners[i][0] = params.cx + params.fx * tag_corners_3d[i][0] / z;
+            corners[i][1] = params.cy + params.fy * tag_corners_3d[i][1] / z;
+        }
+
+        let det = Detection {
+            family_id: crate::family::FamilyId::from("test"),
+            id: 0,
+            hamming: 0,
+            decision_margin: 100.0,
+            corners: corners.map(Vec2::from),
+            center: Vec2::new(params.cx, params.cy),
+        };
+
+        let (pose, _, _, _) = estimate_tag_pose(&det, &params);
+        let corrected = syac_correction(&pose);
+
+        // Translation should be essentially unchanged for frontal view
+        for i in 0..3 {
+            assert!(
+                (corrected.t[i] - pose.t[i]).abs() < 1e-6,
+                "t[{i}] changed: {} -> {}",
+                pose.t[i],
+                corrected.t[i]
+            );
+        }
+    }
+
+    #[test]
+    fn syac_reduces_oblique_error() {
+        // Abbas 2019: SYAC reduces frame inconsistency across different camera
+        // yaw angles. Two views of the same tag at distance d=5 — one frontal,
+        // one at 30° yaw — should give near-identical corrected translations.
+
+        // View 1: frontal (yaw = 0°), tag directly ahead at distance 5
+        let pose1 = Pose {
+            r: Mat3::IDENTITY.0,
+            t: [0.0, 0.0, 5.0],
+        };
+
+        // View 2: camera rotated 30° yaw — same tag appears rotated and offset
+        let yaw: f64 = 30.0_f64.to_radians();
+        let cy = yaw.cos();
+        let sy = yaw.sin();
+        let pose2 = Pose {
+            r: [[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]],
+            t: [-5.0 * sy, 0.0, 5.0 * cy],
+        };
+
+        let c1 = syac_correction(&pose1);
+        let c2 = syac_correction(&pose2);
+
+        // Raw translations differ significantly (different camera frames)
+        let raw_diff =
+            ((pose1.t[0] - pose2.t[0]).powi(2) + (pose1.t[2] - pose2.t[2]).powi(2)).sqrt();
+        assert!(raw_diff > 1.0, "raw views should differ: {raw_diff}");
+
+        // SYAC-corrected translations should nearly match
+        let corrected_diff = ((c1.t[0] - c2.t[0]).powi(2) + (c1.t[2] - c2.t[2]).powi(2)).sqrt();
+        assert!(
+            corrected_diff < 0.01,
+            "SYAC should make cross-view translations consistent: raw_diff={raw_diff}, corrected_diff={corrected_diff}"
+        );
     }
 
     #[test]
